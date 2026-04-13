@@ -1,0 +1,28 @@
+# Sensitive local configuration
+.env
+
+# Python cache and local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Frontend dependencies and build output
+web-ui/node_modules/
+web-ui/dist/
+web-ui/.tmp-esbuild/
+
+# Runtime state and local tooling output
+runtime/logs/
+runtime/pids/
+runtime/tmp/
+
+# Local data and test databases
+data/*.db
+data/test/*.db
+data/search_results/
+
+# System noise
+.DS_Store
+Thumbs.db

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "galxe_latest",
+    "query": "from:Galxe (quest OR points OR rewards OR claim OR campaign) -is:retweet -is:reply",
+    "max_results": 20
+  },
+  {
+    "name": "layer3_latest",
+    "query": "from:Layer3xyz (quest OR points OR rewards OR claim OR campaign OR learn) -is:retweet -is:reply",
+    "max_results": 20
+  },
+  {
+    "name": "kaito_latest",
+    "query": "from:kaitoai (yaps OR points OR rewards OR campaign OR launchpad OR claim) -is:retweet -is:reply",
+    "max_results": 20
+  },
+  {
+    "name": "taskon_latest",
+    "query": "from:TaskOn_xyz (quest OR points OR rewards OR campaign OR claim) -is:retweet -is:reply",
+    "max_results": 20
+  },
+  {
+    "name": "zealy_latest",
+    "query": "from:zealy_io (quest OR points OR rewards OR campaign OR claim) -is:retweet -is:reply",
+    "max_results": 20
+  },
+  {
+    "name": "intract_latest",
+    "query": "from:IntractHQ (quest OR points OR rewards OR campaign OR claim) -is:retweet -is:reply",
+    "max_results": 20
+  }
+]

@@ -1,0 +1,42 @@
+[
+  {
+    "name": "binance_alpha",
+    "query": "from:BinanceWallet (\"Alpha Points\" OR \"Alpha Events\" OR claim OR FCFS) -is:retweet -is:reply",
+    "max_results": 20,
+    "project_page_id": "33fbe44e-5d1d-81b7-accb-fd6d1e551741",
+    "opportunity_types": ["积分", "Claim", "Token"],
+    "capital_band": "500U+",
+    "certainty": "中",
+    "recommendation_score": 5
+  },
+  {
+    "name": "galxe",
+    "query": "from:Galxe (quest OR rewards OR claim OR campaign) -is:retweet -is:reply",
+    "max_results": 20,
+    "project_page_id": "33fbe44e-5d1d-8102-a517-eb35bb37b688",
+    "opportunity_types": ["积分", "空投预期"],
+    "capital_band": "0-50U",
+    "certainty": "中",
+    "recommendation_score": 4
+  },
+  {
+    "name": "layer3",
+    "query": "from:Layer3xyz (discover OR rewards OR claim OR points) -is:retweet -is:reply",
+    "max_results": 20,
+    "project_page_id": "33fbe44e-5d1d-81a2-99fd-e6f1f6e46dfb",
+    "opportunity_types": ["积分", "空投预期", "Token"],
+    "capital_band": "0-50U",
+    "certainty": "中",
+    "recommendation_score": 5
+  },
+  {
+    "name": "kaito",
+    "query": "from:kaitoai (yaps OR launchpad OR rewards OR snapshot) -is:retweet -is:reply",
+    "max_results": 20,
+    "project_page_id": "33fbe44e-5d1d-81ec-992b-d3e1ffbfd79f",
+    "opportunity_types": ["积分", "空投预期"],
+    "capital_band": "0-50U",
+    "certainty": "中",
+    "recommendation_score": 4
+  }
+]
