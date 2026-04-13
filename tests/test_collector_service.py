@@ -444,6 +444,38 @@ class DesktopServiceTests(unittest.TestCase):
 
         self.assertEqual([item["id"] for item in page["items"]], [ids[1], ids[0]])
 
+    def test_list_items_sorts_created_at_x_by_real_x_timestamp(self) -> None:
+        ids = self._seed_curated_items(
+            [
+                {
+                    "title": "late",
+                    "dedupe_key": "late",
+                    "created_at_x": "Mon Mar 30 21:00:00 +0000 2026",
+                },
+                {
+                    "title": "early",
+                    "dedupe_key": "early",
+                    "created_at_x": "Mon Feb 23 11:58:17 +0000 2026",
+                },
+                {
+                    "title": "middle",
+                    "dedupe_key": "middle",
+                    "created_at_x": "Wed Mar 25 12:09:02 +0000 2026",
+                },
+                {
+                    "title": "missing",
+                    "dedupe_key": "missing",
+                    "created_at_x": None,
+                },
+            ]
+        )
+
+        asc_page = self.service.list_items(page=1, page_size=10, sort_by="created_at_x", sort_dir="asc")
+        desc_page = self.service.list_items(page=1, page_size=10, sort_by="created_at_x", sort_dir="desc")
+
+        self.assertEqual([item["id"] for item in asc_page["items"]], [ids[1], ids[2], ids[0], ids[3]])
+        self.assertEqual([item["id"] for item in desc_page["items"]], [ids[0], ids[2], ids[1], ids[3]])
+
     def test_delete_item_hard_deletes_the_target_row(self) -> None:
         ids = self._seed_curated_items(
             [
@@ -515,6 +547,29 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(summary["rows_before"], 5)
         self.assertEqual(summary["rows_after"], 3)
         self.assertEqual([item["id"] for item in page["items"]], [ids[0], ids[2], ids[4]])
+
+    def test_dedupe_items_keeps_earliest_real_x_created_at(self) -> None:
+        ids = self._seed_curated_items(
+            [
+                {
+                    "title": "dup-late",
+                    "dedupe_key": "dup-x",
+                    "created_at_x": "Mon Mar 30 21:00:00 +0000 2026",
+                },
+                {
+                    "title": "dup-early",
+                    "dedupe_key": "dup-x",
+                    "created_at_x": "Mon Feb 23 11:58:17 +0000 2026",
+                },
+            ]
+        )
+
+        summary = self.service.dedupe_items()
+        page = self.service.list_items(page=1, page_size=10, sort_by="id", sort_dir="asc")
+
+        self.assertEqual(summary["groups"], 1)
+        self.assertEqual(summary["deleted"], 1)
+        self.assertEqual([item["id"] for item in page["items"]], [ids[1]])
 
 
 if __name__ == "__main__":

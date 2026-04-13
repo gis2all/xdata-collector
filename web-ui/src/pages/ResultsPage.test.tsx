@@ -85,7 +85,15 @@ describe("ResultsPage", () => {
     expect(screen.getByText("created_at_x")).toBeInTheDocument();
     expect(screen.queryByText("dedupe_key")).not.toBeInTheDocument();
     expect(screen.queryByText("reasons_json")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "score asc" })).toBeInTheDocument();
+    const scoreAscButton = screen.getByRole("button", { name: "score asc" });
+    const scoreDescButton = screen.getByRole("button", { name: "score desc" });
+    expect(scoreAscButton).toBeInTheDocument();
+    expect(scoreDescButton).toBeInTheDocument();
+    expect(scoreAscButton.parentElement).toHaveClass("results-sort-controls-inline");
+    expect(screen.queryByText("ASC")).not.toBeInTheDocument();
+    expect(screen.queryByText("DESC")).not.toBeInTheDocument();
+    expect(scoreAscButton).toHaveTextContent("\u2191");
+    expect(scoreDescButton).toHaveTextContent("\u2193");
     expect(screen.queryByRole("button", { name: "dedupe_key asc" })).not.toBeInTheDocument();
     expect(screen.getByText("2026-04-13 08:49:06 UTC+8")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "https://x.com/demo/status/1" })).toHaveAttribute(
@@ -193,6 +201,45 @@ describe("ResultsPage", () => {
       expect(listItemsMock).toHaveBeenCalledWith(
         expect.objectContaining({ sort_by: "score", sort_dir: "asc" }),
       );
+    });
+  });
+
+  it("re-renders rows when sorted data comes back in a new order", async () => {
+    listItemsMock
+      .mockResolvedValueOnce({
+        page: 1,
+        page_size: 100,
+        total: 2,
+        items: [makeItem(1, { score: 90, title: "Item 1" }), makeItem(2, { score: 80, title: "Item 2" })],
+      })
+      .mockResolvedValueOnce({
+        page: 1,
+        page_size: 100,
+        total: 2,
+        items: [makeItem(2, { score: 80, title: "Item 2" }), makeItem(1, { score: 90, title: "Item 1" })],
+      });
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Item 1")).toBeInTheDocument();
+    });
+
+    const getTitleOrder = () =>
+      screen
+        .getAllByRole("cell")
+        .map((cell) => cell.textContent ?? "")
+        .filter((text) => text === "Item 1" || text === "Item 2");
+
+    expect(getTitleOrder()).toEqual(["Item 1", "Item 2"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "score asc" }));
+
+    await waitFor(() => {
+      expect(listItemsMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sort_by: "score", sort_dir: "asc" }),
+      );
+      expect(getTitleOrder()).toEqual(["Item 2", "Item 1"]);
     });
   });
 

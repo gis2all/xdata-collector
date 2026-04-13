@@ -15,6 +15,7 @@ from backend.collector_rules import (
     evaluate_rule_set,
     normalize_rule_set_definition,
     normalize_search_spec,
+    parse_created_at,
     passes_search_filters,
     serialize_search_result,
 )
@@ -61,24 +62,22 @@ MAX_ITEM_PAGE_SIZE = 200
 
 
 def _parse_item_created_at(value: Any) -> datetime | None:
-    raw = str(value or "").strip()
-    if not raw:
-        return None
-    if raw.endswith("Z"):
-        raw = f"{raw[:-1]}+00:00"
-    try:
-        parsed = datetime.fromisoformat(raw)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+    return parse_created_at("" if value is None else str(value))
 
 
 def _dedupe_sort_key(payload: dict[str, Any]) -> tuple[int, datetime, int]:
     created_at = _parse_item_created_at(payload.get("created_at_x"))
     fallback = datetime.max.replace(tzinfo=timezone.utc)
     return (1 if created_at is None else 0, created_at or fallback, int(payload["id"]))
+
+
+def _item_created_at_sort_key(payload: dict[str, Any], direction: str) -> tuple[int, float, int]:
+    created_at = _parse_item_created_at(payload.get("created_at_x"))
+    item_id = int(payload["id"])
+    if created_at is None:
+        return (1, 0.0, item_id)
+    timestamp = created_at.timestamp()
+    return (0, timestamp if direction == "ASC" else -timestamp, item_id)
 
 
 def _metric(item: SearchResult, key: str) -> int:
@@ -957,25 +956,39 @@ class DesktopService:
             params.extend([token, token])
         where_sql = f"WHERE {' AND '.join(where)}" if where else ""
         sort_column, sort_direction = self._normalize_item_sort(sort_by, sort_dir)
-        order_sql = f"{sort_column} {sort_direction}" if sort_column == "id" else f"{sort_column} {sort_direction}, id ASC"
         selected_fields = ", ".join(ITEM_FIELDS)
         with connect(self.db_path) as conn:
             total = conn.execute(f"SELECT COUNT(1) FROM x_items_curated {where_sql}", tuple(params)).fetchone()[0]
-            rows = conn.execute(
-                f"""
-                SELECT {selected_fields}
-                FROM x_items_curated
-                {where_sql}
-                ORDER BY {order_sql}
-                LIMIT ? OFFSET ?
-                """,
-                tuple(params + [page_size, offset]),
-            ).fetchall()
+            if sort_column == "created_at_x":
+                rows = conn.execute(
+                    f"""
+                    SELECT {selected_fields}
+                    FROM x_items_curated
+                    {where_sql}
+                    """,
+                    tuple(params),
+                ).fetchall()
+            else:
+                order_sql = f"{sort_column} {sort_direction}" if sort_column == "id" else f"{sort_column} {sort_direction}, id ASC"
+                rows = conn.execute(
+                    f"""
+                    SELECT {selected_fields}
+                    FROM x_items_curated
+                    {where_sql}
+                    ORDER BY {order_sql}
+                    LIMIT ? OFFSET ?
+                    """,
+                    tuple(params + [page_size, offset]),
+                ).fetchall()
+        items = [row_to_dict(row) for row in rows]
+        if sort_column == "created_at_x":
+            items = sorted(items, key=lambda item: _item_created_at_sort_key(item, sort_direction))
+            items = items[offset : offset + page_size]
         return {
             "page": page,
             "page_size": page_size,
             "total": int(total),
-            "items": [row_to_dict(row) for row in rows],
+            "items": items,
         }
 
     def delete_item(self, item_id: int) -> dict[str, Any]:

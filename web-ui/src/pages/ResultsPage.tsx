@@ -212,14 +212,14 @@ function renderSortButtons(
   onSort: (field: ItemSortField, dir: SortDirection) => void,
 ) {
   return (
-    <span className="results-sort-controls">
+    <span className="results-sort-controls results-sort-controls-inline">
       <button
         type="button"
         className={`ghost results-sort-button${activeField === field && activeDir === "asc" ? " active" : ""}`}
         aria-label={`${field} asc`}
         onClick={() => onSort(field, "asc")}
       >
-        ASC
+        {"\u2191"}
       </button>
       <button
         type="button"
@@ -227,7 +227,7 @@ function renderSortButtons(
         aria-label={`${field} desc`}
         onClick={() => onSort(field, "desc")}
       >
-        DESC
+        {"\u2193"}
       </button>
     </span>
   );
