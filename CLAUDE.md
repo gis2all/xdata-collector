@@ -187,6 +187,13 @@
 - 当前项目已经收口为纯 X 采集主仓
 - 后续如果要做下游同步、归档或外部系统集成，建议在独立仓库完成，不再回灌到本仓
 
+## Git 边界
+
+版本控制边界约定：
+- 应提交：`backend/`、`run/`、`tests/`、`web-ui/src/`、`config/`、`artifacts/`、文档、`.env.example`、`.learnings/`
+- 不应提交：`.env`、`data/*.db`、`data/search_results/`、`data/test/`、`runtime/logs/`、`runtime/pids/`、`runtime/tmp/`、`web-ui/node_modules/`、`web-ui/dist/`、缓存目录
+- `.learnings/` 属于项目级协作知识，应纳入版本控制，但不能写入真实 cookie、token、账号或一次性调试噪音
+
 ## 维护建议与推荐阅读顺序
 
 推荐阅读顺序：

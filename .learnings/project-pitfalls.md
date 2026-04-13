@@ -137,3 +137,11 @@ Do not record by default:
 **Correct approach**: treat `run/services.py` as the controller for API, Scheduler, and Dev UI only; keep `run/static_web_server.py` as a separate preview tool.
 **Impact**: startup expectations, docs, troubleshooting, port checks.
 **Related paths**: `run/services.py`, `run/static_web_server.py`, `run/README.md`, `README.md`
+
+## Documentation Encoding Pitfall
+
+- Scenario: writing Chinese Markdown content through Windows PowerShell here-strings.
+- Wrong approach: piping Chinese literal text from a PowerShell here-string into `python -` or direct PowerShell file writers.
+- Correct approach: modify UTF-8 files with Python directly; if terminal encoding is unstable, use ASCII or Unicode escapes for inserted content.
+- Impact: `README.md`, `CLAUDE.md`, JSON/config templates, and other repo docs can be corrupted into `?` characters.
+- Related paths: `README.md`, `CLAUDE.md`, `.learnings/project-pitfalls.md`

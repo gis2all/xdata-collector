@@ -128,6 +128,26 @@ python ./run/services.py restart
 - `artifacts/`：流程图、辅助资料和非源码材料
 - `tests/`：当前自动化测试
 
+## Git 提交边界
+
+建议提交到 Git 的内容：
+- `backend/`、`run/`、`tests/`、`web-ui/src/`
+- `config/`、`artifacts/`
+- `README.md`、`CLAUDE.md`、`.env.example`
+- `data/README.md`、`runtime/README.md`
+- `.learnings/`：作为项目级协作记忆保留提交，但不得写入真实 cookie、token 或一次性调试噪音
+
+不应提交的本地内容：
+- `.env`
+- `data/*.db`、`data/search_results/`、`data/test/`
+- `runtime/logs/`、`runtime/pids/`、`runtime/tmp/`
+- `web-ui/node_modules/`、`web-ui/dist/`、`web-ui/.tmp-esbuild/`
+- `__pycache__/`、`.pytest_cache/` 等缓存目录
+
+原则：
+- 提交源码、配置模板、文档和必要锁文件
+- 不提交依赖、日志、数据库、运行输出和本机私有配置
+
 ## 验证命令
 
 ```bash
