@@ -60,9 +60,18 @@ class ApiHandler(BaseHTTPRequestHandler):
                 job_id = int(parsed.path.split("/")[-1])
                 self._json(HTTPStatus.OK, self.service.get_job(job_id))
                 return
+            if parsed.path == "/runs":
+                q = parse_qs(parsed.query)
+                page = int(q.get("page", ["1"])[0])
+                page_size = int(q.get("page_size", ["50"])[0])
+                self._json(HTTPStatus.OK, self.service.list_runs(page=page, page_size=page_size))
+                return
             if parsed.path.startswith("/runs/"):
                 run_id = int(parsed.path.split("/")[-1])
                 self._json(HTTPStatus.OK, self.service.get_run(run_id))
+                return
+            if parsed.path == "/logs/runtime":
+                self._json(HTTPStatus.OK, self.service.get_runtime_logs())
                 return
             if parsed.path == "/items":
                 q = parse_qs(parsed.query)

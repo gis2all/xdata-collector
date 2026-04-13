@@ -12,6 +12,14 @@ class FakeService:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
 
+    def list_runs(self, **kwargs) -> dict:
+        self.calls.append(("list_runs", kwargs))
+        return {"page": kwargs["page"], "page_size": kwargs["page_size"], "total": 1, "items": [{"id": 8, "status": "failed", "trigger_type": "manual", "job_id": None, "started_at": "2026-04-13T00:00:00+00:00", "ended_at": "2026-04-13T00:01:00+00:00", "error_text": "boom", "stats_json": {}}]}
+
+    def get_runtime_logs(self) -> dict:
+        self.calls.append(("get_runtime_logs", None))
+        return {"items": [{"name": "api.current.out.log", "exists": True, "size": 7, "updated_at": "2026-04-13T00:00:00+00:00", "content": "api ok"}]}
+
     def health(self) -> dict:
         self.calls.append(("health", None))
         return {
@@ -138,6 +146,27 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body.decode("utf-8"))["job_id"], 42)
         self.assertEqual(service.calls[0], ("run_job_now", 42))
+
+    def test_get_runs_returns_run_page(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(server, "GET", "/runs?page=2&page_size=10")
+
+        self.assertEqual(status, 200)
+        payload = json.loads(body.decode("utf-8"))
+        self.assertEqual(payload["page"], 2)
+        self.assertEqual(payload["items"][0]["id"], 8)
+        self.assertEqual(service.calls[0], ("list_runs", {"page": 2, "page_size": 10}))
+
+    def test_get_runtime_logs_returns_snapshot_payload(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(server, "GET", "/logs/runtime")
+
+        self.assertEqual(status, 200)
+        payload = json.loads(body.decode("utf-8"))
+        self.assertEqual(payload["items"][0]["name"], "api.current.out.log")
+        self.assertEqual(service.calls[0], ("get_runtime_logs", None))
 
     def test_invalid_json_returns_bad_request(self) -> None:
         service = FakeService()

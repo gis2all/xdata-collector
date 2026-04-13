@@ -190,6 +190,27 @@ export type JobRecord = {
   last_run_stats?: Record<string, unknown>;
 };
 
+
+export type RunRecord = {
+  id: number;
+  job_id: number | null;
+  trigger_type: string;
+  status: string;
+  started_at: string;
+  ended_at: string | null;
+  error_text: string | null;
+  stats_json: Record<string, number>;
+};
+
+export type RuntimeLogFile = {
+  name: string;
+  exists: boolean;
+  size: number;
+  updated_at: string;
+  content: string;
+  error?: string;
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8765";
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
@@ -226,6 +247,17 @@ export function runManual(payload: { search_spec: SearchSpec; rule_set_id?: numb
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export function listRuns(params: { page?: number; page_size?: number }) {
+  const q = new URLSearchParams();
+  if (params.page) q.set("page", String(params.page));
+  if (params.page_size) q.set("page_size", String(params.page_size));
+  return req<{ total: number; page: number; page_size: number; items: RunRecord[] }>(`/runs?${q.toString()}`);
+}
+
+export function getRuntimeLogs() {
+  return req<{ items: RuntimeLogFile[] }>("/logs/runtime");
 }
 
 export function listItems(params: { page?: number; page_size?: number; keyword?: string; level?: string }) {

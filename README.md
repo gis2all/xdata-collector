@@ -123,7 +123,7 @@ python ./run/services.py restart
 - `web-ui/`：前端单页应用
 - `backend/`：核心业务、规则、SQLite 读写、X 搜索适配
 - `run/`：运行入口、本机依赖准备脚本和服务总控脚本
-- `data/`：SQLite 数据文件与样例数据
+- `data/`????????? `app.db`
 - `runtime/`：运行日志与临时文件
 - `artifacts/`：流程图、辅助资料和非源码材料
 - `tests/`：当前自动化测试
@@ -134,12 +134,12 @@ python ./run/services.py restart
 - `backend/`、`run/`、`tests/`、`web-ui/src/`
 - `config/`、`artifacts/`
 - `README.md`、`CLAUDE.md`、`.env.example`
-- `data/README.md`、`runtime/README.md`
+- `runtime/README.md`
 - `.learnings/`：作为项目级协作记忆保留提交，但不得写入真实 cookie、token 或一次性调试噪音
 
 不应提交的本地内容：
 - `.env`
-- `data/*.db`、`data/search_results/`、`data/test/`
+- `data/*.db`
 - `runtime/logs/`、`runtime/pids/`、`runtime/tmp/`
 - `web-ui/node_modules/`、`web-ui/dist/`、`web-ui/.tmp-esbuild/`
 - `__pycache__/`、`.pytest_cache/` 等缓存目录

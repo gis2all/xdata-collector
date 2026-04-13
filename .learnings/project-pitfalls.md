@@ -145,3 +145,19 @@ Do not record by default:
 - Correct approach: modify UTF-8 files with Python directly; if terminal encoding is unstable, use ASCII or Unicode escapes for inserted content.
 - Impact: `README.md`, `CLAUDE.md`, JSON/config templates, and other repo docs can be corrupted into `?` characters.
 - Related paths: `README.md`, `CLAUDE.md`, `.learnings/project-pitfalls.md`
+
+## PIT-014 PowerShell can corrupt Chinese TSX literals during scripted writes
+
+**Context**: when generating or rewriting frontend files such as `web-ui/src/pages/*.tsx` from Windows shell commands.
+**Wrong approach**: writing Chinese JSX literals through PowerShell here-strings and assuming the file will stay UTF-8 clean.
+**Correct approach**: prefer ASCII-safe edits for scripted writes, such as Python writers that emit BOM-free UTF-8 plus `\u` escapes for visible Chinese UI text when needed.
+**Impact**: React pages and tests can silently turn into `?` characters even when logic is otherwise correct.
+**Related paths**: `web-ui/src/pages/LogsPage.tsx`, `web-ui/src/pages/*.test.tsx`
+
+## PIT-015 data directory must only retain app.db
+
+**Context**: when adding tests, temporary exports, or one-off debug artifacts.
+**Wrong approach**: treating `data/` as a general-purpose workspace for test databases, runtime log snapshots, JSON exports, or helper readmes.
+**Correct approach**: keep `data/` limited to `app.db`; put service logs in `runtime/logs/`, PID files in `runtime/pids/`, and test-only temporary files in `runtime/tmp/tests/`.
+**Impact**: repository structure, cleanup safety, documentation, test isolation.
+**Related paths**: `data/app.db`, `runtime/logs/`, `runtime/pids/`, `runtime/tmp/tests/`, `tests/test_collector_service.py`

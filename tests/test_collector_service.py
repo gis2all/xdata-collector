@@ -1,4 +1,5 @@
-﻿import unittest
+﻿import shutil
+import unittest
 from pathlib import Path
 from unittest.mock import patch
 
@@ -7,14 +8,16 @@ from backend.collector_service import DesktopService
 
 class DesktopServiceTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.db_path = Path("data") / f"test_collector_service_{id(self)}.db"
-        if self.db_path.exists():
-            self.db_path.unlink()
+        self.test_dir = Path("runtime") / "tmp" / "tests" / f"collector_service_{id(self)}"
+        if self.test_dir.exists():
+            shutil.rmtree(self.test_dir)
+        self.test_dir.mkdir(parents=True, exist_ok=True)
+        self.db_path = self.test_dir / "collector.db"
         self.service = DesktopService(db_path=self.db_path, env_file=".env")
 
     def tearDown(self) -> None:
-        if self.db_path.exists():
-            self.db_path.unlink()
+        if self.test_dir.exists():
+            shutil.rmtree(self.test_dir)
 
     def test_default_rule_set_exists_and_can_clone(self) -> None:
         rule_sets = self.service.list_rule_sets()["items"]
@@ -218,6 +221,52 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertGreater(report["matched_items"][0]["score"], 0)
         self.assertTrue(report["matched_items"][0]["reasons"])
         self.assertEqual(report["rule_set_summary"]["id"], rule_set_id)
+
+    def test_list_runs_returns_recent_records_with_pagination(self) -> None:
+        first = self.service._create_run(job_id=None, trigger_type="manual")
+        self.service._finish_run(first, "failed", {}, "boom")
+        second = self.service._create_run(job_id=123, trigger_type="auto")
+        self.service._finish_run(second, "success", {"matched": 2}, "")
+
+        page = self.service.list_runs(page=1, page_size=1)
+
+        self.assertEqual(page["total"], 2)
+        self.assertEqual(page["page"], 1)
+        self.assertEqual(page["page_size"], 1)
+        self.assertEqual(len(page["items"]), 1)
+        self.assertEqual(page["items"][0]["id"], second)
+        self.assertEqual(page["items"][0]["status"], "success")
+        self.assertEqual(page["items"][0]["job_id"], 123)
+        self.assertEqual(page["items"][0]["stats_json"]["matched"], 2)
+        self.assertNotEqual(first, second)
+
+    def test_get_runtime_logs_reads_current_log_snapshots(self) -> None:
+        from backend import collector_service as collector_service_module
+
+        runtime_dir = self.test_dir / "runtime_logs"
+        runtime_dir.mkdir(parents=True, exist_ok=True)
+        expected_files = {
+            "api.current.out.log": "api ok\nline2",
+            "api.current.err.log": "",
+            "scheduler.current.out.log": "scheduler tick",
+            "scheduler.current.err.log": "scheduler warning",
+            "web-ui.current.out.log": "vite ready",
+            "web-ui.current.err.log": "",
+        }
+        for name, content in expected_files.items():
+            (runtime_dir / name).write_text(content, encoding="utf-8")
+
+        with patch.object(collector_service_module, "RUNTIME_LOG_DIR", runtime_dir):
+            payload = self.service.get_runtime_logs()
+
+        self.assertEqual(len(payload["items"]), 6)
+        by_name = {item["name"]: item for item in payload["items"]}
+        self.assertEqual(by_name["api.current.out.log"]["content"], "api ok\nline2")
+        self.assertEqual(by_name["scheduler.current.err.log"]["content"], "scheduler warning")
+        self.assertEqual(by_name["web-ui.current.err.log"]["content"], "")
+        self.assertTrue(by_name["api.current.out.log"]["exists"])
+        self.assertGreaterEqual(by_name["api.current.out.log"]["size"], len("api ok\nline2"))
+        self.assertTrue(by_name["api.current.out.log"]["updated_at"])
 
 
 if __name__ == "__main__":

@@ -17,11 +17,10 @@ web-ui/.tmp-esbuild/
 runtime/logs/
 runtime/pids/
 runtime/tmp/
+runtime/tmp/tests/
 
 # Local data and test databases
 data/*.db
-data/test/*.db
-data/search_results/
 
 # System noise
 .DS_Store

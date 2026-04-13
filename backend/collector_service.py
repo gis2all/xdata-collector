@@ -26,7 +26,17 @@ from backend.source_identity import (
 )
 from backend.twitter_cli import find_twitter_cli, normalize_search_payload, run_twitter_search
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SQLITE_DEFAULT = Path("data") / "app.db"
+RUNTIME_LOG_DIR = PROJECT_ROOT / "runtime" / "logs"
+RUNTIME_LOG_FILES = (
+    "api.current.out.log",
+    "api.current.err.log",
+    "scheduler.current.out.log",
+    "scheduler.current.err.log",
+    "web-ui.current.out.log",
+    "web-ui.current.err.log",
+)
 
 
 def _metric(item: SearchResult, key: str) -> int:
@@ -799,6 +809,43 @@ class DesktopService:
             if row is None:
                 raise ValueError(f"run {run_id} not found")
             return row_to_dict(row)
+
+    def list_runs(self, page: int = 1, page_size: int = 50) -> dict[str, Any]:
+        page = max(1, int(page or 1))
+        page_size = max(1, min(200, int(page_size or 50)))
+        offset = (page - 1) * page_size
+        with connect(self.db_path) as conn:
+            total = int(conn.execute("SELECT COUNT(1) FROM search_runs").fetchone()[0])
+            rows = conn.execute(
+                """
+                SELECT id, job_id, trigger_type, status, started_at, ended_at, error_text, stats_json
+                FROM search_runs
+                ORDER BY id DESC
+                LIMIT ? OFFSET ?
+                """,
+                (page_size, offset),
+            ).fetchall()
+        return {"page": page, "page_size": page_size, "total": total, "items": [row_to_dict(row) for row in rows]}
+
+    def get_runtime_logs(self) -> dict[str, Any]:
+        items: list[dict[str, Any]] = []
+        for name in RUNTIME_LOG_FILES:
+            path = RUNTIME_LOG_DIR / name
+            exists = path.exists()
+            payload: dict[str, Any] = {
+                "name": name,
+                "exists": exists,
+                "size": int(path.stat().st_size) if exists else 0,
+                "updated_at": datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).isoformat() if exists else "",
+                "content": "",
+            }
+            if exists:
+                try:
+                    payload["content"] = path.read_text(encoding="utf-8", errors="replace")
+                except OSError as exc:
+                    payload["error"] = str(exc)
+            items.append(payload)
+        return {"items": items}
 
     def list_items(
         self,

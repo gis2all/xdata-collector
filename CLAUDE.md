@@ -191,7 +191,7 @@
 
 版本控制边界约定：
 - 应提交：`backend/`、`run/`、`tests/`、`web-ui/src/`、`config/`、`artifacts/`、文档、`.env.example`、`.learnings/`
-- 不应提交：`.env`、`data/*.db`、`data/search_results/`、`data/test/`、`runtime/logs/`、`runtime/pids/`、`runtime/tmp/`、`web-ui/node_modules/`、`web-ui/dist/`、缓存目录
+- ?????`.env`?`data/*.db`?`runtime/logs/`?`runtime/pids/`?`runtime/tmp/`?`web-ui/node_modules/`?`web-ui/dist/`?????
 - `.learnings/` 属于项目级协作知识，应纳入版本控制，但不能写入真实 cookie、token、账号或一次性调试噪音
 
 ## 维护建议与推荐阅读顺序
