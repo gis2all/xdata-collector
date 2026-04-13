@@ -230,6 +230,60 @@ export type RuntimeLogFile = {
   error?: string;
 };
 
+export type SortDirection = "asc" | "desc";
+export type ItemSortField =
+  | "id"
+  | "run_id"
+  | "dedupe_key"
+  | "level"
+  | "score"
+  | "title"
+  | "summary_zh"
+  | "excerpt"
+  | "is_zero_cost"
+  | "source_url"
+  | "author"
+  | "created_at_x"
+  | "reasons_json"
+  | "rule_set_id"
+  | "state";
+
+export type ResultItemRecord = {
+  id: number;
+  run_id: number;
+  dedupe_key: string;
+  level: string;
+  score: number;
+  title: string;
+  summary_zh: string;
+  excerpt: string;
+  is_zero_cost: number;
+  source_url: string;
+  author: string;
+  created_at_x: string | null;
+  reasons_json: unknown;
+  rule_set_id: number | null;
+  state: string;
+};
+
+export type DeleteItemResponse = {
+  id: number;
+  deleted: number;
+};
+
+export type DeleteItemsResponse = {
+  ids: number[];
+  deleted: number;
+};
+
+export type DedupeItemsResponse = {
+  groups: number;
+  deleted: number;
+  kept: number;
+  rows_before: number;
+  rows_after: number;
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8765";
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
@@ -279,13 +333,37 @@ export function getRuntimeLogs() {
   return req<{ items: RuntimeLogFile[] }>("/logs/runtime");
 }
 
-export function listItems(params: { page?: number; page_size?: number; keyword?: string; level?: string }) {
+export function listItems(params: {
+  page?: number;
+  page_size?: number;
+  keyword?: string;
+  level?: string;
+  sort_by?: ItemSortField;
+  sort_dir?: SortDirection;
+}) {
   const q = new URLSearchParams();
   if (params.page) q.set("page", String(params.page));
   if (params.page_size) q.set("page_size", String(params.page_size));
   if (params.keyword) q.set("keyword", params.keyword);
   if (params.level) q.set("level", params.level);
-  return req<{ total: number; items: any[] }>(`/items?${q.toString()}`);
+  if (params.sort_by) q.set("sort_by", params.sort_by);
+  if (params.sort_dir) q.set("sort_dir", params.sort_dir);
+  return req<{ total: number; page: number; page_size: number; items: ResultItemRecord[] }>(`/items?${q.toString()}`);
+}
+
+export function deleteItem(id: number) {
+  return req<DeleteItemResponse>(`/items/${id}/delete`, { method: "POST", body: "{}" });
+}
+
+export function deleteItems(ids: number[]) {
+  return req<DeleteItemsResponse>("/items/delete", {
+    method: "POST",
+    body: JSON.stringify({ ids }),
+  });
+}
+
+export function dedupeItems() {
+  return req<DedupeItemsResponse>("/items/dedupe", { method: "POST", body: "{}" });
 }
 
 export function createJob(payload: {

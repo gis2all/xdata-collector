@@ -79,9 +79,18 @@ class ApiHandler(BaseHTTPRequestHandler):
                 page_size = int(q.get("page_size", ["50"])[0])
                 level = q.get("level", [None])[0]
                 keyword = q.get("keyword", [None])[0]
+                sort_by = q.get("sort_by", [None])[0]
+                sort_dir = q.get("sort_dir", [None])[0]
                 self._json(
                     HTTPStatus.OK,
-                    self.service.list_items(page=page, page_size=page_size, level=level, keyword=keyword),
+                    self.service.list_items(
+                        page=page,
+                        page_size=page_size,
+                        level=level,
+                        keyword=keyword,
+                        sort_by=sort_by,
+                        sort_dir=sort_dir,
+                    ),
                 )
                 return
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
@@ -137,6 +146,16 @@ class ApiHandler(BaseHTTPRequestHandler):
             if path.startswith("/jobs/") and path.endswith("/purge"):
                 job_id = int(path.split("/")[2])
                 self._json(HTTPStatus.OK, self.service.purge_job(job_id))
+                return
+            if path == "/items/delete":
+                self._json(HTTPStatus.OK, self.service.delete_items(payload.get("ids", [])))
+                return
+            if path == "/items/dedupe":
+                self._json(HTTPStatus.OK, self.service.dedupe_items())
+                return
+            if path.startswith("/items/") and path.endswith("/delete"):
+                item_id = int(path.split("/")[2])
+                self._json(HTTPStatus.OK, self.service.delete_item(item_id))
                 return
             if path == "/scheduler/tick":
                 self._json(HTTPStatus.OK, self.service.tick())

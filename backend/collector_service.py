@@ -39,6 +39,47 @@ RUNTIME_LOG_FILES = (
     "web-ui.current.err.log",
 )
 
+ITEM_FIELDS = (
+    "id",
+    "run_id",
+    "dedupe_key",
+    "level",
+    "score",
+    "title",
+    "summary_zh",
+    "excerpt",
+    "is_zero_cost",
+    "source_url",
+    "author",
+    "created_at_x",
+    "reasons_json",
+    "rule_set_id",
+    "state",
+)
+ITEM_SORT_FIELDS = {field: field for field in ITEM_FIELDS}
+MAX_ITEM_PAGE_SIZE = 200
+
+
+def _parse_item_created_at(value: Any) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = f"{raw[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _dedupe_sort_key(payload: dict[str, Any]) -> tuple[int, datetime, int]:
+    created_at = _parse_item_created_at(payload.get("created_at_x"))
+    fallback = datetime.max.replace(tzinfo=timezone.utc)
+    return (1 if created_at is None else 0, created_at or fallback, int(payload["id"]))
+
 
 def _metric(item: SearchResult, key: str) -> int:
     metrics = item.raw.get("metrics", {}) if isinstance(item.raw, dict) else {}
@@ -875,13 +916,35 @@ class DesktopService:
             items.append(payload)
         return {"items": items}
 
+    def _normalize_item_sort(self, sort_by: str | None, sort_dir: str | None) -> tuple[str, str]:
+        requested = str(sort_by or "").strip()
+        if requested in ITEM_SORT_FIELDS:
+            direction = "ASC" if str(sort_dir or "").strip().lower() == "asc" else "DESC"
+            return ITEM_SORT_FIELDS[requested], direction
+        return ITEM_SORT_FIELDS["id"], "DESC"
+
+    def _normalize_item_ids(self, ids: list[Any] | None) -> list[int]:
+        normalized: list[int] = []
+        seen: set[int] = set()
+        for raw in ids or []:
+            item_id = int(raw)
+            if item_id in seen:
+                continue
+            seen.add(item_id)
+            normalized.append(item_id)
+        return normalized
+
     def list_items(
         self,
         page: int = 1,
         page_size: int = 50,
         level: str | None = None,
         keyword: str | None = None,
+        sort_by: str | None = None,
+        sort_dir: str | None = None,
     ) -> dict[str, Any]:
+        page = max(1, int(page or 1))
+        page_size = max(1, min(MAX_ITEM_PAGE_SIZE, int(page_size or 50)))
         offset = max(0, (page - 1) * page_size)
         where = []
         params: list[Any] = []
@@ -889,23 +952,104 @@ class DesktopService:
             where.append("level = ?")
             params.append(level.upper())
         if keyword:
-            where.append("(title LIKE ? OR excerpt LIKE ?)")
             token = f"%{keyword}%"
+            where.append("(title LIKE ? OR excerpt LIKE ?)")
             params.extend([token, token])
         where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+        sort_column, sort_direction = self._normalize_item_sort(sort_by, sort_dir)
+        order_sql = f"{sort_column} {sort_direction}" if sort_column == "id" else f"{sort_column} {sort_direction}, id ASC"
+        selected_fields = ", ".join(ITEM_FIELDS)
         with connect(self.db_path) as conn:
             total = conn.execute(f"SELECT COUNT(1) FROM x_items_curated {where_sql}", tuple(params)).fetchone()[0]
             rows = conn.execute(
                 f"""
-                SELECT id, run_id, title, level, score, author, created_at_x, source_url, state, summary_zh, reasons_json, rule_set_id
+                SELECT {selected_fields}
                 FROM x_items_curated
                 {where_sql}
-                ORDER BY id DESC
+                ORDER BY {order_sql}
                 LIMIT ? OFFSET ?
                 """,
                 tuple(params + [page_size, offset]),
             ).fetchall()
-        return {"page": page, "page_size": page_size, "total": int(total), "items": [row_to_dict(row) for row in rows]}
+        return {
+            "page": page,
+            "page_size": page_size,
+            "total": int(total),
+            "items": [row_to_dict(row) for row in rows],
+        }
+
+    def delete_item(self, item_id: int) -> dict[str, Any]:
+        normalized_id = int(item_id)
+        with connect(self.db_path) as conn:
+            row = conn.execute("SELECT id FROM x_items_curated WHERE id = ?", (normalized_id,)).fetchone()
+            if row is None:
+                raise ValueError(f"item {normalized_id} not found")
+            conn.execute("DELETE FROM x_items_curated WHERE id = ?", (normalized_id,))
+        return {"id": normalized_id, "deleted": 1}
+
+    def delete_items(self, ids: list[int]) -> dict[str, Any]:
+        normalized_ids = self._normalize_item_ids(ids)
+        if not normalized_ids:
+            return {"ids": [], "deleted": 0}
+        placeholders = ", ".join("?" for _ in normalized_ids)
+        with connect(self.db_path) as conn:
+            existing_rows = conn.execute(
+                f"SELECT id FROM x_items_curated WHERE id IN ({placeholders})",
+                tuple(normalized_ids),
+            ).fetchall()
+            existing_ids = {int(row["id"]) for row in existing_rows}
+            delete_ids = [item_id for item_id in normalized_ids if item_id in existing_ids]
+            if delete_ids:
+                delete_placeholders = ", ".join("?" for _ in delete_ids)
+                conn.execute(
+                    f"DELETE FROM x_items_curated WHERE id IN ({delete_placeholders})",
+                    tuple(delete_ids),
+                )
+        return {"ids": normalized_ids, "deleted": len(delete_ids)}
+
+    def dedupe_items(self) -> dict[str, Any]:
+        with connect(self.db_path) as conn:
+            rows_before = int(conn.execute("SELECT COUNT(1) FROM x_items_curated").fetchone()[0])
+            rows = [
+                row_to_dict(row)
+                for row in conn.execute(
+                    """
+                    SELECT id, dedupe_key, created_at_x
+                    FROM x_items_curated
+                    WHERE TRIM(COALESCE(dedupe_key, '')) <> ''
+                    ORDER BY dedupe_key ASC, id ASC
+                    """
+                ).fetchall()
+            ]
+            grouped: dict[str, list[dict[str, Any]]] = {}
+            for row in rows:
+                grouped.setdefault(str(row.get("dedupe_key") or ""), []).append(row)
+
+            delete_ids: list[int] = []
+            duplicate_groups = 0
+            kept = 0
+            for items in grouped.values():
+                if len(items) < 2:
+                    continue
+                duplicate_groups += 1
+                ranked = sorted(items, key=_dedupe_sort_key)
+                kept += 1
+                delete_ids.extend(int(item["id"]) for item in ranked[1:])
+
+            if delete_ids:
+                placeholders = ", ".join("?" for _ in delete_ids)
+                conn.execute(
+                    f"DELETE FROM x_items_curated WHERE id IN ({placeholders})",
+                    tuple(delete_ids),
+                )
+            rows_after = int(conn.execute("SELECT COUNT(1) FROM x_items_curated").fetchone()[0])
+        return {
+            "groups": duplicate_groups,
+            "deleted": len(delete_ids),
+            "kept": kept,
+            "rows_before": rows_before,
+            "rows_after": rows_after,
+        }
 
     def health(self) -> dict[str, Any]:
         previous = self._load_health_snapshots()

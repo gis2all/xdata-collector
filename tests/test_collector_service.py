@@ -1,9 +1,11 @@
+import json
 import shutil
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from backend.collector_service import DesktopService
+from backend.collector_store import connect
 
 
 class DesktopServiceTests(unittest.TestCase):
@@ -18,6 +20,36 @@ class DesktopServiceTests(unittest.TestCase):
     def tearDown(self) -> None:
         if self.test_dir.exists():
             shutil.rmtree(self.test_dir)
+
+    def _seed_curated_items(self, rows: list[dict[str, object]]) -> list[int]:
+        inserted: list[int] = []
+        with connect(self.db_path) as conn:
+            for index, row in enumerate(rows, start=1):
+                cur = conn.execute(
+                    """
+                    INSERT INTO x_items_curated
+                    (run_id, dedupe_key, level, score, title, summary_zh, excerpt, is_zero_cost, source_url, author, created_at_x, reasons_json, rule_set_id, state)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        int(row.get("run_id", 1) or 1),
+                        str(row.get("dedupe_key", "") or ""),
+                        str(row.get("level", "A") or "A"),
+                        int(row.get("score", 0) or 0),
+                        str(row.get("title", f"item-{index}") or ""),
+                        str(row.get("summary_zh", "") or ""),
+                        str(row.get("excerpt", "") or ""),
+                        1 if bool(row.get("is_zero_cost", True)) else 0,
+                        str(row.get("source_url", f"https://example.com/{index}") or ""),
+                        str(row.get("author", "") or ""),
+                        row.get("created_at_x"),
+                        json.dumps(row.get("reasons_json", []), ensure_ascii=False),
+                        row.get("rule_set_id"),
+                        str(row.get("state", "new") or "new"),
+                    ),
+                )
+                inserted.append(int(cur.lastrowid))
+        return inserted
 
     def test_default_rule_set_exists_and_can_clone(self) -> None:
         rule_sets = self.service.list_rule_sets()["items"]
@@ -330,6 +362,159 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertTrue(by_name["api.current.out.log"]["exists"])
         self.assertGreaterEqual(by_name["api.current.out.log"]["size"], len("api ok\nline2"))
         self.assertTrue(by_name["api.current.out.log"]["updated_at"])
+
+
+    def test_list_items_supports_whitelisted_sorting_and_full_fields(self) -> None:
+        ids = self._seed_curated_items(
+            [
+                {
+                    "run_id": 11,
+                    "dedupe_key": "dedupe-a",
+                    "level": "A",
+                    "score": 20,
+                    "title": "Alpha",
+                    "summary_zh": "summary alpha",
+                    "excerpt": "excerpt alpha",
+                    "is_zero_cost": True,
+                    "source_url": "https://x.com/a/status/1",
+                    "author": "alice",
+                    "created_at_x": "2026-04-12T00:00:00+00:00",
+                    "reasons_json": [{"rule": "alpha"}],
+                    "rule_set_id": 3,
+                    "state": "new",
+                },
+                {
+                    "run_id": 12,
+                    "dedupe_key": "dedupe-b",
+                    "level": "B",
+                    "score": 5,
+                    "title": "Beta",
+                    "summary_zh": "summary beta",
+                    "excerpt": "excerpt beta",
+                    "is_zero_cost": False,
+                    "source_url": "https://x.com/b/status/2",
+                    "author": "bob",
+                    "created_at_x": "2026-04-11T00:00:00+00:00",
+                    "reasons_json": [{"rule": "beta"}],
+                    "rule_set_id": 4,
+                    "state": "archived",
+                },
+                {
+                    "run_id": 13,
+                    "dedupe_key": "dedupe-c",
+                    "level": "S",
+                    "score": 35,
+                    "title": "Gamma",
+                    "summary_zh": "summary gamma",
+                    "excerpt": "excerpt gamma",
+                    "is_zero_cost": True,
+                    "source_url": "https://x.com/c/status/3",
+                    "author": "carol",
+                    "created_at_x": "2026-04-10T00:00:00+00:00",
+                    "reasons_json": [{"rule": "gamma"}],
+                    "rule_set_id": 5,
+                    "state": "new",
+                },
+            ]
+        )
+
+        page = self.service.list_items(page=1, page_size=10, sort_by="score", sort_dir="asc")
+
+        self.assertEqual(page["page"], 1)
+        self.assertEqual(page["page_size"], 10)
+        self.assertEqual(page["total"], 3)
+        self.assertEqual([item["id"] for item in page["items"]], [ids[1], ids[0], ids[2]])
+        first = page["items"][0]
+        self.assertEqual(first["dedupe_key"], "dedupe-b")
+        self.assertEqual(first["summary_zh"], "summary beta")
+        self.assertEqual(first["excerpt"], "excerpt beta")
+        self.assertEqual(first["is_zero_cost"], 0)
+        self.assertEqual(first["rule_set_id"], 4)
+        self.assertEqual(first["reasons_json"], [{"rule": "beta"}])
+
+    def test_list_items_invalid_sort_field_falls_back_to_default_id_desc(self) -> None:
+        ids = self._seed_curated_items(
+            [
+                {"title": "first", "dedupe_key": "one"},
+                {"title": "second", "dedupe_key": "two"},
+            ]
+        )
+
+        page = self.service.list_items(page=1, page_size=10, sort_by="drop table x_items_curated", sort_dir="asc")
+
+        self.assertEqual([item["id"] for item in page["items"]], [ids[1], ids[0]])
+
+    def test_delete_item_hard_deletes_the_target_row(self) -> None:
+        ids = self._seed_curated_items(
+            [
+                {"title": "keep", "dedupe_key": "keep"},
+                {"title": "delete", "dedupe_key": "delete"},
+            ]
+        )
+
+        result = self.service.delete_item(ids[1])
+        page = self.service.list_items(page=1, page_size=10, sort_by="id", sort_dir="asc")
+
+        self.assertEqual(result, {"id": ids[1], "deleted": 1})
+        self.assertEqual(page["total"], 1)
+        self.assertEqual([item["id"] for item in page["items"]], [ids[0]])
+
+    def test_delete_items_hard_deletes_selected_rows(self) -> None:
+        ids = self._seed_curated_items(
+            [
+                {"title": "keep", "dedupe_key": "keep"},
+                {"title": "delete-a", "dedupe_key": "delete-a"},
+                {"title": "delete-b", "dedupe_key": "delete-b"},
+            ]
+        )
+
+        result = self.service.delete_items([ids[1], ids[2]])
+        page = self.service.list_items(page=1, page_size=10, sort_by="id", sort_dir="asc")
+
+        self.assertEqual(result, {"ids": [ids[1], ids[2]], "deleted": 2})
+        self.assertEqual(page["total"], 1)
+        self.assertEqual([item["id"] for item in page["items"]], [ids[0]])
+
+    def test_dedupe_items_keeps_earliest_created_at_then_smallest_id(self) -> None:
+        ids = self._seed_curated_items(
+            [
+                {
+                    "title": "dup-early",
+                    "dedupe_key": "dup-a",
+                    "created_at_x": "2026-04-10T00:00:00+00:00",
+                },
+                {
+                    "title": "dup-late",
+                    "dedupe_key": "dup-a",
+                    "created_at_x": "2026-04-11T00:00:00+00:00",
+                },
+                {
+                    "title": "dup-missing-a",
+                    "dedupe_key": "dup-b",
+                    "created_at_x": None,
+                },
+                {
+                    "title": "dup-missing-b",
+                    "dedupe_key": "dup-b",
+                    "created_at_x": None,
+                },
+                {
+                    "title": "blank-key",
+                    "dedupe_key": "",
+                    "created_at_x": "2026-04-12T00:00:00+00:00",
+                },
+            ]
+        )
+
+        summary = self.service.dedupe_items()
+        page = self.service.list_items(page=1, page_size=10, sort_by="id", sort_dir="asc")
+
+        self.assertEqual(summary["groups"], 2)
+        self.assertEqual(summary["deleted"], 2)
+        self.assertEqual(summary["kept"], 2)
+        self.assertEqual(summary["rows_before"], 5)
+        self.assertEqual(summary["rows_after"], 3)
+        self.assertEqual([item["id"] for item in page["items"]], [ids[0], ids[2], ids[4]])
 
 
 if __name__ == "__main__":

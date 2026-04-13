@@ -44,6 +44,45 @@ class FakeService:
         self.calls.append(("run_job_now", job_id))
         return {"status": "success", "job_id": job_id}
 
+    def list_items(self, **kwargs) -> dict:
+        self.calls.append(("list_items", kwargs))
+        return {
+            "page": kwargs["page"],
+            "page_size": kwargs["page_size"],
+            "total": 1,
+            "items": [
+                {
+                    "id": 9,
+                    "run_id": 4,
+                    "dedupe_key": "dup-9",
+                    "level": "A",
+                    "score": 88,
+                    "title": "alpha",
+                    "summary_zh": "summary",
+                    "excerpt": "excerpt",
+                    "is_zero_cost": 1,
+                    "source_url": "https://x.com/demo/status/9",
+                    "author": "demo",
+                    "created_at_x": "2026-04-13T00:49:06+00:00",
+                    "reasons_json": [],
+                    "rule_set_id": 2,
+                    "state": "new",
+                }
+            ],
+        }
+
+    def delete_item(self, item_id: int) -> dict:
+        self.calls.append(("delete_item", item_id))
+        return {"id": item_id, "deleted": 1}
+
+    def delete_items(self, ids: list[int]) -> dict:
+        self.calls.append(("delete_items", ids))
+        return {"ids": ids, "deleted": len(ids)}
+
+    def dedupe_items(self) -> dict:
+        self.calls.append(("dedupe_items", None))
+        return {"groups": 2, "deleted": 3, "kept": 2, "rows_before": 10, "rows_after": 7}
+
 
 @contextmanager
 def serve(service: FakeService):
@@ -189,6 +228,73 @@ class ApiHandlerTests(unittest.TestCase):
 
         self.assertEqual(status, 404)
         self.assertEqual(json.loads(body.decode("utf-8"))["error"], "not found")
+
+
+    def test_get_items_supports_sorting_query_params(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "GET",
+                "/items?page=2&page_size=15&keyword=airdrop&level=A&sort_by=score&sort_dir=asc",
+            )
+
+        self.assertEqual(status, 200)
+        payload = json.loads(body.decode("utf-8"))
+        self.assertEqual(payload["items"][0]["dedupe_key"], "dup-9")
+        self.assertEqual(
+            service.calls[0],
+            (
+                "list_items",
+                {"page": 2, "page_size": 15, "level": "A", "keyword": "airdrop", "sort_by": "score", "sort_dir": "asc"},
+            ),
+        )
+
+    def test_post_item_delete_dispatches_to_service(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "POST",
+                "/items/123/delete",
+                body=b"{}",
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8")), {"id": 123, "deleted": 1})
+        self.assertEqual(service.calls[0], ("delete_item", 123))
+
+    def test_post_items_delete_dispatches_selected_ids(self) -> None:
+        service = FakeService()
+        payload = {"ids": [3, 4, 5]}
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "POST",
+                "/items/delete",
+                body=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8"))["deleted"], 3)
+        self.assertEqual(service.calls[0], ("delete_items", [3, 4, 5]))
+
+    def test_post_items_dedupe_dispatches_to_service(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "POST",
+                "/items/dedupe",
+                body=b"{}",
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8"))["rows_after"], 7)
+        self.assertEqual(service.calls[0], ("dedupe_items", None))
 
 
 if __name__ == "__main__":
