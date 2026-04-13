@@ -1,4 +1,19 @@
-﻿export type MetricMode = "OR" | "AND";
+export type MetricMode = "OR" | "AND";
+export type LanguageMode = "zh" | "en" | "zh_en";
+export type RangeMode = "any" | "gte" | "lte" | "between";
+
+export type RangeFilter = {
+  mode: RangeMode;
+  min?: number | null;
+  max?: number | null;
+};
+
+export type MetricFilters = {
+  views: RangeFilter;
+  likes: RangeFilter;
+  replies: RangeFilter;
+  retweets: RangeFilter;
+};
 
 export type Thresholds = { views: number; replies: number; retweets: number; likes?: number; mode: MetricMode };
 export type HealthTarget = {
@@ -34,21 +49,25 @@ export type SearchSpec = {
   exclude_keywords: string[];
   authors_include: string[];
   authors_exclude: string[];
-  language: string;
-  days: number;
+  language_mode: LanguageMode;
+  days_filter: RangeFilter;
+  metric_filters: MetricFilters;
+  metric_filters_explicit: boolean;
   max_results: number;
-  metric_mode: MetricMode;
-  min_metrics: {
-    views: number;
-    likes: number;
-    replies: number;
-    retweets: number;
-  };
   include_retweets: boolean;
   include_replies: boolean;
   require_media: boolean;
   require_links: boolean;
   raw_query: string;
+  language?: string;
+  days?: number;
+  metric_mode?: MetricMode;
+  min_metrics?: {
+    views: number;
+    likes: number;
+    replies: number;
+    retweets: number;
+  };
 };
 
 export type RuleLevel = {
@@ -157,6 +176,7 @@ export type CollectorRunResult = {
   status: string;
   search_spec: SearchSpec;
   final_query: string;
+  final_queries: string[];
   rule_set_summary: RuleSetSummary;
   raw_total: number;
   matched_total: number;
@@ -189,7 +209,6 @@ export type JobRecord = {
   last_run_error_text?: string | null;
   last_run_stats?: Record<string, unknown>;
 };
-
 
 export type RunRecord = {
   id: number;

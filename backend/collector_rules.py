@@ -81,6 +81,22 @@ HASHTAG_RE = re.compile(r"(^|\s)#\w+")
 CASHTAG_RE = re.compile(r"(^|\s)\$[A-Za-z][A-Za-z0-9_]{1,9}")
 URL_RE = re.compile(r"https?://", re.IGNORECASE)
 
+LANGUAGE_MODES = {"zh", "en", "zh_en"}
+RANGE_MODES = {"any", "gte", "lte", "between"}
+
+
+def default_range_filter(mode: str = "any", *, minimum: int | None = None, maximum: int | None = None) -> dict[str, Any]:
+    return {"mode": mode, "min": minimum, "max": maximum}
+
+
+def default_metric_filters() -> dict[str, dict[str, Any]]:
+    return {
+        "views": default_range_filter("gte", minimum=200),
+        "likes": default_range_filter(),
+        "replies": default_range_filter("gte", minimum=1),
+        "retweets": default_range_filter(),
+    }
+
 
 def default_search_spec() -> dict[str, Any]:
     return {
@@ -90,6 +106,10 @@ def default_search_spec() -> dict[str, Any]:
         "exclude_keywords": [],
         "authors_include": [],
         "authors_exclude": [],
+        "language_mode": "zh_en",
+        "days_filter": default_range_filter("lte", maximum=20),
+        "metric_filters": default_metric_filters(),
+        "metric_filters_explicit": True,
         "language": "",
         "days": 20,
         "max_results": 40,
@@ -124,6 +144,102 @@ def coerce_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def clamp_non_negative(value: Any, default: int = 0, *, maximum: int | None = None) -> int:
+    normalized = max(0, coerce_int(value, default))
+    if maximum is not None:
+        return min(maximum, normalized)
+    return normalized
+
+
+def normalize_language_mode(value: Any) -> str:
+    cleaned = str(value or "").strip().lower().replace(" ", "")
+    cleaned = cleaned.replace("+", "_").replace(",", "_")
+    if cleaned in {"", "zh_en", "en_zh"}:
+        return "zh_en"
+    if cleaned in LANGUAGE_MODES:
+        return cleaned
+    return "zh_en"
+
+
+def resolve_language_codes(language_mode: str) -> list[str]:
+    if language_mode == "zh":
+        return ["zh"]
+    if language_mode == "en":
+        return ["en"]
+    return ["zh", "en"]
+
+
+def normalize_range_filter(
+    payload: Any,
+    *,
+    fallback: dict[str, Any],
+    maximum: int | None = None,
+    legacy_value: Any | None = None,
+    legacy_mode: str = "gte",
+) -> dict[str, Any]:
+    if isinstance(payload, dict):
+        mode = str(payload.get("mode") or fallback.get("mode") or "any").strip().lower()
+        if mode not in RANGE_MODES:
+            mode = str(fallback.get("mode") or "any")
+        minimum = None
+        maximum_value = None
+        if mode == "gte":
+            minimum = clamp_non_negative(payload.get("min", payload.get("value", fallback.get("min", 0))), fallback.get("min") or 0, maximum=maximum)
+        elif mode == "lte":
+            maximum_value = clamp_non_negative(payload.get("max", payload.get("value", fallback.get("max", 0))), fallback.get("max") or 0, maximum=maximum)
+        elif mode == "between":
+            minimum = clamp_non_negative(payload.get("min", fallback.get("min", 0)), fallback.get("min") or 0, maximum=maximum)
+            maximum_value = clamp_non_negative(payload.get("max", fallback.get("max", minimum)), fallback.get("max") or minimum, maximum=maximum)
+            if minimum > maximum_value:
+                minimum, maximum_value = maximum_value, minimum
+        return default_range_filter(mode, minimum=minimum, maximum=maximum_value)
+
+    if legacy_value is not None:
+        numeric = clamp_non_negative(legacy_value, 0, maximum=maximum)
+        if numeric > 0:
+            if legacy_mode == "lte":
+                return default_range_filter("lte", maximum=numeric)
+            return default_range_filter("gte", minimum=numeric)
+
+    return default_range_filter(
+        str(fallback.get("mode") or "any"),
+        minimum=fallback.get("min"),
+        maximum=fallback.get("max"),
+    )
+
+
+def derive_legacy_days_value(days_filter: dict[str, Any]) -> int:
+    mode = str(days_filter.get("mode") or "any").lower()
+    if mode == "gte":
+        return int(days_filter.get("min") or 0)
+    if mode in {"lte", "between"}:
+        return int(days_filter.get("max") or 0)
+    return 20
+
+
+def derive_legacy_min_metrics(metric_filters: dict[str, dict[str, Any]]) -> dict[str, int]:
+    minimums: dict[str, int] = {}
+    for key in ("views", "likes", "replies", "retweets"):
+        current = metric_filters.get(key, {})
+        mode = str(current.get("mode") or "any").lower()
+        minimums[key] = int(current.get("min") or 0) if mode in {"gte", "between"} else 0
+    return minimums
+
+
+def normalize_metric_filters(
+    metric_filters: Any,
+    *,
+    fallback: dict[str, dict[str, Any]],
+    legacy_min_metrics: dict[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
+    normalized: dict[str, dict[str, Any]] = {}
+    for key in ("views", "likes", "replies", "retweets"):
+        payload = metric_filters.get(key) if isinstance(metric_filters, dict) else None
+        legacy_value = legacy_min_metrics.get(key) if isinstance(legacy_min_metrics, dict) else None
+        normalized[key] = normalize_range_filter(payload, fallback=fallback[key], legacy_value=legacy_value, legacy_mode="gte")
+    return normalized
+
+
 
 def normalize_search_spec(payload: dict[str, Any] | None) -> dict[str, Any]:
     base = default_search_spec()
@@ -134,20 +250,35 @@ def normalize_search_spec(payload: dict[str, Any] | None) -> dict[str, Any]:
     base["exclude_keywords"] = normalize_list(incoming.get("exclude_keywords"))
     base["authors_include"] = [item.lstrip("@") for item in normalize_list(incoming.get("authors_include"))]
     base["authors_exclude"] = [item.lstrip("@") for item in normalize_list(incoming.get("authors_exclude"))]
-    base["language"] = str(incoming.get("language") or "").strip().lower()
-    base["days"] = max(1, coerce_int(incoming.get("days", base["days"]), base["days"]))
+    base["language_mode"] = normalize_language_mode(incoming.get("language_mode") or incoming.get("language"))
+    base["days_filter"] = normalize_range_filter(
+        incoming.get("days_filter"),
+        fallback=base["days_filter"],
+        maximum=100,
+        legacy_value=incoming.get("days"),
+        legacy_mode="lte",
+    )
     base["max_results"] = max(1, min(100, coerce_int(incoming.get("max_results", base["max_results"]), base["max_results"])))
     metric_mode = str(incoming.get("metric_mode") or incoming.get("thresholds", {}).get("mode") or base["metric_mode"]).upper()
     base["metric_mode"] = "AND" if metric_mode == "AND" else "OR"
     min_metrics = incoming.get("min_metrics") if isinstance(incoming.get("min_metrics"), dict) else {}
     thresholds = incoming.get("thresholds") if isinstance(incoming.get("thresholds"), dict) else {}
-    merged_metrics = {
+    legacy_min_metrics = {
         "views": coerce_int(min_metrics.get("views", thresholds.get("views", base["min_metrics"]["views"])), base["min_metrics"]["views"]),
         "likes": coerce_int(min_metrics.get("likes", thresholds.get("likes", base["min_metrics"]["likes"])), base["min_metrics"]["likes"]),
         "replies": coerce_int(min_metrics.get("replies", thresholds.get("replies", base["min_metrics"]["replies"])), base["min_metrics"]["replies"]),
         "retweets": coerce_int(min_metrics.get("retweets", thresholds.get("retweets", base["min_metrics"]["retweets"])), base["min_metrics"]["retweets"]),
     }
-    base["min_metrics"] = merged_metrics
+    explicit_metric_filters = bool(incoming.get("metric_filters_explicit")) or isinstance(incoming.get("metric_filters"), dict)
+    base["metric_filters_explicit"] = explicit_metric_filters
+    base["metric_filters"] = normalize_metric_filters(
+        incoming.get("metric_filters"),
+        fallback=base["metric_filters"],
+        legacy_min_metrics=legacy_min_metrics,
+    )
+    base["min_metrics"] = derive_legacy_min_metrics(base["metric_filters"])
+    base["language"] = "" if base["language_mode"] == "zh_en" else base["language_mode"]
+    base["days"] = derive_legacy_days_value(base["days_filter"])
     base["include_retweets"] = bool(incoming.get("include_retweets", base["include_retweets"]))
     base["include_replies"] = bool(incoming.get("include_replies", base["include_replies"]))
     base["require_media"] = bool(incoming.get("require_media", False))
@@ -228,7 +359,7 @@ def normalize_condition(condition: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def build_query_from_search_spec(spec: dict[str, Any]) -> str:
+def build_query_from_search_spec(spec: dict[str, Any], language_override: str | None = None) -> str:
     parts: list[str] = []
     parts.extend(spec.get("all_keywords", []))
     parts.extend([f'"{phrase}"' for phrase in spec.get("exact_phrases", [])])
@@ -240,8 +371,9 @@ def build_query_from_search_spec(spec: dict[str, Any]) -> str:
     if include_authors:
         parts.append("(" + " OR ".join([f"from:{author}" for author in include_authors]) + ")")
     parts.extend([f"-from:{author}" for author in spec.get("authors_exclude", [])])
-    if spec.get("language"):
-        parts.append(f"lang:{spec['language']}")
+    language_code = language_override or spec.get("language")
+    if language_code:
+        parts.append(f"lang:{language_code}")
     if not spec.get("include_retweets", True):
         parts.append("-is:retweet")
     if not spec.get("include_replies", True):
@@ -253,6 +385,12 @@ def build_query_from_search_spec(spec: dict[str, Any]) -> str:
     if spec.get("raw_query"):
         parts.append(spec["raw_query"])
     return " ".join(segment for segment in parts if segment).strip()
+
+
+def build_query_plan_from_search_spec(spec: dict[str, Any]) -> list[str]:
+    codes = resolve_language_codes(str(spec.get("language_mode") or "zh_en"))
+    queries = [build_query_from_search_spec(spec, language_override=code) for code in codes]
+    return [query for query in queries if query]
 
 
 def extract_metrics(item: SearchResult) -> dict[str, int]:
@@ -310,17 +448,77 @@ def parse_created_at(value: str) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def passes_metric_gate(item: SearchResult, spec: dict[str, Any]) -> bool:
-    metrics = extract_metrics(item)
+def _passes_range_filter(value: int, current: dict[str, Any]) -> bool:
+    mode = str(current.get("mode") or "any").lower()
+    if mode == "any":
+        return True
+    if mode == "gte":
+        return value >= int(current.get("min") or 0)
+    if mode == "lte":
+        return value <= int(current.get("max") or 0)
+    if mode == "between":
+        minimum = int(current.get("min") or 0)
+        maximum = int(current.get("max") or minimum)
+        if minimum > maximum:
+            minimum, maximum = maximum, minimum
+        return minimum <= value <= maximum
+    return True
+
+
+def passes_metric_gate(item: SearchResult, spec: dict[str, Any], features: dict[str, Any] | None = None) -> bool:
+    metrics = (features or infer_features(item)).get("metrics", {})
+    if spec.get("metric_filters_explicit"):
+        filters = spec.get("metric_filters", {}) if isinstance(spec.get("metric_filters"), dict) else {}
+        checks = [_passes_range_filter(int(metrics.get(key, 0) or 0), filters.get(key, {})) for key in ("views", "likes", "replies", "retweets")]
+        return all(checks) if checks else True
+
     thresholds = spec.get("min_metrics", {}) if isinstance(spec.get("min_metrics"), dict) else {}
     checks: list[bool] = []
     for key in ("views", "likes", "replies", "retweets"):
         threshold = int(thresholds.get(key, 0) or 0)
         if threshold > 0:
-            checks.append(metrics.get(key, 0) >= threshold)
+            checks.append(int(metrics.get(key, 0) or 0) >= threshold)
     if not checks:
         return True
     return all(checks) if str(spec.get("metric_mode") or "OR").upper() == "AND" else any(checks)
+
+
+def passes_days_filter(item: SearchResult, spec: dict[str, Any], now_utc: datetime, features: dict[str, Any] | None = None) -> bool:
+    days_filter = spec.get("days_filter", {}) if isinstance(spec.get("days_filter"), dict) else {}
+    mode = str(days_filter.get("mode") or "any").lower()
+    if mode == "any":
+        return True
+    created_at = (features or infer_features(item)).get("created_at")
+    if not created_at:
+        return False
+    age_days = max(0, int((now_utc - created_at).total_seconds() // 86400))
+    return _passes_range_filter(age_days, days_filter)
+
+
+def passes_language_gate(item: SearchResult, spec: dict[str, Any], features: dict[str, Any] | None = None) -> bool:
+    language = str((features or infer_features(item)).get("language") or "").lower()
+    if not language:
+        return True
+    return language in set(resolve_language_codes(str(spec.get("language_mode") or "zh_en")))
+
+
+def passes_search_filters(item: SearchResult, spec: dict[str, Any], now_utc: datetime) -> bool:
+    features = infer_features(item)
+    if not passes_language_gate(item, spec, features):
+        return False
+    if not passes_days_filter(item, spec, now_utc, features):
+        return False
+    if not passes_metric_gate(item, spec, features):
+        return False
+    if not spec.get("include_retweets", True) and features["is_retweet"]:
+        return False
+    if not spec.get("include_replies", True) and features["is_reply"]:
+        return False
+    if spec.get("require_media") and not features["has_media"]:
+        return False
+    if spec.get("require_links") and not features["has_link"]:
+        return False
+    return True
 
 
 def serialize_search_result(item: SearchResult) -> dict[str, Any]:

@@ -1,4 +1,4 @@
-﻿import shutil
+import shutil
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -27,9 +27,9 @@ class DesktopServiceTests(unittest.TestCase):
 
         cloned = self.service.clone_rule_set(int(builtin["id"]))
         self.assertFalse(cloned["is_builtin"])
-        self.assertIn("副本", cloned["name"])
+        self.assertIn("\u526f\u672c", cloned["name"])
 
-    def test_create_and_toggle_job_with_search_spec(self) -> None:
+    def test_create_and_toggle_job_with_new_search_spec(self) -> None:
         default_rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
         job = self.service.create_job(
             {
@@ -38,16 +38,25 @@ class DesktopServiceTests(unittest.TestCase):
                 "enabled": True,
                 "rule_set_id": default_rule_set_id,
                 "search_spec": {
-                    "all_keywords": ["挖矿", "积分"],
-                    "days": 20,
-                    "min_metrics": {"views": 100, "likes": 0, "replies": 10, "retweets": 5},
-                    "metric_mode": "OR",
+                    "all_keywords": ["\u6316\u77ff", "\u79ef\u5206"],
+                    "language_mode": "zh_en",
+                    "days_filter": {"mode": "between", "min": 1, "max": 10},
+                    "metric_filters": {
+                        "views": {"mode": "gte", "min": 100},
+                        "likes": {"mode": "any"},
+                        "replies": {"mode": "gte", "min": 10},
+                        "retweets": {"mode": "lte", "max": 5},
+                    },
+                    "metric_filters_explicit": True,
                 },
             }
         )
         self.assertEqual(job["name"], "mining-watch")
         self.assertEqual(job["rule_set_id"], default_rule_set_id)
-        self.assertEqual(job["search_spec_json"]["all_keywords"], ["挖矿", "积分"])
+        self.assertEqual(job["search_spec_json"]["all_keywords"], ["\u6316\u77ff", "\u79ef\u5206"])
+        self.assertEqual(job["search_spec_json"]["language_mode"], "zh_en")
+        self.assertEqual(job["search_spec_json"]["days_filter"], {"mode": "between", "min": 1, "max": 10})
+        self.assertTrue(job["search_spec_json"]["metric_filters_explicit"])
         toggled = self.service.toggle_job(int(job["id"]), False)
         self.assertEqual(toggled["enabled"], 0)
 
@@ -61,9 +70,8 @@ class DesktopServiceTests(unittest.TestCase):
                 "rule_set_id": default_rule_set_id,
                 "search_spec": {
                     "all_keywords": ["quest"],
-                    "days": 20,
-                    "min_metrics": {"views": 10, "likes": 0, "replies": 1, "retweets": 0},
-                    "metric_mode": "OR",
+                    "language_mode": "en",
+                    "days_filter": {"mode": "lte", "max": 20},
                 },
             }
         )
@@ -85,9 +93,15 @@ class DesktopServiceTests(unittest.TestCase):
                 "rule_set_id": default_rule_set_id,
                 "search_spec": {
                     "all_keywords": ["quest", "airdrop"],
-                    "days": 15,
-                    "min_metrics": {"views": 20, "likes": 0, "replies": 2, "retweets": 1},
-                    "metric_mode": "AND",
+                    "language_mode": "zh",
+                    "days_filter": {"mode": "gte", "min": 3},
+                    "metric_filters": {
+                        "views": {"mode": "between", "min": 20, "max": 200},
+                        "likes": {"mode": "any"},
+                        "replies": {"mode": "gte", "min": 2},
+                        "retweets": {"mode": "gte", "min": 1},
+                    },
+                    "metric_filters_explicit": True,
                 },
                 "enabled": False,
             },
@@ -96,6 +110,8 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(updated["enabled"], 0)
         self.assertIsNone(updated["next_run_at"])
         self.assertEqual(updated["search_spec_json"]["all_keywords"], ["quest", "airdrop"])
+        self.assertEqual(updated["search_spec_json"]["language_mode"], "zh")
+        self.assertEqual(updated["search_spec_json"]["days_filter"], {"mode": "gte", "min": 3, "max": None})
 
         deleted = self.service.delete_job(job_id)
         self.assertIsNotNone(deleted["deleted_at"])
@@ -130,15 +146,22 @@ class DesktopServiceTests(unittest.TestCase):
                 "interval_minutes": 60,
                 "enabled": True,
                 "rule_set_id": default_rule_set_id,
-                "search_spec": {"all_keywords": ["btc"], "days": 20},
+                "search_spec": {"all_keywords": ["btc"], "language_mode": "zh_en"},
             }
         )
         self.service.run_manual(
             {
                 "search_spec": {
                     "all_keywords": ["testnet", "faucet"],
-                    "days": 20,
-                    "min_metrics": {"views": 0, "likes": 0, "replies": 0, "retweets": 0},
+                    "language_mode": "zh_en",
+                    "days_filter": {"mode": "lte", "max": 20},
+                    "metric_filters": {
+                        "views": {"mode": "any"},
+                        "likes": {"mode": "any"},
+                        "replies": {"mode": "any"},
+                        "retweets": {"mode": "any"},
+                    },
+                    "metric_filters_explicit": True,
                 },
                 "rule_set_id": default_rule_set_id,
             }
@@ -182,45 +205,85 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertIn("last_checked_at", second["x"])
 
     @patch("backend.collector_service.run_twitter_search")
-    def test_manual_run_returns_raw_and_matched_results(self, mock_search) -> None:
-        mock_search.return_value = [
-            {
-                "id": "1001",
-                "text": "Claim faucet on testnet now https://example.com",
-                "author": {"screenName": "galxe"},
-                "createdAtISO": "2026-04-12T00:00:00+00:00",
-                "metrics": {"views": 200, "likes": 10, "replies": 2, "retweets": 0},
-                "url": "https://x.com/galxe/status/1001",
-            },
-            {
-                "id": "1002",
-                "text": "Just chatting about markets",
-                "author": {"screenName": "tester2"},
-                "createdAtISO": "2026-04-12T00:00:00+00:00",
-                "metrics": {"views": 10, "likes": 0, "replies": 0, "retweets": 0},
-                "url": "https://x.com/tester2/status/1002",
-            },
-        ]
+    def test_manual_run_uses_multi_language_queries_dedupes_and_filters_results(self, mock_search) -> None:
+        def fake_search(query: str, _max_results: int):
+            if "lang:zh" in query:
+                return [
+                    {
+                        "id": "1001",
+                        "text": "Claim faucet on testnet now https://example.com",
+                        "author": {"screenName": "galxe"},
+                        "createdAtISO": "2026-04-12T00:00:00+00:00",
+                        "metrics": {"views": 200, "likes": 10, "replies": 2, "retweets": 0},
+                        "lang": "zh",
+                        "url": "https://x.com/galxe/status/1001",
+                    }
+                ]
+            return [
+                {
+                    "id": "1001",
+                    "text": "Claim faucet on testnet now https://example.com",
+                    "author": {"screenName": "galxe"},
+                    "createdAtISO": "2026-04-12T00:00:00+00:00",
+                    "metrics": {"views": 200, "likes": 10, "replies": 2, "retweets": 0},
+                    "lang": "en",
+                    "url": "https://x.com/galxe/status/1001",
+                },
+                {
+                    "id": "1002",
+                    "text": "Old post about faucet https://example.com/old",
+                    "author": {"screenName": "tester2"},
+                    "createdAtISO": "2026-04-01T00:00:00+00:00",
+                    "metrics": {"views": 300, "likes": 8, "replies": 1, "retweets": 0},
+                    "lang": "en",
+                    "url": "https://x.com/tester2/status/1002",
+                },
+                {
+                    "id": "1003",
+                    "text": "Recent but low views https://example.com/low",
+                    "author": {"screenName": "tester3"},
+                    "createdAtISO": "2026-04-12T00:00:00+00:00",
+                    "metrics": {"views": 20, "likes": 1, "replies": 0, "retweets": 0},
+                    "lang": "en",
+                    "url": "https://x.com/tester3/status/1003",
+                },
+            ]
+
+        mock_search.side_effect = fake_search
         rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
         report = self.service.run_manual(
             {
                 "search_spec": {
                     "all_keywords": ["testnet", "faucet"],
-                    "days": 20,
-                    "min_metrics": {"views": 0, "likes": 0, "replies": 0, "retweets": 0},
-                    "metric_mode": "OR",
+                    "language_mode": "zh_en",
+                    "days_filter": {"mode": "lte", "max": 1},
+                    "metric_filters": {
+                        "views": {"mode": "gte", "min": 100},
+                        "likes": {"mode": "any"},
+                        "replies": {"mode": "any"},
+                        "retweets": {"mode": "any"},
+                    },
+                    "metric_filters_explicit": True,
                 },
                 "rule_set_id": rule_set_id,
             }
         )
         self.assertEqual(report["status"], "success")
-        self.assertEqual(report["raw_total"], 2)
-        self.assertEqual(len(report["raw_items"]), 2)
+        self.assertEqual(len(report["final_queries"]), 2)
+        self.assertIn("lang:zh", report["final_queries"][0])
+        self.assertIn("lang:en", report["final_queries"][1])
+        self.assertEqual(report["raw_total"], 1)
+        self.assertEqual(len(report["raw_items"]), 1)
         self.assertEqual(report["matched_total"], 1)
         self.assertEqual(report["matched_items"][0]["author"], "galxe")
         self.assertGreater(report["matched_items"][0]["score"], 0)
         self.assertTrue(report["matched_items"][0]["reasons"])
         self.assertEqual(report["rule_set_summary"]["id"], rule_set_id)
+        self.assertEqual(report["stats"]["queries"], 2)
+        self.assertEqual(report["stats"]["fetched_raw"], 4)
+        self.assertEqual(report["stats"]["raw_deduped"], 3)
+        self.assertEqual(report["stats"]["search_filter_passed"], 1)
+        self.assertEqual(mock_search.call_count, 2)
 
     def test_list_runs_returns_recent_records_with_pagination(self) -> None:
         first = self.service._create_run(job_id=None, trigger_type="manual")
@@ -271,6 +334,3 @@ class DesktopServiceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-

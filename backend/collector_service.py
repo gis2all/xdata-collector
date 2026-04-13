@@ -9,12 +9,13 @@ from typing import Any
 
 from backend.collector_rules import (
     build_query_from_search_spec,
+    build_query_plan_from_search_spec,
     default_rule_set_definition,
     default_search_spec,
     evaluate_rule_set,
     normalize_rule_set_definition,
     normalize_search_spec,
-    passes_metric_gate,
+    passes_search_filters,
     serialize_search_result,
 )
 from backend.config import load_env_file
@@ -71,6 +72,25 @@ def _threshold_pass(item: SearchResult, thresholds: dict[str, Any]) -> bool:
 
 def _search_result_to_raw(item: SearchResult) -> dict[str, Any]:
     return asdict(item)
+
+
+def _dedupe_search_results(items: list[SearchResult]) -> list[SearchResult]:
+    deduped: list[SearchResult] = []
+    seen: set[str] = set()
+    for item in items:
+        key = build_source_dedupe_key(
+            tweet_id=item.tweet_id,
+            url=item.url,
+            text=item.text,
+            author=item.author,
+        ) or canonicalize_source_url(item.url)
+        if not key:
+            key = f"{item.author}|{item.created_at}|{item.text[:120]}"
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
 
 
 class DesktopService:
@@ -732,10 +752,14 @@ class DesktopService:
                     "max_results": payload.get("max_results", 40),
                 }
             )
-        keywords = search_spec.get("all_keywords", [])
+        final_queries = build_query_plan_from_search_spec(search_spec)
         final_query = build_query_from_search_spec(search_spec)
-        if not keywords and not final_query:
+        if len(final_queries) > 1:
+            final_query = " || ".join(final_queries)
+        if not search_spec.get("all_keywords") and not search_spec.get("raw_query") and not final_queries:
             raise ValueError("search_spec is empty")
+        if not final_queries and final_query:
+            final_queries = [final_query]
         rule_set = self._resolve_rule_set(
             rule_set_id=int(payload.get("rule_set_id") or 0) or None,
             inline_rule_set=payload.get("rule_set"),
@@ -744,32 +768,33 @@ class DesktopService:
 
         run_id = self._create_run(job_id=job_id, trigger_type=trigger_type)
         try:
-            raw_results: list[SearchResult] = []
-            keyword_errors: list[str] = []
-            queries = [final_query] if final_query else keywords
-            for keyword in queries:
+            fetched_results: list[SearchResult] = []
+            query_errors: list[str] = []
+            for index, query in enumerate(final_queries, start=1):
                 try:
-                    raw_payload = run_twitter_search(final_query if final_query else keyword, int(search_spec.get("max_results", 40)))
-                    normalized = normalize_search_payload(f"manual:{keyword}", raw_payload, final_query if final_query else keyword)
-                    raw_results.extend(normalized)
+                    raw_payload = run_twitter_search(query, int(search_spec.get("max_results", 40)))
+                    normalized = normalize_search_payload(f"{trigger_type}:{index}", raw_payload, query)
+                    fetched_results.extend(normalized)
                 except Exception as exc:  # noqa: BLE001
-                    keyword_errors.append(f"{keyword}: {exc}")
+                    query_errors.append(f"{query}: {exc}")
 
-            if not raw_results and keyword_errors:
-                raise RuntimeError("; ".join(keyword_errors[:3]))
+            if not fetched_results and query_errors:
+                raise RuntimeError("; ".join(query_errors[:3]))
 
-            self._store_raw(run_id, raw_results)
+            deduped_results = _dedupe_search_results(fetched_results)
+            self._store_raw(run_id, deduped_results)
 
-            threshold_filtered = [item for item in raw_results if passes_metric_gate(item, search_spec)]
+            now_utc = datetime.now(timezone.utc)
+            filtered_results = [item for item in deduped_results if passes_search_filters(item, search_spec, now_utc)]
             matched_items, match_stats = evaluate_rule_set(
-                items=threshold_filtered,
+                items=filtered_results,
                 rule_definition=rule_set["definition_json"],
-                now_utc=datetime.now(timezone.utc),
+                now_utc=now_utc,
                 fallback_days=days,
             )
             self._store_curated(run_id, matched_items, int(rule_set.get("id") or 0) or None)
 
-            raw_items = [serialize_search_result(item) for item in raw_results[:100]]
+            raw_items = [serialize_search_result(item) for item in filtered_results[:100]]
             rule_set_summary = {
                 "id": int(rule_set.get("id") or 0) if rule_set.get("id") else None,
                 "name": rule_set.get("name", ""),
@@ -783,19 +808,22 @@ class DesktopService:
                 "status": "success",
                 "search_spec": search_spec,
                 "final_query": final_query,
+                "final_queries": final_queries,
                 "rule_set_summary": rule_set_summary,
-                "raw_total": len(raw_results),
+                "raw_total": len(filtered_results),
                 "matched_total": len(matched_items),
                 "raw_items": raw_items,
                 "matched_items": matched_items[:100],
                 "stats": {
-                    "keywords": len(queries),
-                    "raw": len(raw_results),
-                    "threshold_passed": len(threshold_filtered),
-                    "keyword_errors": len(keyword_errors),
+                    "queries": len(final_queries),
+                    "fetched_raw": len(fetched_results),
+                    "raw_deduped": len(deduped_results),
+                    "raw": len(filtered_results),
+                    "search_filter_passed": len(filtered_results),
+                    "query_errors": len(query_errors),
                     **match_stats,
                 },
-                "errors": keyword_errors[:10],
+                "errors": query_errors[:10],
             }
             self._finish_run(run_id, "success", report["stats"], "")
             return report

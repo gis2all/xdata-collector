@@ -249,19 +249,24 @@ export function ManualSearchPage() {
         <>
           <div className="card collector-summary-grid">
             <div className="dashboard-detail-item">
-              <span>最终查询</span>
-              <strong>{result.final_query || "--"}</strong>
+              <span>{"\u5b9e\u9645\u67e5\u8be2"}</span>
+              <div>
+                {(result.final_queries?.length ? result.final_queries : [result.final_query]).filter(Boolean).map((query) => (
+                  <div key={query} className="collector-text-snippet">{query}</div>
+                ))}
+                {!result.final_queries?.length && !result.final_query && <strong>--</strong>}
+              </div>
             </div>
             <div className="dashboard-detail-item">
-              <span>规则集</span>
-              <strong>{result.rule_set_summary?.name || "临时规则"}</strong>
+              <span>{"\u89c4\u5219\u96c6"}</span>
+              <strong>{result.rule_set_summary?.name || "\u4e34\u65f6\u89c4\u5219"}</strong>
             </div>
             <div className="dashboard-detail-item">
-              <span>原始结果数</span>
+              <span>{"\u7b5b\u9009\u540e\u539f\u59cb\u7ed3\u679c\u6570"}</span>
               <strong>{result.raw_total}</strong>
             </div>
             <div className="dashboard-detail-item">
-              <span>命中结果数</span>
+              <span>{"\u547d\u4e2d\u7ed3\u679c\u6570"}</span>
               <strong>{result.matched_total}</strong>
             </div>
           </div>
