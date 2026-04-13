@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import {
   dedupeItems,
@@ -12,6 +12,7 @@ import {
 import { formatUtcPlus8Time } from "../time";
 
 const RESULTS_VISIBLE_COLUMNS_KEY = "results.visibleColumns.v1";
+const PAGE_SIZE = 100;
 
 const TEXT = {
   title: "结果查询",
@@ -25,13 +26,20 @@ const TEXT = {
   dedupe: "全表去重",
   loading: "加载中...",
   empty: "暂无结果记录",
-  selectAll: "当前页全选",
+  selectPage: "本页全选",
   operation: "操作",
   delete: "删除",
   chooseFirst: "请先勾选要删除的记录",
   batchDeleteConfirm: "确定硬删除已勾选的记录吗？此操作无法恢复。",
+  batchDeleteAllMatchingConfirm: "确定硬删除当前筛选结果的全部记录吗？此操作无法恢复。",
   dedupeConfirm: "确定对整个 x_items_curated 表执行去重吗？此操作会删除重复行。",
   fullTableHint: "“全表去重”作用于整张 x_items_curated 表",
+  selectAllMatchingPrefix: "已选中本页",
+  selectAllMatching: "选择全部匹配结果",
+  allMatchingSelected: "已选中全部匹配结果",
+  clearSelection: "清空选择",
+  prevPage: "上一页",
+  nextPage: "下一页",
 } as const;
 
 type ColumnDefinition = {
@@ -219,7 +227,7 @@ function renderSortButtons(
         aria-label={`${field} asc`}
         onClick={() => onSort(field, "asc")}
       >
-        {"\u2191"}
+        {"↑"}
       </button>
       <button
         type="button"
@@ -227,7 +235,7 @@ function renderSortButtons(
         aria-label={`${field} desc`}
         onClick={() => onSort(field, "desc")}
       >
-        {"\u2193"}
+        {"↓"}
       </button>
     </span>
   );
@@ -235,9 +243,12 @@ function renderSortButtons(
 
 export function ResultsPage() {
   const [items, setItems] = useState<ResultItemRecord[]>([]);
-  const [keyword, setKeyword] = useState("");
+  const [keywordInput, setKeywordInput] = useState("");
+  const [appliedKeyword, setAppliedKeyword] = useState("");
+  const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [allMatchingSelected, setAllMatchingSelected] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<ItemSortField[]>(() => readVisibleColumns());
   const [fieldMenuOpen, setFieldMenuOpen] = useState(false);
   const [sortBy, setSortBy] = useState<ItemSortField>("id");
@@ -247,18 +258,32 @@ export function ResultsPage() {
   const [message, setMessage] = useState("");
 
   const visibleColumnDefinitions = COLUMN_DEFINITIONS.filter((column) => visibleColumns.includes(column.key));
-  const selectedOnPage = items.filter((item) => selectedIds.includes(item.id)).length;
-  const allSelected = items.length > 0 && selectedOnPage === items.length;
+  const pageSize = PAGE_SIZE;
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
+  const selectedOnPage = allMatchingSelected ? items.length : items.filter((item) => selectedIds.includes(item.id)).length;
+  const selectedCount = allMatchingSelected ? total : selectedIds.length;
+  const allSelectedOnPage = items.length > 0 && selectedOnPage === items.length;
+  const showSelectAllMatching = !allMatchingSelected && allSelectedOnPage && total > items.length;
   const tableMinWidth = Math.max(960, visibleColumnDefinitions.length * 180 + 220);
 
   useEffect(() => {
     writeVisibleColumns(visibleColumns);
   }, [visibleColumns]);
 
-  async function load(options?: { keyword?: string; sortBy?: ItemSortField; sortDir?: SortDirection; preserveMessage?: boolean }) {
-    const nextKeyword = options?.keyword ?? keyword;
+  async function load(options?: {
+    page?: number;
+    keyword?: string;
+    sortBy?: ItemSortField;
+    sortDir?: SortDirection;
+    preserveMessage?: boolean;
+    allowPageFallback?: boolean;
+    clearSelection?: boolean;
+  }) {
+    const nextPage = options?.page ?? page;
+    const nextKeyword = options?.keyword ?? appliedKeyword;
     const nextSortBy = options?.sortBy ?? sortBy;
     const nextSortDir = options?.sortDir ?? sortDir;
+    const shouldClearSelection = Boolean(options?.clearSelection);
     setLoading(true);
     setError("");
     if (!options?.preserveMessage) {
@@ -266,20 +291,50 @@ export function ResultsPage() {
     }
     try {
       const data = await listItems({
-        page: 1,
-        page_size: 100,
+        page: nextPage,
+        page_size: pageSize,
         keyword: nextKeyword || undefined,
         sort_by: nextSortBy,
         sort_dir: nextSortDir,
       });
-      const nextItems = data.items || [];
+      let nextItems = data.items || [];
+      let totalItems = data.total || 0;
+      let currentPage = data.page || nextPage;
+
+      if (options?.allowPageFallback && currentPage > 1 && nextItems.length === 0 && totalItems > 0) {
+        const fallbackPage = Math.min(currentPage - 1, Math.max(1, Math.ceil(totalItems / pageSize)));
+        if (fallbackPage !== currentPage) {
+          const fallback = await listItems({
+            page: fallbackPage,
+            page_size: pageSize,
+            keyword: nextKeyword || undefined,
+            sort_by: nextSortBy,
+            sort_dir: nextSortDir,
+          });
+          nextItems = fallback.items || [];
+          totalItems = fallback.total || 0;
+          currentPage = fallback.page || fallbackPage;
+        }
+      }
+
       setItems(nextItems);
-      setTotal(data.total || 0);
-      setSelectedIds((current) => current.filter((id) => nextItems.some((item) => item.id === id)));
+      setTotal(totalItems);
+      setPage(currentPage);
+      setSelectedIds((current) => {
+        if (shouldClearSelection) {
+          return [];
+        }
+        return current.filter((id) => nextItems.some((item) => item.id === id));
+      });
+      if (shouldClearSelection) {
+        setAllMatchingSelected(false);
+      }
     } catch (err) {
       setItems([]);
       setTotal(0);
+      setPage(1);
       setSelectedIds([]);
+      setAllMatchingSelected(false);
       setError(err instanceof Error ? err.message : "request failed");
     } finally {
       setLoading(false);
@@ -287,7 +342,7 @@ export function ResultsPage() {
   }
 
   useEffect(() => {
-    void load();
+    void load({ page: 1, keyword: appliedKeyword, sortBy, sortDir });
     // initial page load only; refresh and sorting are explicit actions
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -295,11 +350,18 @@ export function ResultsPage() {
   async function handleSort(field: ItemSortField, direction: SortDirection) {
     setSortBy(field);
     setSortDir(direction);
-    await load({ sortBy: field, sortDir: direction });
+    await load({ page, sortBy: field, sortDir: direction });
   }
 
   async function handleRefresh() {
-    await load();
+    const nextKeyword = keywordInput.trim();
+    const keywordChanged = nextKeyword !== appliedKeyword;
+    setAppliedKeyword(nextKeyword);
+    await load({
+      page: keywordChanged ? 1 : page,
+      keyword: nextKeyword,
+      clearSelection: keywordChanged,
+    });
   }
 
   async function handleDeleteOne(item: ResultItemRecord) {
@@ -311,27 +373,31 @@ export function ResultsPage() {
       const result = await deleteItem(item.id);
       setMessage(`已删除记录 #${result.id}`);
       setSelectedIds((current) => current.filter((id) => id !== item.id));
-      await load({ preserveMessage: true });
+      if (allMatchingSelected) {
+        setAllMatchingSelected(false);
+      }
+      await load({ preserveMessage: true, allowPageFallback: true, clearSelection: allMatchingSelected });
     } catch (err) {
       setError(err instanceof Error ? err.message : "request failed");
     }
   }
 
   async function handleBatchDelete() {
-    if (!selectedIds.length) {
+    if (!selectedCount) {
       setError(TEXT.chooseFirst);
       return;
     }
-    if (!window.confirm(TEXT.batchDeleteConfirm)) {
+    const confirmed = window.confirm(allMatchingSelected ? TEXT.batchDeleteAllMatchingConfirm : TEXT.batchDeleteConfirm);
+    if (!confirmed) {
       return;
     }
     setError("");
     try {
-      const ids = [...selectedIds];
-      const result = await deleteItems(ids);
+      const result = allMatchingSelected
+        ? await deleteItems({ mode: "all_matching", keyword: appliedKeyword || undefined })
+        : await deleteItems([...selectedIds]);
       setMessage(`已删除 ${result.deleted} 条记录`);
-      setSelectedIds([]);
-      await load({ preserveMessage: true });
+      await load({ preserveMessage: true, allowPageFallback: true, clearSelection: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "request failed");
     }
@@ -345,21 +411,37 @@ export function ResultsPage() {
     try {
       const summary = await dedupeItems();
       setMessage(`去重完成：${summary.groups} 组重复，删除 ${summary.deleted} 条，保留 ${summary.kept} 条`);
-      setSelectedIds([]);
-      await load({ preserveMessage: true });
+      await load({ preserveMessage: true, allowPageFallback: true, clearSelection: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "request failed");
     }
   }
 
+  function handleSelectAllMatching() {
+    setAllMatchingSelected(true);
+  }
+
+  function handleClearSelection() {
+    setAllMatchingSelected(false);
+    setSelectedIds([]);
+  }
+
   function toggleSelected(id: number) {
+    if (allMatchingSelected) {
+      handleClearSelection();
+      return;
+    }
     setSelectedIds((current) =>
       current.includes(id) ? current.filter((itemId) => itemId !== id) : [...current, id],
     );
   }
 
   function toggleSelectAll() {
-    if (allSelected) {
+    if (allMatchingSelected) {
+      handleClearSelection();
+      return;
+    }
+    if (allSelectedOnPage) {
       setSelectedIds((current) => current.filter((id) => !items.some((item) => item.id === id)));
       return;
     }
@@ -391,8 +473,10 @@ export function ResultsPage() {
           <div className="kv">{TEXT.subtitle}</div>
         </div>
         <div className="results-summary">
+          <div className="kv">{`loaded=${items.length}`}</div>
           <div className="kv">{`total=${total}`}</div>
-          <div className="kv">{`selected=${selectedIds.length}`}</div>
+          <div className="kv">{`page=${page}/${totalPages}`}</div>
+          <div className="kv">{`selected=${selectedCount}`}</div>
           <div className="kv">{`sort=${sortBy} ${sortDir}`}</div>
         </div>
       </div>
@@ -402,8 +486,8 @@ export function ResultsPage() {
           <span>{TEXT.keywordLabel}</span>
           <input
             placeholder={TEXT.keywordPlaceholder}
-            value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
+            value={keywordInput}
+            onChange={(event) => setKeywordInput(event.target.value)}
             aria-label={TEXT.keywordLabel}
           />
         </label>
@@ -443,7 +527,7 @@ export function ResultsPage() {
             </div>
           )}
         </div>
-        <button type="button" className="danger" onClick={() => void handleBatchDelete()} disabled={loading || !selectedIds.length}>
+        <button type="button" className="danger" onClick={() => void handleBatchDelete()} disabled={loading || !selectedCount}>
           {TEXT.batchDelete}
         </button>
         <button type="button" className="ghost" onClick={() => void handleDedupe()} disabled={loading}>
@@ -454,8 +538,31 @@ export function ResultsPage() {
       {error && <div className="alert error">{error}</div>}
       {message && <div className="alert success">{message}</div>}
 
+      {showSelectAllMatching && (
+        <div className="results-selection-banner row">
+          <span className="kv">{`${TEXT.selectAllMatchingPrefix} ${items.length} 条。`}</span>
+          <button
+            type="button"
+            className="ghost"
+            aria-label="select-all-matching"
+            onClick={handleSelectAllMatching}
+          >
+            {`${TEXT.selectAllMatching} ${total} 条`}
+          </button>
+        </div>
+      )}
+
+      {allMatchingSelected && total > 0 && (
+        <div className="results-selection-banner row">
+          <span className="kv">{`${TEXT.allMatchingSelected} ${total} 条。`}</span>
+          <button type="button" className="ghost" aria-label="clear-selection" onClick={handleClearSelection}>
+            {TEXT.clearSelection}
+          </button>
+        </div>
+      )}
+
       <div className="results-meta row">
-        <span className="kv">{`page-size=100`}</span>
+        <span className="kv">{`page-size=${pageSize}`}</span>
         <span className="kv">{`selected-on-page=${selectedOnPage}`}</span>
         <span className="kv">{TEXT.fullTableHint}</span>
       </div>
@@ -468,11 +575,11 @@ export function ResultsPage() {
                 <label className="row">
                   <input
                     type="checkbox"
-                    aria-label={TEXT.selectAll}
-                    checked={allSelected}
+                    aria-label={TEXT.selectPage}
+                    checked={allSelectedOnPage}
                     onChange={toggleSelectAll}
                   />
-                  <span>select</span>
+                  <span>{TEXT.selectPage}</span>
                 </label>
               </th>
               {visibleColumnDefinitions.map((column) => (
@@ -495,7 +602,7 @@ export function ResultsPage() {
                   <input
                     type="checkbox"
                     aria-label={`select-item-${item.id}`}
-                    checked={selectedIds.includes(item.id)}
+                    checked={allMatchingSelected || selectedIds.includes(item.id)}
                     onChange={() => toggleSelected(item.id)}
                   />
                 </td>
@@ -520,6 +627,33 @@ export function ResultsPage() {
           </tbody>
         </table>
       </div>
+
+      {total > 0 && (
+        <div className="jobs-pagination">
+          <span className="kv">{`共 ${total} 条`}</span>
+          <div className="row">
+            <button
+              type="button"
+              className="ghost"
+              aria-label="results-prev-page"
+              disabled={loading || page <= 1}
+              onClick={() => void load({ page: page - 1 })}
+            >
+              {TEXT.prevPage}
+            </button>
+            <span className="kv">{`第 ${page} / ${totalPages} 页`}</span>
+            <button
+              type="button"
+              className="ghost"
+              aria-label="results-next-page"
+              disabled={loading || page >= totalPages}
+              onClick={() => void load({ page: page + 1 })}
+            >
+              {TEXT.nextPage}
+            </button>
+          </div>
+        </div>
+      )}
 
       {loading && (
         <div className="searching">

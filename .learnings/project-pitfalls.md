@@ -121,7 +121,7 @@ Do not record by default:
 **Impact**: machine setup, README, runtime debugging.
 **Related paths**: `run/bootstrap.py`, `backend/twitter_cli.py`, `README.md`
 
-## PIT-012 PowerShell UTF8 ? JSON ??? BOM
+## PIT-012 PowerShell UTF-8 BOM pitfall for JSON files
 
 **Context**: when editing `package.json`, lockfiles, or other JSON config files on Windows with PowerShell.  
 **Wrong approach**: using `Set-Content -Encoding UTF8` and assuming the output is a BOM-free UTF-8 file.  

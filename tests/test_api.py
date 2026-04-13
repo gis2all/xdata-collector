@@ -1,4 +1,4 @@
-﻿import http.client
+import http.client
 import json
 import threading
 import unittest
@@ -78,6 +78,10 @@ class FakeService:
     def delete_items(self, ids: list[int]) -> dict:
         self.calls.append(("delete_items", ids))
         return {"ids": ids, "deleted": len(ids)}
+
+    def delete_items_matching(self, keyword: str | None = None, level: str | None = None) -> dict:
+        self.calls.append(("delete_items_matching", {"keyword": keyword, "level": level}))
+        return {"ids": [], "deleted": 12}
 
     def dedupe_items(self) -> dict:
         self.calls.append(("dedupe_items", None))
@@ -280,6 +284,25 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body.decode("utf-8"))["deleted"], 3)
         self.assertEqual(service.calls[0], ("delete_items", [3, 4, 5]))
+
+    def test_post_items_delete_dispatches_all_matching_filter(self) -> None:
+        service = FakeService()
+        payload = {"mode": "all_matching", "keyword": "airdrop", "level": "A"}
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "POST",
+                "/items/delete",
+                body=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8"))["deleted"], 12)
+        self.assertEqual(
+            service.calls[0],
+            ("delete_items_matching", {"keyword": "airdrop", "level": "A"}),
+        )
 
     def test_post_items_dedupe_dispatches_to_service(self) -> None:
         service = FakeService()

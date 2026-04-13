@@ -148,7 +148,16 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, self.service.purge_job(job_id))
                 return
             if path == "/items/delete":
-                self._json(HTTPStatus.OK, self.service.delete_items(payload.get("ids", [])))
+                if payload.get("mode") == "all_matching":
+                    self._json(
+                        HTTPStatus.OK,
+                        self.service.delete_items_matching(
+                            keyword=payload.get("keyword"),
+                            level=payload.get("level"),
+                        ),
+                    )
+                else:
+                    self._json(HTTPStatus.OK, self.service.delete_items(payload.get("ids", [])))
                 return
             if path == "/items/dedupe":
                 self._json(HTTPStatus.OK, self.service.dedupe_items())

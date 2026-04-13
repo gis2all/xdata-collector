@@ -444,6 +444,24 @@ class DesktopServiceTests(unittest.TestCase):
 
         self.assertEqual([item["id"] for item in page["items"]], [ids[1], ids[0]])
 
+    def test_list_items_respects_page_and_page_size(self) -> None:
+        ids = self._seed_curated_items(
+            [
+                {"title": "item-1", "dedupe_key": "one"},
+                {"title": "item-2", "dedupe_key": "two"},
+                {"title": "item-3", "dedupe_key": "three"},
+                {"title": "item-4", "dedupe_key": "four"},
+                {"title": "item-5", "dedupe_key": "five"},
+            ]
+        )
+
+        page = self.service.list_items(page=2, page_size=2, sort_by="id", sort_dir="asc")
+
+        self.assertEqual(page["page"], 2)
+        self.assertEqual(page["page_size"], 2)
+        self.assertEqual(page["total"], 5)
+        self.assertEqual([item["id"] for item in page["items"]], [ids[2], ids[3]])
+
     def test_list_items_sorts_created_at_x_by_real_x_timestamp(self) -> None:
         ids = self._seed_curated_items(
             [
@@ -506,6 +524,23 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(result, {"ids": [ids[1], ids[2]], "deleted": 2})
         self.assertEqual(page["total"], 1)
         self.assertEqual([item["id"] for item in page["items"]], [ids[0]])
+
+    def test_delete_items_matching_hard_deletes_current_filter_only(self) -> None:
+        ids = self._seed_curated_items(
+            [
+                {"title": "alpha keep", "dedupe_key": "keep-a", "level": "B"},
+                {"title": "alpha delete", "dedupe_key": "delete-a", "level": "A"},
+                {"title": "beta keep", "dedupe_key": "keep-b", "level": "A"},
+                {"excerpt": "alpha excerpt", "dedupe_key": "delete-b", "level": "A"},
+            ]
+        )
+
+        result = self.service.delete_items_matching(keyword="alpha", level="A")
+        page = self.service.list_items(page=1, page_size=10, sort_by="id", sort_dir="asc")
+
+        self.assertEqual(result["deleted"], 2)
+        self.assertEqual(result["ids"], [])
+        self.assertEqual([item["id"] for item in page["items"]], [ids[0], ids[2]])
 
     def test_dedupe_items_keeps_earliest_created_at_then_smallest_id(self) -> None:
         ids = self._seed_curated_items(

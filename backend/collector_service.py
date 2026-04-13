@@ -933,6 +933,21 @@ class DesktopService:
             normalized.append(item_id)
         return normalized
 
+    def _item_where_clause(self, level: str | None = None, keyword: str | None = None) -> tuple[str, list[Any]]:
+        where: list[str] = []
+        params: list[Any] = []
+        normalized_level = str(level or "").strip()
+        if normalized_level:
+            where.append("level = ?")
+            params.append(normalized_level.upper())
+        normalized_keyword = str(keyword or "").strip()
+        if normalized_keyword:
+            token = f"%{normalized_keyword}%"
+            where.append("(title LIKE ? OR excerpt LIKE ?)")
+            params.extend([token, token])
+        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+        return where_sql, params
+
     def list_items(
         self,
         page: int = 1,
@@ -945,16 +960,7 @@ class DesktopService:
         page = max(1, int(page or 1))
         page_size = max(1, min(MAX_ITEM_PAGE_SIZE, int(page_size or 50)))
         offset = max(0, (page - 1) * page_size)
-        where = []
-        params: list[Any] = []
-        if level:
-            where.append("level = ?")
-            params.append(level.upper())
-        if keyword:
-            token = f"%{keyword}%"
-            where.append("(title LIKE ? OR excerpt LIKE ?)")
-            params.extend([token, token])
-        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+        where_sql, params = self._item_where_clause(level=level, keyword=keyword)
         sort_column, sort_direction = self._normalize_item_sort(sort_by, sort_dir)
         selected_fields = ", ".join(ITEM_FIELDS)
         with connect(self.db_path) as conn:
@@ -1019,6 +1025,22 @@ class DesktopService:
                     tuple(delete_ids),
                 )
         return {"ids": normalized_ids, "deleted": len(delete_ids)}
+
+    def delete_items_matching(self, keyword: str | None = None, level: str | None = None) -> dict[str, Any]:
+        where_sql, params = self._item_where_clause(level=level, keyword=keyword)
+        with connect(self.db_path) as conn:
+            rows = conn.execute(
+                f"SELECT id FROM x_items_curated {where_sql} ORDER BY id ASC",
+                tuple(params),
+            ).fetchall()
+            delete_ids = [int(row["id"]) for row in rows]
+            if delete_ids:
+                placeholders = ", ".join("?" for _ in delete_ids)
+                conn.execute(
+                    f"DELETE FROM x_items_curated WHERE id IN ({placeholders})",
+                    tuple(delete_ids),
+                )
+        return {"ids": [], "deleted": len(delete_ids)}
 
     def dedupe_items(self) -> dict[str, Any]:
         with connect(self.db_path) as conn:

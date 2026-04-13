@@ -123,7 +123,7 @@ python ./run/services.py restart
 - `web-ui/`：前端单页应用
 - `backend/`：核心业务、规则、SQLite 读写、X 搜索适配
 - `run/`：运行入口、本机依赖准备脚本和服务总控脚本
-- `data/`????????? `app.db`
+- `data/`：数据库目录，当前只保留 `app.db`
 - `runtime/`：运行日志与临时文件
 - `artifacts/`：流程图、辅助资料和非源码材料
 - `tests/`：当前自动化测试

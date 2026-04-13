@@ -23,9 +23,10 @@ const TEXT = {
   refresh: "刷新列表",
   batchDelete: "批量删除",
   dedupe: "全表去重",
-  selectAll: "当前页全选",
+  selectPage: "本页全选",
   fields: "字段",
   resetColumns: "恢复默认",
+  keywordLabel: "keyword",
 } as const;
 
 function makeItem(id: number, overrides: Record<string, unknown> = {}) {
@@ -49,6 +50,15 @@ function makeItem(id: number, overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makePage(items: ReturnType<typeof makeItem>[], total = items.length, page = 1, pageSize = 100) {
+  return {
+    page,
+    page_size: pageSize,
+    total,
+    items,
+  };
+}
+
 describe("ResultsPage", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -62,12 +72,7 @@ describe("ResultsPage", () => {
   });
 
   it("renders default business columns and utc+8 timestamps", async () => {
-    listItemsMock.mockResolvedValue({
-      page: 1,
-      page_size: 100,
-      total: 1,
-      items: [makeItem(1)],
-    });
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
 
     render(<ResultsPage />);
 
@@ -75,6 +80,9 @@ describe("ResultsPage", () => {
       expect(screen.getByText(TEXT.title)).toBeInTheDocument();
     });
 
+    expect(listItemsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ page: 1, page_size: 100, sort_by: "id", sort_dir: "desc" }),
+    );
     expect(screen.getByRole("button", { name: TEXT.refresh })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: TEXT.batchDelete })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: TEXT.dedupe })).toBeInTheDocument();
@@ -92,8 +100,8 @@ describe("ResultsPage", () => {
     expect(scoreAscButton.parentElement).toHaveClass("results-sort-controls-inline");
     expect(screen.queryByText("ASC")).not.toBeInTheDocument();
     expect(screen.queryByText("DESC")).not.toBeInTheDocument();
-    expect(scoreAscButton).toHaveTextContent("\u2191");
-    expect(scoreDescButton).toHaveTextContent("\u2193");
+    expect(scoreAscButton).toHaveTextContent("↑");
+    expect(scoreDescButton).toHaveTextContent("↓");
     expect(screen.queryByRole("button", { name: "dedupe_key asc" })).not.toBeInTheDocument();
     expect(screen.getByText("2026-04-13 08:49:06 UTC+8")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "https://x.com/demo/status/1" })).toHaveAttribute(
@@ -103,12 +111,7 @@ describe("ResultsPage", () => {
   });
 
   it("shows a hidden column after checking it in the field dropdown", async () => {
-    listItemsMock.mockResolvedValue({
-      page: 1,
-      page_size: 100,
-      total: 1,
-      items: [makeItem(1)],
-    });
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
 
     render(<ResultsPage />);
 
@@ -125,12 +128,7 @@ describe("ResultsPage", () => {
   });
 
   it("hides a visible column and its sort controls, then restores defaults", async () => {
-    listItemsMock.mockResolvedValue({
-      page: 1,
-      page_size: 100,
-      total: 1,
-      items: [makeItem(1)],
-    });
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
 
     render(<ResultsPage />);
 
@@ -152,12 +150,7 @@ describe("ResultsPage", () => {
 
   it("restores visible columns from local storage on first render", async () => {
     window.localStorage.setItem(RESULTS_VISIBLE_COLUMNS_KEY, JSON.stringify(["title", "level", "created_at_x"]));
-    listItemsMock.mockResolvedValue({
-      page: 1,
-      page_size: 100,
-      total: 1,
-      items: [makeItem(1)],
-    });
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
 
     render(<ResultsPage />);
 
@@ -174,12 +167,7 @@ describe("ResultsPage", () => {
   });
 
   it("requests server-side sorting when a visible sort control is clicked", async () => {
-    listItemsMock.mockResolvedValue({
-      page: 1,
-      page_size: 100,
-      total: 1,
-      items: [makeItem(1)],
-    });
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
 
     render(<ResultsPage />);
 
@@ -188,12 +176,7 @@ describe("ResultsPage", () => {
     });
 
     listItemsMock.mockClear();
-    listItemsMock.mockResolvedValue({
-      page: 1,
-      page_size: 100,
-      total: 1,
-      items: [makeItem(1)],
-    });
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
 
     fireEvent.click(screen.getByRole("button", { name: "score asc" }));
 
@@ -206,18 +189,8 @@ describe("ResultsPage", () => {
 
   it("re-renders rows when sorted data comes back in a new order", async () => {
     listItemsMock
-      .mockResolvedValueOnce({
-        page: 1,
-        page_size: 100,
-        total: 2,
-        items: [makeItem(1, { score: 90, title: "Item 1" }), makeItem(2, { score: 80, title: "Item 2" })],
-      })
-      .mockResolvedValueOnce({
-        page: 1,
-        page_size: 100,
-        total: 2,
-        items: [makeItem(2, { score: 80, title: "Item 2" }), makeItem(1, { score: 90, title: "Item 1" })],
-      });
+      .mockResolvedValueOnce(makePage([makeItem(1, { score: 90, title: "Item 1" }), makeItem(2, { score: 80, title: "Item 2" })], 2))
+      .mockResolvedValueOnce(makePage([makeItem(2, { score: 80, title: "Item 2" }), makeItem(1, { score: 90, title: "Item 1" })], 2));
 
     render(<ResultsPage />);
 
@@ -243,20 +216,126 @@ describe("ResultsPage", () => {
     });
   });
 
+  it("shows pagination info and loads the requested page", async () => {
+    const firstPageItems = Array.from({ length: 100 }, (_, index) => makeItem(index + 1));
+    const secondPageItems = Array.from({ length: 32 }, (_, index) => makeItem(index + 101));
+    listItemsMock
+      .mockResolvedValueOnce(makePage(firstPageItems, 132, 1))
+      .mockResolvedValueOnce(makePage(secondPageItems, 132, 2));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Item 1")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("loaded=100")).toBeInTheDocument();
+    expect(screen.getByText("total=132")).toBeInTheDocument();
+    expect(screen.getByText("page=1/2")).toBeInTheDocument();
+    expect(screen.getByText("共 132 条")).toBeInTheDocument();
+    expect(screen.getByText("第 1 / 2 页")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "results-next-page" }));
+
+    await waitFor(() => {
+      expect(listItemsMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 2, page_size: 100, sort_by: "id", sort_dir: "desc" }),
+      );
+      expect(screen.getByText("Item 101")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("loaded=32")).toBeInTheDocument();
+    expect(screen.getByText("page=2/2")).toBeInTheDocument();
+    expect(screen.getByText("第 2 / 2 页")).toBeInTheDocument();
+  });
+
+  it("offers a select-all-matching action after selecting the whole page", async () => {
+    const firstPageItems = Array.from({ length: 100 }, (_, index) => makeItem(index + 1));
+    listItemsMock.mockResolvedValue(makePage(firstPageItems, 132, 1));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Item 1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText(TEXT.selectPage));
+
+    expect(screen.getByText("selected=100")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "select-all-matching" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "select-all-matching" }));
+
+    expect(screen.getByText("selected=132")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "clear-selection" })).toBeInTheDocument();
+  });
+
+  it("keeps all-matching selection across pages", async () => {
+    const firstPageItems = Array.from({ length: 100 }, (_, index) => makeItem(index + 1));
+    const secondPageItems = Array.from({ length: 32 }, (_, index) => makeItem(index + 101));
+    listItemsMock
+      .mockResolvedValueOnce(makePage(firstPageItems, 132, 1))
+      .mockResolvedValueOnce(makePage(secondPageItems, 132, 2));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Item 1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText(TEXT.selectPage));
+    fireEvent.click(screen.getByRole("button", { name: "select-all-matching" }));
+    fireEvent.click(screen.getByRole("button", { name: "results-next-page" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Item 101")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("selected=132")).toBeInTheDocument();
+    expect(screen.getByLabelText("select-item-101")).toBeChecked();
+  });
+
+  it("resets to page 1 and clears all-matching selection when refreshing a new keyword", async () => {
+    const firstPageItems = Array.from({ length: 100 }, (_, index) => makeItem(index + 1));
+    const secondPageItems = Array.from({ length: 32 }, (_, index) => makeItem(index + 101));
+    listItemsMock
+      .mockResolvedValueOnce(makePage(firstPageItems, 132, 1))
+      .mockResolvedValueOnce(makePage(secondPageItems, 132, 2))
+      .mockResolvedValueOnce(makePage([makeItem(999, { title: "Alpha 999" })], 1, 1));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Item 1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText(TEXT.selectPage));
+    fireEvent.click(screen.getByRole("button", { name: "select-all-matching" }));
+    fireEvent.click(screen.getByRole("button", { name: "results-next-page" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Item 101")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(TEXT.keywordLabel), { target: { value: "alpha" } });
+    fireEvent.click(screen.getByRole("button", { name: TEXT.refresh }));
+
+    await waitFor(() => {
+      expect(listItemsMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, page_size: 100, keyword: "alpha" }),
+      );
+      expect(screen.getByText("Alpha 999")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("selected=0")).toBeInTheDocument();
+    expect(screen.getByText("page=1/1")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "clear-selection" })).not.toBeInTheDocument();
+  });
+
   it("deletes selected rows in batch and refreshes the list", async () => {
     listItemsMock
-      .mockResolvedValueOnce({
-        page: 1,
-        page_size: 100,
-        total: 2,
-        items: [makeItem(1), makeItem(2)],
-      })
-      .mockResolvedValueOnce({
-        page: 1,
-        page_size: 100,
-        total: 0,
-        items: [],
-      });
+      .mockResolvedValueOnce(makePage([makeItem(1), makeItem(2)], 2))
+      .mockResolvedValueOnce(makePage([], 0, 1));
     deleteItemsMock.mockResolvedValue({ ids: [1, 2], deleted: 2 });
 
     render(<ResultsPage />);
@@ -265,7 +344,7 @@ describe("ResultsPage", () => {
       expect(screen.getByText("Item 1")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByLabelText(TEXT.selectAll));
+    fireEvent.click(screen.getByLabelText(TEXT.selectPage));
     fireEvent.click(screen.getByRole("button", { name: TEXT.batchDelete }));
 
     await waitFor(() => {
@@ -275,20 +354,34 @@ describe("ResultsPage", () => {
     expect(await screen.findByText("已删除 2 条记录")).toBeInTheDocument();
   });
 
+  it("deletes all matching results when that selection mode is active", async () => {
+    const firstPageItems = Array.from({ length: 100 }, (_, index) => makeItem(index + 1));
+    listItemsMock
+      .mockResolvedValueOnce(makePage(firstPageItems, 132, 1))
+      .mockResolvedValueOnce(makePage([], 0, 1));
+    deleteItemsMock.mockResolvedValue({ ids: [], deleted: 132 });
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Item 1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText(TEXT.selectPage));
+    fireEvent.click(screen.getByRole("button", { name: "select-all-matching" }));
+    fireEvent.click(screen.getByRole("button", { name: TEXT.batchDelete }));
+
+    await waitFor(() => {
+      expect(deleteItemsMock).toHaveBeenCalledWith(expect.objectContaining({ mode: "all_matching" }));
+    });
+
+    expect(await screen.findByText("已删除 132 条记录")).toBeInTheDocument();
+  });
+
   it("deletes a single row from the action column", async () => {
     listItemsMock
-      .mockResolvedValueOnce({
-        page: 1,
-        page_size: 100,
-        total: 1,
-        items: [makeItem(7)],
-      })
-      .mockResolvedValueOnce({
-        page: 1,
-        page_size: 100,
-        total: 0,
-        items: [],
-      });
+      .mockResolvedValueOnce(makePage([makeItem(7)], 1))
+      .mockResolvedValueOnce(makePage([], 0, 1));
     deleteItemMock.mockResolvedValue({ id: 7, deleted: 1 });
 
     render(<ResultsPage />);
@@ -308,18 +401,8 @@ describe("ResultsPage", () => {
 
   it("runs full-table dedupe and shows the summary", async () => {
     listItemsMock
-      .mockResolvedValueOnce({
-        page: 1,
-        page_size: 100,
-        total: 1,
-        items: [makeItem(3)],
-      })
-      .mockResolvedValueOnce({
-        page: 1,
-        page_size: 100,
-        total: 1,
-        items: [makeItem(3)],
-      });
+      .mockResolvedValueOnce(makePage([makeItem(3)], 1))
+      .mockResolvedValueOnce(makePage([makeItem(3)], 1));
     dedupeItemsMock.mockResolvedValue({
       groups: 2,
       deleted: 3,

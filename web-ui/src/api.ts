@@ -271,6 +271,10 @@ export type DeleteItemResponse = {
   deleted: number;
 };
 
+export type DeleteItemsRequest =
+  | { ids: number[] }
+  | { mode: "all_matching"; keyword?: string; level?: string };
+
 export type DeleteItemsResponse = {
   ids: number[];
   deleted: number;
@@ -355,10 +359,11 @@ export function deleteItem(id: number) {
   return req<DeleteItemResponse>(`/items/${id}/delete`, { method: "POST", body: "{}" });
 }
 
-export function deleteItems(ids: number[]) {
+export function deleteItems(payload: number[] | DeleteItemsRequest) {
+  const requestPayload: DeleteItemsRequest = Array.isArray(payload) ? { ids: payload } : payload;
   return req<DeleteItemsResponse>("/items/delete", {
     method: "POST",
-    body: JSON.stringify({ ids }),
+    body: JSON.stringify(requestPayload),
   });
 }
 

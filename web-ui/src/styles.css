@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   color: #0f172a;
   background: #f8fafc;
@@ -184,6 +184,12 @@ textarea { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; min
 .results-field-option { display: flex; align-items: center; gap: 8px; color: #0f172a; }
 .results-field-actions { display: flex; justify-content: flex-end; }
 .results-meta { color: #475569; }
+.results-selection-banner {
+  padding: 10px 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #eff6ff;
+}
 .results-table-wrap { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 12px; }
 .results-table { min-width: 1800px; }
 .results-table td { vertical-align: top; }
