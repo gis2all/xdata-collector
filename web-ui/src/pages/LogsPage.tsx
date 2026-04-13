@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { RunRecord, RuntimeLogFile, getRuntimeLogs, listRuns } from "../api";
+import { formatUtcPlus8Time } from "../time";
 
 const SERVICE_GROUPS = [
   { key: "api", label: "API" },
@@ -31,23 +32,6 @@ const UI_TEXT = {
   readError: "\u8bfb\u53d6\u5931\u8d25\uff1a",
   noLogContent: "\u5f53\u524d\u65e0\u65e5\u5fd7\u5185\u5bb9",
 } as const;
-
-function formatTime(value?: string | null) {
-  if (!value) return "--";
-  const normalized = value.replace(/\.\d+(?=(?:Z|[+-]\d\d:\d\d)$)/, "");
-  const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) {
-    return normalized.replace("T", " ").replace(/(?:Z|[+-]\d\d:\d\d)$/, " UTC+8");
-  }
-  const shifted = new Date(date.getTime() + 8 * 60 * 60 * 1000);
-  const yyyy = shifted.getUTCFullYear();
-  const mm = String(shifted.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(shifted.getUTCDate()).padStart(2, "0");
-  const hh = String(shifted.getUTCHours()).padStart(2, "0");
-  const mi = String(shifted.getUTCMinutes()).padStart(2, "0");
-  const ss = String(shifted.getUTCSeconds()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss} UTC+8`;
-}
 
 function statusClass(status: string) {
   const normalized = String(status || "").toLowerCase();
@@ -163,8 +147,8 @@ export function LogsPage() {
                         <span className={`badge ${statusClass(run.status)}`}>{run.status}</span>
                       </td>
                       <td>{run.job_id ? `#${run.job_id}` : "--"}</td>
-                      <td>{formatTime(run.started_at)}</td>
-                      <td>{formatTime(run.ended_at)}</td>
+                      <td>{formatUtcPlus8Time(run.started_at)}</td>
+                      <td>{formatUtcPlus8Time(run.ended_at)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -194,11 +178,11 @@ export function LogsPage() {
                     </div>
                     <div className="dashboard-detail-item">
                       <span>{UI_TEXT.startedAt}</span>
-                      <strong>{formatTime(selectedRun.started_at)}</strong>
+                      <strong>{formatUtcPlus8Time(selectedRun.started_at)}</strong>
                     </div>
                     <div className="dashboard-detail-item">
                       <span>{UI_TEXT.endedAt}</span>
-                      <strong>{formatTime(selectedRun.ended_at)}</strong>
+                      <strong>{formatUtcPlus8Time(selectedRun.ended_at)}</strong>
                     </div>
                     <div className="dashboard-detail-item dashboard-detail-item-wide">
                       <span>{UI_TEXT.statsSummary}</span>
@@ -243,7 +227,7 @@ export function LogsPage() {
                         <div>
                           <strong>{file.name}</strong>
                           <div className="kv">
-                            {logKind(file.name)} / {file.size} bytes / {formatTime(file.updated_at)}
+                            {logKind(file.name)} / {file.size} bytes / {formatUtcPlus8Time(file.updated_at)}
                           </div>
                         </div>
                       </div>

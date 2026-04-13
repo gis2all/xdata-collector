@@ -15,6 +15,7 @@ import {
 } from "../api";
 import { DEFAULT_SEARCH_SPEC, buildQueryPreview, cloneSearchSpec } from "../collector";
 import { SearchSpecEditor } from "../components/SearchSpecEditor";
+import { formatUtcPlus8Time } from "../time";
 
 type JobStatusFilter = "active" | "all" | "deleted";
 type DrawerMode = "create" | "view" | "edit";
@@ -50,11 +51,6 @@ function jobToForm(job: JobRecord): JobFormState {
     rule_set_id: job.rule_set_id ?? null,
     search_spec: cloneSearchSpec(job.search_spec_json),
   };
-}
-
-function formatTime(value?: string | null) {
-  if (!value) return "--";
-  return value.replace("T", " ").replace("+00:00", " UTC");
 }
 
 function jobState(job: JobRecord) {
@@ -417,10 +413,10 @@ export function JobsPage() {
                     <td>
                       <span className={`badge ${job.deleted_at ? "b" : job.enabled ? "a" : ""}`}>{jobState(job)}</span>
                     </td>
-                    <td>{formatTime(job.next_run_at)}</td>
+                    <td>{formatUtcPlus8Time(job.next_run_at)}</td>
                     <td>
                       <div>{job.last_run_status || "--"}</div>
-                      <div className="kv">{formatTime(job.last_run_ended_at || job.last_run_started_at)}</div>
+                      <div className="kv">{formatUtcPlus8Time(job.last_run_ended_at || job.last_run_started_at)}</div>
                     </td>
                     <td>{renderActions(job)}</td>
                   </tr>
@@ -472,8 +468,8 @@ export function JobsPage() {
                 <div className="drawer-section">
                   <div className="kv">状态：{jobState(selectedJob)}</div>
                   <div className="kv">最近运行：{selectedJob.last_run_status || "--"}</div>
-                  <div className="kv">下次执行：{formatTime(selectedJob.next_run_at)}</div>
-                  {selectedJob.deleted_at && <div className="kv">删除时间：{formatTime(selectedJob.deleted_at)}</div>}
+                  <div className="kv">下次执行：{formatUtcPlus8Time(selectedJob.next_run_at)}</div>
+                  {selectedJob.deleted_at && <div className="kv">删除时间：{formatUtcPlus8Time(selectedJob.deleted_at)}</div>}
                 </div>
               )}
 

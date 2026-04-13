@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { listItems } from "../api";
+import { formatUtcPlus8Time } from "../time";
 
 export function ResultsPage() {
   const [items, setItems] = useState<any[]>([]);
@@ -46,7 +47,7 @@ export function ResultsPage() {
                 <span className={`badge ${String(item.level || "").toLowerCase()}`}>{item.level}</span>
               </td>
               <td>{item.author}</td>
-              <td>{item.created_at_x}</td>
+              <td>{formatUtcPlus8Time(item.created_at_x)}</td>
               <td>{item.state}</td>
             </tr>
           ))}

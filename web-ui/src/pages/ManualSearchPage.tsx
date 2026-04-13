@@ -3,6 +3,7 @@ import { CollectorRunResult, RuleSet, RuleSetDefinition, SearchSpec, createRuleS
 import { DEFAULT_RULE_SET_DEFINITION, DEFAULT_SEARCH_SPEC, buildQueryPreview, cloneRuleDefinition, cloneSearchSpec } from "../collector";
 import { SearchSpecEditor } from "../components/SearchSpecEditor";
 import { RuleSetEditor } from "../components/RuleSetEditor";
+import { formatUtcPlus8Time } from "../time";
 
 const STORAGE_KEY = "x-collector-workbench-settings-v2";
 
@@ -285,7 +286,7 @@ export function ManualSearchPage() {
                     <tr key={`${item.tweet_id}-${item.url}`}>
                       <td>
                         <div className="job-name">{item.author || "unknown"}</div>
-                        <div className="kv">{item.created_at || "--"}</div>
+                        <div className="kv">{formatUtcPlus8Time(item.created_at)}</div>
                       </td>
                       <td>
                         <div className="collector-text-snippet">{item.text || "--"}</div>
@@ -349,7 +350,7 @@ export function ManualSearchPage() {
                       </td>
                       <td>
                         <div className="job-name">{item.author || "unknown"}</div>
-                        <div className="kv">{item.created_at || "--"}</div>
+                        <div className="kv">{formatUtcPlus8Time(item.created_at)}</div>
                       </td>
                     </tr>
                   ))}

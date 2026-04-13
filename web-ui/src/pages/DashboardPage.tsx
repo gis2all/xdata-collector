@@ -1,10 +1,6 @@
 ﻿import { useEffect, useState } from "react";
 import { DatabaseHealth, HealthSnapshot, XHealth, health } from "../api";
-
-function formatTime(value?: string | null) {
-  if (!value) return "尚未校验";
-  return value.replace("T", " ").replace("+00:00", " UTC");
-}
+import { formatUtcPlus8Time } from "../time";
 
 function healthStatus(target: { configured: boolean; connected: boolean; last_error: string }) {
   if (!target.configured) return "未配置";
@@ -35,7 +31,7 @@ function renderDatabaseInfo(info: DatabaseHealth) {
       </div>
       <div className="dashboard-detail-item">
         <span>最近校验</span>
-        <strong>{formatTime(info.last_checked_at)}</strong>
+        <strong>{formatUtcPlus8Time(info.last_checked_at, "\u5c1a\u672a\u6821\u9a8c")}</strong>
       </div>
       <div className="dashboard-detail-item">
         <span>最近错误</span>
@@ -62,7 +58,7 @@ function renderXInfo(info: XHealth) {
       </div>
       <div className="dashboard-detail-item">
         <span>最近校验</span>
-        <strong>{formatTime(info.last_checked_at)}</strong>
+        <strong>{formatUtcPlus8Time(info.last_checked_at, "\u5c1a\u672a\u6821\u9a8c")}</strong>
       </div>
       <div className="dashboard-detail-item dashboard-detail-item-wide">
         <span>最近错误</span>
@@ -112,7 +108,7 @@ export function DashboardPage() {
           {error
             ? `错误: ${error}`
             : state
-              ? `后端快照更新时间: ${formatTime(state.summary.updated_at)}`
+              ? `后端快照更新时间: ${formatUtcPlus8Time(state.summary.updated_at, "\u5c1a\u672a\u6821\u9a8c")}`
               : loading
                 ? "正在读取后端快照..."
                 : "尚未刷新"}
