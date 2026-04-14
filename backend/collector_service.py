@@ -834,6 +834,23 @@ class DesktopService:
             )
             self._store_curated(run_id, matched_items, int(rule_set.get("id") or 0) or None)
 
+            run_errors = query_errors[:10]
+            dedupe_stats: dict[str, Any] = {}
+            if matched_items:
+                try:
+                    dedupe_summary = self.dedupe_items()
+                    dedupe_stats = {
+                        "dedupe_groups": int(dedupe_summary.get("groups", 0) or 0),
+                        "dedupe_deleted": int(dedupe_summary.get("deleted", 0) or 0),
+                        "dedupe_kept": int(dedupe_summary.get("kept", 0) or 0),
+                        "dedupe_rows_after": int(dedupe_summary.get("rows_after", 0) or 0),
+                    }
+                except Exception as exc:  # noqa: BLE001
+                    dedupe_stats = {"dedupe_failed": 1}
+                    if len(run_errors) >= 10:
+                        run_errors = run_errors[:9]
+                    run_errors.append(f"auto dedupe failed: {exc}")
+
             raw_items = [serialize_search_result(item) for item in filtered_results[:100]]
             rule_set_summary = {
                 "id": int(rule_set.get("id") or 0) if rule_set.get("id") else None,
@@ -862,8 +879,9 @@ class DesktopService:
                     "search_filter_passed": len(filtered_results),
                     "query_errors": len(query_errors),
                     **match_stats,
+                    **dedupe_stats,
                 },
-                "errors": query_errors[:10],
+                "errors": run_errors,
             }
             self._finish_run(run_id, "success", report["stats"], "")
             return report
