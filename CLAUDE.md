@@ -32,6 +32,7 @@
 - 核心搜索结果先落入 `x_items_raw`，再经规则评估进入 `x_items_curated`
 - 当前系统不再承担 Notion 同步、Notion 去重或 Notion 健康检查
 - 当前仓库默认要求在 `.env` 中提供 `TWITTER_AUTH_TOKEN` 和 `TWITTER_CT0`
+- `data/` 目录正式保留 `app.db` 与 `data/README.md`；除这两项外，不应回流测试、导出、日志或临时内容
 
 一次手动采集的主流程：
 1. 前端在 `web-ui/src/pages/ManualSearchPage.tsx` 收集 `SearchSpec` 和 `RuleSet`
@@ -190,7 +191,7 @@
 ## Git 边界
 
 版本控制边界约定：
-- 应提交：`backend/`、`run/`、`tests/`、`web-ui/src/`、`config/`、`artifacts/`、文档、`.env.example`、`.learnings/`
+- 应提交：`backend/`、`run/`、`tests/`、`web-ui/src/`、`config/`、`artifacts/`、文档、`data/README.md`、`.env.example`、`.learnings/`
 - 应忽略：`.env`、`data/*.db`、`runtime/logs/`、`runtime/pids/`、`runtime/tmp/`、`web-ui/node_modules/`、`web-ui/dist/` 等本地状态与运行产物
 - `.learnings/` 属于项目级协作知识，应纳入版本控制，但不能写入真实 cookie、token、账号或一次性调试噪音
 

@@ -123,7 +123,7 @@ python ./run/services.py restart
 - `web-ui/`：前端单页应用
 - `backend/`：核心业务、规则、SQLite 读写、X 搜索适配
 - `run/`：运行入口、本机依赖准备脚本和服务总控脚本
-- `data/`：数据库目录，当前只保留 `app.db`
+- `data/`：数据库目录，正式保留 `app.db` 与说明文件 `README.md`
 - `runtime/`：运行日志与临时文件
 - `artifacts/`：流程图、辅助资料和非源码材料
 - `tests/`：当前自动化测试
@@ -133,7 +133,7 @@ python ./run/services.py restart
 建议提交到 Git 的内容：
 - `backend/`、`run/`、`tests/`、`web-ui/src/`
 - `config/`、`artifacts/`
-- `README.md`、`CLAUDE.md`、`.env.example`
+- `README.md`、`CLAUDE.md`、`data/README.md`、`.env.example`
 - `runtime/README.md`
 - `.learnings/`：作为项目级协作记忆保留提交，但不得写入真实 cookie、token 或一次性调试噪音
 
@@ -147,6 +147,7 @@ python ./run/services.py restart
 原则：
 - 提交源码、配置模板、文档和必要锁文件
 - 不提交依赖、日志、数据库、运行输出和本机私有配置
+- `data/README.md` 只是数据库说明文件，不代表 `data/` 重新变成通用工作目录
 
 ## 验证命令
 

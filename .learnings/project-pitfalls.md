@@ -157,7 +157,7 @@ Do not record by default:
 ## PIT-015 data directory must only retain app.db
 
 **Context**: when adding tests, temporary exports, or one-off debug artifacts.
-**Wrong approach**: treating `data/` as a general-purpose workspace for test databases, runtime log snapshots, JSON exports, or helper readmes.
-**Correct approach**: keep `data/` limited to `app.db`; put service logs in `runtime/logs/`, PID files in `runtime/pids/`, and test-only temporary files in `runtime/tmp/tests/`.
+**Wrong approach**: treating `data/` as a general-purpose workspace for test databases, runtime log snapshots, JSON exports, or arbitrary helper docs.
+**Correct approach**: keep `data/` limited to the runtime database `app.db` and the official note `data/README.md`; put service logs in `runtime/logs/`, PID files in `runtime/pids/`, and test-only temporary files in `runtime/tmp/tests/`.
 **Impact**: repository structure, cleanup safety, documentation, test isolation.
-**Related paths**: `data/app.db`, `runtime/logs/`, `runtime/pids/`, `runtime/tmp/tests/`, `tests/test_collector_service.py`
+**Related paths**: `data/app.db`, `data/README.md`, `runtime/logs/`, `runtime/pids/`, `runtime/tmp/tests/`, `tests/test_collector_service.py`
