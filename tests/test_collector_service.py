@@ -54,6 +54,31 @@ class DesktopServiceTests(unittest.TestCase):
                 inserted.append(int(cur.lastrowid))
         return inserted
 
+    def _seed_raw_items(self, rows: list[dict[str, object]]) -> list[int]:
+        inserted: list[int] = []
+        with connect(self.db_path) as conn:
+            for index, row in enumerate(rows, start=1):
+                cur = conn.execute(
+                    """
+                    INSERT INTO x_items_raw
+                    (run_id, tweet_id, canonical_url, author, text, created_at_x, metrics_json, query_name, fetched_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        int(row.get("run_id", index) or index),
+                        str(row.get("tweet_id", f"{index}") or ""),
+                        str(row.get("canonical_url", f"https://x.com/i/status/{index}") or ""),
+                        str(row.get("author", f"author-{index}") or ""),
+                        str(row.get("text", f"text-{index}") or ""),
+                        row.get("created_at_x", "2026-04-10T00:00:00+00:00"),
+                        json.dumps(row.get("metrics_json", {"views": 0, "likes": 0, "replies": 0, "retweets": 0}), ensure_ascii=False),
+                        str(row.get("query_name", f"manual:{index}") or ""),
+                        str(row.get("fetched_at", "2026-04-10T00:10:00+00:00") or ""),
+                    ),
+                )
+                inserted.append(int(cur.lastrowid))
+        return inserted
+
     def _make_search_result(
         self,
         *,
@@ -796,6 +821,143 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(summary["groups"], 1)
         self.assertEqual(summary["deleted"], 1)
         self.assertEqual([item["id"] for item in page["items"]], [ids[1]])
+
+
+    def test_list_items_raw_supports_keyword_metrics_and_sorting(self) -> None:
+        ids = self._seed_raw_items(
+            [
+                {
+                    "tweet_id": "9001",
+                    "canonical_url": "https://x.com/i/status/9001",
+                    "author": "alice",
+                    "text": "alpha launch update",
+                    "metrics_json": {"views": 20, "likes": 3, "replies": 1, "retweets": 0},
+                },
+                {
+                    "tweet_id": "9002",
+                    "canonical_url": "https://x.com/i/status/9002",
+                    "author": "alpha-team",
+                    "text": "fresh post",
+                    "metrics_json": {"views": 120, "likes": 9, "replies": 2, "retweets": 1},
+                },
+                {
+                    "tweet_id": "9003",
+                    "canonical_url": "https://x.com/alpha/status/9003",
+                    "author": "carol",
+                    "text": "other post",
+                    "metrics_json": {"views": 50, "likes": 5, "replies": 0, "retweets": 0},
+                },
+            ]
+        )
+
+        page = self.service.list_items(table="raw", page=1, page_size=10, keyword="alpha", sort_by="views", sort_dir="desc")
+
+        self.assertEqual(page["total"], 3)
+        self.assertEqual([item["id"] for item in page["items"]], [ids[1], ids[2], ids[0]])
+        self.assertEqual(page["items"][0]["views"], 120)
+        self.assertEqual(page["items"][0]["likes"], 9)
+        self.assertEqual(page["items"][0]["query_name"], "manual:2")
+
+    def test_list_items_raw_sorts_created_at_x_by_real_x_timestamp(self) -> None:
+        ids = self._seed_raw_items(
+            [
+                {"tweet_id": "9101", "created_at_x": "Mon Mar 30 21:00:00 +0000 2026"},
+                {"tweet_id": "9102", "created_at_x": "Mon Feb 23 11:58:17 +0000 2026"},
+                {"tweet_id": "9103", "created_at_x": "Wed Mar 25 12:09:02 +0000 2026"},
+                {"tweet_id": "9104", "created_at_x": None},
+            ]
+        )
+
+        asc_page = self.service.list_items(table="raw", page=1, page_size=10, sort_by="created_at_x", sort_dir="asc")
+        desc_page = self.service.list_items(table="raw", page=1, page_size=10, sort_by="created_at_x", sort_dir="desc")
+
+        self.assertEqual([item["id"] for item in asc_page["items"]], [ids[1], ids[2], ids[0], ids[3]])
+        self.assertEqual([item["id"] for item in desc_page["items"]], [ids[0], ids[2], ids[1], ids[3]])
+
+    def test_delete_raw_rows_support_single_selected_and_matching_filters(self) -> None:
+        ids = self._seed_raw_items(
+            [
+                {"tweet_id": "9201", "text": "keep beta", "author": "beta", "canonical_url": "https://x.com/i/status/9201"},
+                {"tweet_id": "9202", "text": "alpha delete", "author": "demo", "canonical_url": "https://x.com/i/status/9202"},
+                {"tweet_id": "9203", "text": "keep gamma", "author": "alpha-author", "canonical_url": "https://x.com/i/status/9203"},
+                {"tweet_id": "9204", "text": "keep url", "author": "demo", "canonical_url": "https://x.com/alpha/status/9204"},
+            ]
+        )
+
+        delete_one = self.service.delete_item(ids[0], table="raw")
+        delete_selected = self.service.delete_items([ids[2]], table="raw")
+        delete_matching = self.service.delete_items_matching(keyword="alpha", table="raw")
+        page = self.service.list_items(table="raw", page=1, page_size=10, sort_by="id", sort_dir="asc")
+
+        self.assertEqual(delete_one, {"id": ids[0], "deleted": 1})
+        self.assertEqual(delete_selected, {"ids": [ids[2]], "deleted": 1})
+        self.assertEqual(delete_matching, {"ids": [], "deleted": 2})
+        self.assertEqual(page["total"], 0)
+
+    def test_dedupe_raw_items_reuses_source_identity_and_keeps_earliest_rows(self) -> None:
+        ids = self._seed_raw_items(
+            [
+                {
+                    "tweet_id": "9301",
+                    "canonical_url": "https://x.com/demo/status/9301",
+                    "author": "demo",
+                    "text": "tweet duplicate early",
+                    "created_at_x": "2026-04-10T00:00:00+00:00",
+                },
+                {
+                    "tweet_id": "9301",
+                    "canonical_url": "https://x.com/i/status/9301",
+                    "author": "demo",
+                    "text": "tweet duplicate late",
+                    "created_at_x": "2026-04-11T00:00:00+00:00",
+                },
+                {
+                    "tweet_id": "",
+                    "canonical_url": "https://x.com/demo/status/9302",
+                    "author": "demo",
+                    "text": "url duplicate early",
+                    "created_at_x": "2026-04-09T00:00:00+00:00",
+                },
+                {
+                    "tweet_id": "",
+                    "canonical_url": "https://x.com/i/status/9302",
+                    "author": "demo",
+                    "text": "url duplicate late",
+                    "created_at_x": "2026-04-12T00:00:00+00:00",
+                },
+                {
+                    "tweet_id": "",
+                    "canonical_url": "",
+                    "author": "same-author",
+                    "text": "same text fallback",
+                    "created_at_x": None,
+                },
+                {
+                    "tweet_id": "",
+                    "canonical_url": "",
+                    "author": "same-author",
+                    "text": "same text fallback",
+                    "created_at_x": None,
+                },
+                {
+                    "tweet_id": "",
+                    "canonical_url": "",
+                    "author": "",
+                    "text": "",
+                    "created_at_x": "2026-04-13T00:00:00+00:00",
+                },
+            ]
+        )
+
+        summary = self.service.dedupe_items(table="raw")
+        page = self.service.list_items(table="raw", page=1, page_size=10, sort_by="id", sort_dir="asc")
+
+        self.assertEqual(summary["groups"], 3)
+        self.assertEqual(summary["deleted"], 3)
+        self.assertEqual(summary["kept"], 3)
+        self.assertEqual(summary["rows_before"], 7)
+        self.assertEqual(summary["rows_after"], 4)
+        self.assertEqual([item["id"] for item in page["items"]], [ids[0], ids[2], ids[4], ids[6]])
 
 
 if __name__ == "__main__":

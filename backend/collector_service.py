@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
@@ -40,7 +40,7 @@ RUNTIME_LOG_FILES = (
     "web-ui.current.err.log",
 )
 
-ITEM_FIELDS = (
+CURATED_ITEM_FIELDS = (
     "id",
     "run_id",
     "dedupe_key",
@@ -57,7 +57,36 @@ ITEM_FIELDS = (
     "rule_set_id",
     "state",
 )
-ITEM_SORT_FIELDS = {field: field for field in ITEM_FIELDS}
+CURATED_ITEM_SORT_FIELDS = {field: field for field in CURATED_ITEM_FIELDS}
+RAW_ITEM_DB_FIELDS = (
+    "id",
+    "run_id",
+    "tweet_id",
+    "canonical_url",
+    "author",
+    "text",
+    "created_at_x",
+    "metrics_json",
+    "query_name",
+    "fetched_at",
+)
+RAW_ITEM_FIELDS = (
+    "id",
+    "run_id",
+    "tweet_id",
+    "canonical_url",
+    "author",
+    "text",
+    "created_at_x",
+    "views",
+    "likes",
+    "replies",
+    "retweets",
+    "query_name",
+    "fetched_at",
+)
+RAW_ITEM_SORT_FIELDS = {field: field for field in RAW_ITEM_FIELDS}
+RAW_ITEM_PYTHON_SORT_FIELDS = {"created_at_x", "views", "likes", "replies", "retweets"}
 MAX_ITEM_PAGE_SIZE = 200
 
 
@@ -78,6 +107,50 @@ def _item_created_at_sort_key(payload: dict[str, Any], direction: str) -> tuple[
         return (1, 0.0, item_id)
     timestamp = created_at.timestamp()
     return (0, timestamp if direction == "ASC" else -timestamp, item_id)
+
+
+def _number_sort_key(payload: dict[str, Any], field: str, direction: str) -> tuple[int, int]:
+    item_id = int(payload["id"])
+    value = payload.get(field, 0)
+    try:
+        numeric = int(value or 0)
+    except (TypeError, ValueError):
+        numeric = 0
+    return (numeric if direction == "ASC" else -numeric, item_id)
+
+
+def _raw_metrics(payload: dict[str, Any]) -> dict[str, int]:
+    raw_metrics = payload.get("metrics_json", {})
+    if not isinstance(raw_metrics, dict):
+        raw_metrics = {}
+    normalized: dict[str, int] = {}
+    for key in ("views", "likes", "replies", "retweets"):
+        value = raw_metrics.get(key, 0)
+        try:
+            normalized[key] = int(value or 0)
+        except (TypeError, ValueError):
+            normalized[key] = 0
+    return normalized
+
+
+def _raw_row_to_item(row: Any) -> dict[str, Any]:
+    payload = row_to_dict(row)
+    metrics = _raw_metrics(payload)
+    return {
+        "id": int(payload["id"]),
+        "run_id": int(payload["run_id"]),
+        "tweet_id": str(payload.get("tweet_id") or ""),
+        "canonical_url": str(payload.get("canonical_url") or ""),
+        "author": str(payload.get("author") or ""),
+        "text": str(payload.get("text") or ""),
+        "created_at_x": payload.get("created_at_x"),
+        "views": metrics["views"],
+        "likes": metrics["likes"],
+        "replies": metrics["replies"],
+        "retweets": metrics["retweets"],
+        "query_name": str(payload.get("query_name") or ""),
+        "fetched_at": payload.get("fetched_at"),
+    }
 
 
 def _metric(item: SearchResult, key: str) -> int:
@@ -838,7 +911,7 @@ class DesktopService:
             dedupe_stats: dict[str, Any] = {}
             if matched_items:
                 try:
-                    dedupe_summary = self.dedupe_items()
+                    dedupe_summary = self.dedupe_items(table="curated")
                     dedupe_stats = {
                         "dedupe_groups": int(dedupe_summary.get("groups", 0) or 0),
                         "dedupe_deleted": int(dedupe_summary.get("deleted", 0) or 0),
@@ -933,12 +1006,19 @@ class DesktopService:
             items.append(payload)
         return {"items": items}
 
-    def _normalize_item_sort(self, sort_by: str | None, sort_dir: str | None) -> tuple[str, str]:
+    def _normalize_item_table(self, table: str | None) -> str:
+        return "raw" if str(table or "").strip().lower() == "raw" else "curated"
+
+    def _item_table_name(self, table: str) -> str:
+        return "x_items_raw" if table == "raw" else "x_items_curated"
+
+    def _normalize_item_sort(self, table: str, sort_by: str | None, sort_dir: str | None) -> tuple[str, str]:
         requested = str(sort_by or "").strip()
-        if requested in ITEM_SORT_FIELDS:
+        sort_fields = RAW_ITEM_SORT_FIELDS if table == "raw" else CURATED_ITEM_SORT_FIELDS
+        if requested in sort_fields:
             direction = "ASC" if str(sort_dir or "").strip().lower() == "asc" else "DESC"
-            return ITEM_SORT_FIELDS[requested], direction
-        return ITEM_SORT_FIELDS["id"], "DESC"
+            return sort_fields[requested], direction
+        return sort_fields["id"], "DESC"
 
     def _normalize_item_ids(self, ids: list[Any] | None) -> list[int]:
         normalized: list[int] = []
@@ -951,36 +1031,40 @@ class DesktopService:
             normalized.append(item_id)
         return normalized
 
-    def _item_where_clause(self, level: str | None = None, keyword: str | None = None) -> tuple[str, list[Any]]:
+    def _item_where_clause(self, table: str, level: str | None = None, keyword: str | None = None) -> tuple[str, list[Any]]:
         where: list[str] = []
         params: list[Any] = []
-        normalized_level = str(level or "").strip()
-        if normalized_level:
-            where.append("level = ?")
-            params.append(normalized_level.upper())
         normalized_keyword = str(keyword or "").strip()
-        if normalized_keyword:
-            token = f"%{normalized_keyword}%"
-            where.append("(title LIKE ? OR excerpt LIKE ?)")
-            params.extend([token, token])
+        if table == "curated":
+            normalized_level = str(level or "").strip()
+            if normalized_level:
+                where.append("level = ?")
+                params.append(normalized_level.upper())
+            if normalized_keyword:
+                token = f"%{normalized_keyword}%"
+                where.append("(title LIKE ? OR excerpt LIKE ?)")
+                params.extend([token, token])
+        else:
+            if normalized_keyword:
+                token = f"%{normalized_keyword}%"
+                where.append("(text LIKE ? OR author LIKE ? OR canonical_url LIKE ?)")
+                params.extend([token, token, token])
         where_sql = f"WHERE {' AND '.join(where)}" if where else ""
         return where_sql, params
 
-    def list_items(
+    def _list_curated_items(
         self,
-        page: int = 1,
-        page_size: int = 50,
-        level: str | None = None,
-        keyword: str | None = None,
-        sort_by: str | None = None,
-        sort_dir: str | None = None,
+        page: int,
+        page_size: int,
+        level: str | None,
+        keyword: str | None,
+        sort_by: str | None,
+        sort_dir: str | None,
     ) -> dict[str, Any]:
-        page = max(1, int(page or 1))
-        page_size = max(1, min(MAX_ITEM_PAGE_SIZE, int(page_size or 50)))
         offset = max(0, (page - 1) * page_size)
-        where_sql, params = self._item_where_clause(level=level, keyword=keyword)
-        sort_column, sort_direction = self._normalize_item_sort(sort_by, sort_dir)
-        selected_fields = ", ".join(ITEM_FIELDS)
+        where_sql, params = self._item_where_clause("curated", level=level, keyword=keyword)
+        sort_column, sort_direction = self._normalize_item_sort("curated", sort_by, sort_dir)
+        selected_fields = ", ".join(CURATED_ITEM_FIELDS)
         with connect(self.db_path) as conn:
             total = conn.execute(f"SELECT COUNT(1) FROM x_items_curated {where_sql}", tuple(params)).fetchone()[0]
             if sort_column == "created_at_x":
@@ -1015,23 +1099,101 @@ class DesktopService:
             "items": items,
         }
 
-    def delete_item(self, item_id: int) -> dict[str, Any]:
-        normalized_id = int(item_id)
+    def _list_raw_items(
+        self,
+        page: int,
+        page_size: int,
+        keyword: str | None,
+        sort_by: str | None,
+        sort_dir: str | None,
+    ) -> dict[str, Any]:
+        offset = max(0, (page - 1) * page_size)
+        where_sql, params = self._item_where_clause("raw", keyword=keyword)
+        sort_column, sort_direction = self._normalize_item_sort("raw", sort_by, sort_dir)
+        selected_fields = ", ".join(RAW_ITEM_DB_FIELDS)
         with connect(self.db_path) as conn:
-            row = conn.execute("SELECT id FROM x_items_curated WHERE id = ?", (normalized_id,)).fetchone()
+            total = int(conn.execute(f"SELECT COUNT(1) FROM x_items_raw {where_sql}", tuple(params)).fetchone()[0])
+            if sort_column in RAW_ITEM_PYTHON_SORT_FIELDS:
+                rows = conn.execute(
+                    f"""
+                    SELECT {selected_fields}
+                    FROM x_items_raw
+                    {where_sql}
+                    """,
+                    tuple(params),
+                ).fetchall()
+                items = [_raw_row_to_item(row) for row in rows]
+                if sort_column == "created_at_x":
+                    items = sorted(items, key=lambda item: _item_created_at_sort_key(item, sort_direction))
+                else:
+                    items = sorted(items, key=lambda item: _number_sort_key(item, sort_column, sort_direction))
+                items = items[offset : offset + page_size]
+            else:
+                order_sql = f"{sort_column} {sort_direction}" if sort_column == "id" else f"{sort_column} {sort_direction}, id ASC"
+                rows = conn.execute(
+                    f"""
+                    SELECT {selected_fields}
+                    FROM x_items_raw
+                    {where_sql}
+                    ORDER BY {order_sql}
+                    LIMIT ? OFFSET ?
+                    """,
+                    tuple(params + [page_size, offset]),
+                ).fetchall()
+                items = [_raw_row_to_item(row) for row in rows]
+        return {
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "items": items,
+        }
+
+    def list_items(
+        self,
+        page: int = 1,
+        page_size: int = 50,
+        level: str | None = None,
+        keyword: str | None = None,
+        sort_by: str | None = None,
+        sort_dir: str | None = None,
+        table: str = "curated",
+    ) -> dict[str, Any]:
+        page = max(1, int(page or 1))
+        page_size = max(1, min(MAX_ITEM_PAGE_SIZE, int(page_size or 50)))
+        normalized_table = self._normalize_item_table(table)
+        if normalized_table == "raw":
+            return self._list_raw_items(page=page, page_size=page_size, keyword=keyword, sort_by=sort_by, sort_dir=sort_dir)
+        return self._list_curated_items(
+            page=page,
+            page_size=page_size,
+            level=level,
+            keyword=keyword,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+        )
+
+    def delete_item(self, item_id: int, table: str = "curated") -> dict[str, Any]:
+        normalized_id = int(item_id)
+        normalized_table = self._normalize_item_table(table)
+        table_name = self._item_table_name(normalized_table)
+        with connect(self.db_path) as conn:
+            row = conn.execute(f"SELECT id FROM {table_name} WHERE id = ?", (normalized_id,)).fetchone()
             if row is None:
                 raise ValueError(f"item {normalized_id} not found")
-            conn.execute("DELETE FROM x_items_curated WHERE id = ?", (normalized_id,))
+            conn.execute(f"DELETE FROM {table_name} WHERE id = ?", (normalized_id,))
         return {"id": normalized_id, "deleted": 1}
 
-    def delete_items(self, ids: list[int]) -> dict[str, Any]:
+    def delete_items(self, ids: list[int], table: str = "curated") -> dict[str, Any]:
         normalized_ids = self._normalize_item_ids(ids)
         if not normalized_ids:
             return {"ids": [], "deleted": 0}
+        normalized_table = self._normalize_item_table(table)
+        table_name = self._item_table_name(normalized_table)
         placeholders = ", ".join("?" for _ in normalized_ids)
+        delete_ids: list[int] = []
         with connect(self.db_path) as conn:
             existing_rows = conn.execute(
-                f"SELECT id FROM x_items_curated WHERE id IN ({placeholders})",
+                f"SELECT id FROM {table_name} WHERE id IN ({placeholders})",
                 tuple(normalized_ids),
             ).fetchall()
             existing_ids = {int(row["id"]) for row in existing_rows}
@@ -1039,44 +1201,75 @@ class DesktopService:
             if delete_ids:
                 delete_placeholders = ", ".join("?" for _ in delete_ids)
                 conn.execute(
-                    f"DELETE FROM x_items_curated WHERE id IN ({delete_placeholders})",
+                    f"DELETE FROM {table_name} WHERE id IN ({delete_placeholders})",
                     tuple(delete_ids),
                 )
         return {"ids": normalized_ids, "deleted": len(delete_ids)}
 
-    def delete_items_matching(self, keyword: str | None = None, level: str | None = None) -> dict[str, Any]:
-        where_sql, params = self._item_where_clause(level=level, keyword=keyword)
+    def delete_items_matching(self, keyword: str | None = None, level: str | None = None, table: str = "curated") -> dict[str, Any]:
+        normalized_table = self._normalize_item_table(table)
+        table_name = self._item_table_name(normalized_table)
+        where_sql, params = self._item_where_clause(normalized_table, level=level, keyword=keyword)
         with connect(self.db_path) as conn:
             rows = conn.execute(
-                f"SELECT id FROM x_items_curated {where_sql} ORDER BY id ASC",
+                f"SELECT id FROM {table_name} {where_sql} ORDER BY id ASC",
                 tuple(params),
             ).fetchall()
             delete_ids = [int(row["id"]) for row in rows]
             if delete_ids:
                 placeholders = ", ".join("?" for _ in delete_ids)
                 conn.execute(
-                    f"DELETE FROM x_items_curated WHERE id IN ({placeholders})",
+                    f"DELETE FROM {table_name} WHERE id IN ({placeholders})",
                     tuple(delete_ids),
                 )
         return {"ids": [], "deleted": len(delete_ids)}
 
-    def dedupe_items(self) -> dict[str, Any]:
+    def dedupe_items(self, table: str = "curated") -> dict[str, Any]:
+        normalized_table = self._normalize_item_table(table)
+        table_name = self._item_table_name(normalized_table)
         with connect(self.db_path) as conn:
-            rows_before = int(conn.execute("SELECT COUNT(1) FROM x_items_curated").fetchone()[0])
-            rows = [
-                row_to_dict(row)
-                for row in conn.execute(
-                    """
-                    SELECT id, dedupe_key, created_at_x
-                    FROM x_items_curated
-                    WHERE TRIM(COALESCE(dedupe_key, '')) <> ''
-                    ORDER BY dedupe_key ASC, id ASC
-                    """
-                ).fetchall()
-            ]
+            rows_before = int(conn.execute(f"SELECT COUNT(1) FROM {table_name}").fetchone()[0])
             grouped: dict[str, list[dict[str, Any]]] = {}
-            for row in rows:
-                grouped.setdefault(str(row.get("dedupe_key") or ""), []).append(row)
+            if normalized_table == "raw":
+                rows = [
+                    row_to_dict(row)
+                    for row in conn.execute(
+                        """
+                        SELECT id, tweet_id, canonical_url, author, text, created_at_x
+                        FROM x_items_raw
+                        ORDER BY id ASC
+                        """
+                    ).fetchall()
+                ]
+                for row in rows:
+                    dedupe_key = build_source_dedupe_key(
+                        tweet_id=row.get("tweet_id"),
+                        url=row.get("canonical_url"),
+                        text=row.get("text"),
+                        author=row.get("author"),
+                    ) or ""
+                    if not dedupe_key:
+                        continue
+                    grouped.setdefault(dedupe_key, []).append(
+                        {
+                            "id": int(row["id"]),
+                            "created_at_x": row.get("created_at_x"),
+                        }
+                    )
+            else:
+                rows = [
+                    row_to_dict(row)
+                    for row in conn.execute(
+                        """
+                        SELECT id, dedupe_key, created_at_x
+                        FROM x_items_curated
+                        WHERE TRIM(COALESCE(dedupe_key, '')) <> ''
+                        ORDER BY dedupe_key ASC, id ASC
+                        """
+                    ).fetchall()
+                ]
+                for row in rows:
+                    grouped.setdefault(str(row.get("dedupe_key") or ""), []).append(row)
 
             delete_ids: list[int] = []
             duplicate_groups = 0
@@ -1092,10 +1285,10 @@ class DesktopService:
             if delete_ids:
                 placeholders = ", ".join("?" for _ in delete_ids)
                 conn.execute(
-                    f"DELETE FROM x_items_curated WHERE id IN ({placeholders})",
+                    f"DELETE FROM {table_name} WHERE id IN ({placeholders})",
                     tuple(delete_ids),
                 )
-            rows_after = int(conn.execute("SELECT COUNT(1) FROM x_items_curated").fetchone()[0])
+            rows_after = int(conn.execute(f"SELECT COUNT(1) FROM {table_name}").fetchone()[0])
         return {
             "groups": duplicate_groups,
             "deleted": len(delete_ids),

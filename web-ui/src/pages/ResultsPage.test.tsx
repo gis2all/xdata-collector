@@ -50,6 +50,26 @@ function makeItem(id: number, overrides: Record<string, unknown> = {}) {
   };
 }
 
+
+function makeRawItem(id: number, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    run_id: 200 + id,
+    tweet_id: `${9000 + id}`,
+    canonical_url: `https://x.com/i/status/${9000 + id}`,
+    author: `raw-author-${id}`,
+    text: `Raw text ${id}`,
+    created_at_x: "2026-04-13T00:49:06+00:00",
+    views: 100 + id,
+    likes: 10 + id,
+    replies: 2 + id,
+    retweets: 1 + id,
+    query_name: `manual:${id}`,
+    fetched_at: "2026-04-13T01:00:00+00:00",
+    ...overrides,
+  };
+}
+
 function makePage(items: ReturnType<typeof makeItem>[], total = items.length, page = 1, pageSize = 100) {
   return {
     page,
@@ -81,7 +101,7 @@ describe("ResultsPage", () => {
     });
 
     expect(listItemsMock).toHaveBeenCalledWith(
-      expect.objectContaining({ page: 1, page_size: 100, sort_by: "id", sort_dir: "desc" }),
+      expect.objectContaining({ page: 1, page_size: 100, sort_by: "id", sort_dir: "desc", table: "curated" }),
     );
     expect(screen.getByRole("button", { name: TEXT.refresh })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: TEXT.batchDelete })).toBeInTheDocument();
@@ -182,7 +202,7 @@ describe("ResultsPage", () => {
 
     await waitFor(() => {
       expect(listItemsMock).toHaveBeenCalledWith(
-        expect.objectContaining({ sort_by: "score", sort_dir: "asc" }),
+        expect.objectContaining({ sort_by: "score", sort_dir: "asc", table: "curated" }),
       );
     });
   });
@@ -210,7 +230,7 @@ describe("ResultsPage", () => {
 
     await waitFor(() => {
       expect(listItemsMock).toHaveBeenLastCalledWith(
-        expect.objectContaining({ sort_by: "score", sort_dir: "asc" }),
+        expect.objectContaining({ sort_by: "score", sort_dir: "asc", table: "curated" }),
       );
       expect(getTitleOrder()).toEqual(["Item 2", "Item 1"]);
     });
@@ -239,7 +259,7 @@ describe("ResultsPage", () => {
 
     await waitFor(() => {
       expect(listItemsMock).toHaveBeenLastCalledWith(
-        expect.objectContaining({ page: 2, page_size: 100, sort_by: "id", sort_dir: "desc" }),
+        expect.objectContaining({ page: 2, page_size: 100, sort_by: "id", sort_dir: "desc", table: "curated" }),
       );
       expect(screen.getByText("Item 101")).toBeInTheDocument();
     });
@@ -322,7 +342,7 @@ describe("ResultsPage", () => {
 
     await waitFor(() => {
       expect(listItemsMock).toHaveBeenLastCalledWith(
-        expect.objectContaining({ page: 1, page_size: 100, keyword: "alpha" }),
+        expect.objectContaining({ page: 1, page_size: 100, keyword: "alpha", table: "curated" }),
       );
       expect(screen.getByText("Alpha 999")).toBeInTheDocument();
     });
@@ -348,7 +368,7 @@ describe("ResultsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: TEXT.batchDelete }));
 
     await waitFor(() => {
-      expect(deleteItemsMock).toHaveBeenCalledWith([1, 2]);
+      expect(deleteItemsMock).toHaveBeenCalledWith({ ids: [1, 2], table: "curated" });
     });
 
     expect(await screen.findByText("已删除 2 条记录")).toBeInTheDocument();
@@ -372,7 +392,7 @@ describe("ResultsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: TEXT.batchDelete }));
 
     await waitFor(() => {
-      expect(deleteItemsMock).toHaveBeenCalledWith(expect.objectContaining({ mode: "all_matching" }));
+      expect(deleteItemsMock).toHaveBeenCalledWith(expect.objectContaining({ mode: "all_matching", table: "curated" }));
     });
 
     expect(await screen.findByText("已删除 132 条记录")).toBeInTheDocument();
@@ -393,7 +413,7 @@ describe("ResultsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "delete-item-7" }));
 
     await waitFor(() => {
-      expect(deleteItemMock).toHaveBeenCalledWith(7);
+      expect(deleteItemMock).toHaveBeenCalledWith(7, "curated");
     });
 
     expect(await screen.findByText("已删除记录 #7")).toBeInTheDocument();
@@ -420,11 +440,107 @@ describe("ResultsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: TEXT.dedupe }));
 
     await waitFor(() => {
-      expect(dedupeItemsMock).toHaveBeenCalledTimes(1);
+      expect(dedupeItemsMock).toHaveBeenCalledWith({ table: "curated" });
     });
 
     expect(
       await screen.findByText("去重完成：2 组重复，删除 3 条，保留 2 条"),
     ).toBeInTheDocument();
+  });
+
+
+  it("switches to raw table and loads raw columns", async () => {
+    listItemsMock
+      .mockResolvedValueOnce(makePage([makeItem(1)], 1))
+      .mockResolvedValueOnce(makePage([makeRawItem(2)], 1));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Item 1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "原始结果" }));
+
+    await waitFor(() => {
+      expect(listItemsMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, page_size: 100, sort_by: "id", sort_dir: "desc", table: "raw" }),
+      );
+      expect(screen.getByText("tweet_id")).toBeInTheDocument();
+      expect(screen.getByText("text")).toBeInTheDocument();
+      expect(screen.getByText("views")).toBeInTheDocument();
+      expect(screen.getByText("Raw text 2")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("summary_zh")).not.toBeInTheDocument();
+    expect(screen.getByText("table=x_items_raw")).toBeInTheDocument();
+  });
+
+  it("clears selection and falls back invalid sort and columns when switching tables", async () => {
+    window.localStorage.setItem(RESULTS_VISIBLE_COLUMNS_KEY, JSON.stringify(["title", "summary_zh"]));
+    listItemsMock
+      .mockResolvedValueOnce(makePage([makeItem(1)], 1))
+      .mockResolvedValueOnce(makePage([makeItem(1)], 1))
+      .mockResolvedValueOnce(makePage([makeRawItem(2)], 1));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Item 1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "title asc" }));
+    await waitFor(() => {
+      expect(listItemsMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sort_by: "title", sort_dir: "asc", table: "curated" }),
+      );
+    });
+
+    fireEvent.click(screen.getByLabelText(TEXT.selectPage));
+    fireEvent.click(screen.getByRole("button", { name: "原始结果" }));
+
+    await waitFor(() => {
+      expect(listItemsMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ sort_by: "id", sort_dir: "desc", table: "raw" }),
+      );
+      expect(screen.getByText("table=x_items_raw")).toBeInTheDocument();
+      expect(screen.getByText("selected=0")).toBeInTheDocument();
+      expect(screen.getByText("author")).toBeInTheDocument();
+      expect(screen.queryByText("title")).not.toBeInTheDocument();
+    });
+  });
+
+  it("passes raw table to delete and dedupe actions", async () => {
+    listItemsMock
+      .mockResolvedValueOnce(makePage([makeItem(1)], 1))
+      .mockResolvedValueOnce(makePage([makeRawItem(3), makeRawItem(4)], 2))
+      .mockResolvedValueOnce(makePage([makeRawItem(3), makeRawItem(4)], 2))
+      .mockResolvedValueOnce(makePage([], 0, 1));
+    deleteItemsMock.mockResolvedValue({ ids: [3, 4], deleted: 2 });
+    dedupeItemsMock.mockResolvedValue({ groups: 1, deleted: 1, kept: 1, rows_before: 2, rows_after: 1 });
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Item 1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "原始结果" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Raw text 3")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: TEXT.dedupe }));
+    await waitFor(() => {
+      expect(dedupeItemsMock).toHaveBeenCalledWith({ table: "raw" });
+    });
+
+    fireEvent.click(screen.getByLabelText(TEXT.selectPage));
+    fireEvent.click(screen.getByRole("button", { name: TEXT.batchDelete }));
+
+    await waitFor(() => {
+      expect(deleteItemsMock).toHaveBeenCalledWith({ ids: [3, 4], table: "raw" });
+    });
   });
 });

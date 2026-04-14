@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -81,6 +81,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 keyword = q.get("keyword", [None])[0]
                 sort_by = q.get("sort_by", [None])[0]
                 sort_dir = q.get("sort_dir", [None])[0]
+                table = q.get("table", ["curated"])[0]
                 self._json(
                     HTTPStatus.OK,
                     self.service.list_items(
@@ -90,6 +91,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                         keyword=keyword,
                         sort_by=sort_by,
                         sort_dir=sort_dir,
+                        table=table,
                     ),
                 )
                 return
@@ -148,23 +150,25 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, self.service.purge_job(job_id))
                 return
             if path == "/items/delete":
+                table = payload.get("table", "curated")
                 if payload.get("mode") == "all_matching":
                     self._json(
                         HTTPStatus.OK,
                         self.service.delete_items_matching(
                             keyword=payload.get("keyword"),
                             level=payload.get("level"),
+                            table=table,
                         ),
                     )
                 else:
-                    self._json(HTTPStatus.OK, self.service.delete_items(payload.get("ids", [])))
+                    self._json(HTTPStatus.OK, self.service.delete_items(payload.get("ids", []), table=table))
                 return
             if path == "/items/dedupe":
-                self._json(HTTPStatus.OK, self.service.dedupe_items())
+                self._json(HTTPStatus.OK, self.service.dedupe_items(table=payload.get("table", "curated")))
                 return
             if path.startswith("/items/") and path.endswith("/delete"):
                 item_id = int(path.split("/")[2])
-                self._json(HTTPStatus.OK, self.service.delete_item(item_id))
+                self._json(HTTPStatus.OK, self.service.delete_item(item_id, table=payload.get("table", "curated")))
                 return
             if path == "/scheduler/tick":
                 self._json(HTTPStatus.OK, self.service.tick())

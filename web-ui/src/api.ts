@@ -231,7 +231,9 @@ export type RuntimeLogFile = {
 };
 
 export type SortDirection = "asc" | "desc";
-export type ItemSortField =
+export type ItemTable = "curated" | "raw";
+
+export type CuratedItemSortField =
   | "id"
   | "run_id"
   | "dedupe_key"
@@ -248,7 +250,24 @@ export type ItemSortField =
   | "rule_set_id"
   | "state";
 
-export type ResultItemRecord = {
+export type RawItemSortField =
+  | "id"
+  | "run_id"
+  | "tweet_id"
+  | "canonical_url"
+  | "author"
+  | "text"
+  | "created_at_x"
+  | "views"
+  | "likes"
+  | "replies"
+  | "retweets"
+  | "query_name"
+  | "fetched_at";
+
+export type ItemSortField = CuratedItemSortField | RawItemSortField;
+
+export type CuratedItemRecord = {
   id: number;
   run_id: number;
   dedupe_key: string;
@@ -266,14 +285,32 @@ export type ResultItemRecord = {
   state: string;
 };
 
+export type RawItemRecord = {
+  id: number;
+  run_id: number;
+  tweet_id: string;
+  canonical_url: string;
+  author: string;
+  text: string;
+  created_at_x: string | null;
+  views: number;
+  likes: number;
+  replies: number;
+  retweets: number;
+  query_name: string;
+  fetched_at: string | null;
+};
+
+export type ResultItemRecord = CuratedItemRecord | RawItemRecord;
+
 export type DeleteItemResponse = {
   id: number;
   deleted: number;
 };
 
 export type DeleteItemsRequest =
-  | { ids: number[] }
-  | { mode: "all_matching"; keyword?: string; level?: string };
+  | { ids: number[]; table: ItemTable }
+  | { mode: "all_matching"; keyword?: string; level?: string; table: ItemTable };
 
 export type DeleteItemsResponse = {
   ids: number[];
@@ -338,6 +375,7 @@ export function getRuntimeLogs() {
 }
 
 export function listItems(params: {
+  table?: ItemTable;
   page?: number;
   page_size?: number;
   keyword?: string;
@@ -346,6 +384,7 @@ export function listItems(params: {
   sort_dir?: SortDirection;
 }) {
   const q = new URLSearchParams();
+  q.set("table", params.table ?? "curated");
   if (params.page) q.set("page", String(params.page));
   if (params.page_size) q.set("page_size", String(params.page_size));
   if (params.keyword) q.set("keyword", params.keyword);
@@ -355,20 +394,19 @@ export function listItems(params: {
   return req<{ total: number; page: number; page_size: number; items: ResultItemRecord[] }>(`/items?${q.toString()}`);
 }
 
-export function deleteItem(id: number) {
-  return req<DeleteItemResponse>(`/items/${id}/delete`, { method: "POST", body: "{}" });
+export function deleteItem(id: number, table: ItemTable = "curated") {
+  return req<DeleteItemResponse>(`/items/${id}/delete`, { method: "POST", body: JSON.stringify({ table }) });
 }
 
-export function deleteItems(payload: number[] | DeleteItemsRequest) {
-  const requestPayload: DeleteItemsRequest = Array.isArray(payload) ? { ids: payload } : payload;
+export function deleteItems(payload: DeleteItemsRequest) {
   return req<DeleteItemsResponse>("/items/delete", {
     method: "POST",
-    body: JSON.stringify(requestPayload),
+    body: JSON.stringify(payload),
   });
 }
 
-export function dedupeItems() {
-  return req<DedupeItemsResponse>("/items/dedupe", { method: "POST", body: "{}" });
+export function dedupeItems(payload: { table: ItemTable }) {
+  return req<DedupeItemsResponse>("/items/dedupe", { method: "POST", body: JSON.stringify(payload) });
 }
 
 export function createJob(payload: {

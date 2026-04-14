@@ -46,6 +46,29 @@ class FakeService:
 
     def list_items(self, **kwargs) -> dict:
         self.calls.append(("list_items", kwargs))
+        if kwargs.get("table") == "raw":
+            return {
+                "page": kwargs["page"],
+                "page_size": kwargs["page_size"],
+                "total": 1,
+                "items": [
+                    {
+                        "id": 19,
+                        "run_id": 8,
+                        "tweet_id": "1900",
+                        "canonical_url": "https://x.com/i/status/1900",
+                        "author": "raw-demo",
+                        "text": "raw alpha text",
+                        "created_at_x": "2026-04-13T00:49:06+00:00",
+                        "views": 100,
+                        "likes": 10,
+                        "replies": 2,
+                        "retweets": 1,
+                        "query_name": "manual:1",
+                        "fetched_at": "2026-04-13T00:50:00+00:00",
+                    }
+                ],
+            }
         return {
             "page": kwargs["page"],
             "page_size": kwargs["page_size"],
@@ -71,20 +94,20 @@ class FakeService:
             ],
         }
 
-    def delete_item(self, item_id: int) -> dict:
-        self.calls.append(("delete_item", item_id))
+    def delete_item(self, item_id: int, table: str = "curated") -> dict:
+        self.calls.append(("delete_item", {"id": item_id, "table": table}))
         return {"id": item_id, "deleted": 1}
 
-    def delete_items(self, ids: list[int]) -> dict:
-        self.calls.append(("delete_items", ids))
+    def delete_items(self, ids: list[int], table: str = "curated") -> dict:
+        self.calls.append(("delete_items", {"ids": ids, "table": table}))
         return {"ids": ids, "deleted": len(ids)}
 
-    def delete_items_matching(self, keyword: str | None = None, level: str | None = None) -> dict:
-        self.calls.append(("delete_items_matching", {"keyword": keyword, "level": level}))
+    def delete_items_matching(self, keyword: str | None = None, level: str | None = None, table: str = "curated") -> dict:
+        self.calls.append(("delete_items_matching", {"keyword": keyword, "level": level, "table": table}))
         return {"ids": [], "deleted": 12}
 
-    def dedupe_items(self) -> dict:
-        self.calls.append(("dedupe_items", None))
+    def dedupe_items(self, table: str = "curated") -> dict:
+        self.calls.append(("dedupe_items", table))
         return {"groups": 2, "deleted": 3, "kept": 2, "rows_before": 10, "rows_after": 7}
 
 
@@ -250,7 +273,27 @@ class ApiHandlerTests(unittest.TestCase):
             service.calls[0],
             (
                 "list_items",
-                {"page": 2, "page_size": 15, "level": "A", "keyword": "airdrop", "sort_by": "score", "sort_dir": "asc"},
+                {"page": 2, "page_size": 15, "level": "A", "keyword": "airdrop", "sort_by": "score", "sort_dir": "asc", "table": "curated"},
+            ),
+        )
+
+    def test_get_items_supports_raw_table_query_param(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "GET",
+                "/items?page=1&page_size=20&keyword=alpha&sort_by=views&sort_dir=desc&table=raw",
+            )
+
+        self.assertEqual(status, 200)
+        payload = json.loads(body.decode("utf-8"))
+        self.assertEqual(payload["items"][0]["tweet_id"], "1900")
+        self.assertEqual(
+            service.calls[0],
+            (
+                "list_items",
+                {"page": 1, "page_size": 20, "level": None, "keyword": "alpha", "sort_by": "views", "sort_dir": "desc", "table": "raw"},
             ),
         )
 
@@ -267,7 +310,22 @@ class ApiHandlerTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body.decode("utf-8")), {"id": 123, "deleted": 1})
-        self.assertEqual(service.calls[0], ("delete_item", 123))
+        self.assertEqual(service.calls[0], ("delete_item", {"id": 123, "table": "curated"}))
+
+    def test_post_item_delete_supports_raw_table(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "POST",
+                "/items/321/delete",
+                body=json.dumps({"table": "raw"}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8")), {"id": 321, "deleted": 1})
+        self.assertEqual(service.calls[0], ("delete_item", {"id": 321, "table": "raw"}))
 
     def test_post_items_delete_dispatches_selected_ids(self) -> None:
         service = FakeService()
@@ -283,7 +341,7 @@ class ApiHandlerTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body.decode("utf-8"))["deleted"], 3)
-        self.assertEqual(service.calls[0], ("delete_items", [3, 4, 5]))
+        self.assertEqual(service.calls[0], ("delete_items", {"ids": [3, 4, 5], "table": "curated"}))
 
     def test_post_items_delete_dispatches_all_matching_filter(self) -> None:
         service = FakeService()
@@ -301,7 +359,42 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(json.loads(body.decode("utf-8"))["deleted"], 12)
         self.assertEqual(
             service.calls[0],
-            ("delete_items_matching", {"keyword": "airdrop", "level": "A"}),
+            ("delete_items_matching", {"keyword": "airdrop", "level": "A", "table": "curated"}),
+        )
+
+    def test_post_items_delete_dispatches_raw_table(self) -> None:
+        service = FakeService()
+        payload = {"ids": [8, 9], "table": "raw"}
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "POST",
+                "/items/delete",
+                body=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8"))["deleted"], 2)
+        self.assertEqual(service.calls[0], ("delete_items", {"ids": [8, 9], "table": "raw"}))
+
+    def test_post_items_delete_dispatches_raw_all_matching_filter(self) -> None:
+        service = FakeService()
+        payload = {"mode": "all_matching", "keyword": "alpha", "table": "raw"}
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "POST",
+                "/items/delete",
+                body=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8"))["deleted"], 12)
+        self.assertEqual(
+            service.calls[0],
+            ("delete_items_matching", {"keyword": "alpha", "level": None, "table": "raw"}),
         )
 
     def test_post_items_dedupe_dispatches_to_service(self) -> None:
@@ -317,7 +410,22 @@ class ApiHandlerTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body.decode("utf-8"))["rows_after"], 7)
-        self.assertEqual(service.calls[0], ("dedupe_items", None))
+        self.assertEqual(service.calls[0], ("dedupe_items", "curated"))
+
+    def test_post_items_dedupe_dispatches_raw_table(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "POST",
+                "/items/dedupe",
+                body=json.dumps({"table": "raw"}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8"))["rows_after"], 7)
+        self.assertEqual(service.calls[0], ("dedupe_items", "raw"))
 
 
 if __name__ == "__main__":
