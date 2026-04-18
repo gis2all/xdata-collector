@@ -502,6 +502,13 @@ export function updateTaskPack(
   });
 }
 
+export function deleteTaskPack(packName: string) {
+  return req<{ pack_name: string; deleted: number }>(`/task-packs/${encodeURIComponent(packName)}/delete`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
 export function listJobs(params: { page?: number; page_size?: number; query?: string; status?: string }) {
   const q = new URLSearchParams();
   if (params.page) q.set("page", String(params.page));

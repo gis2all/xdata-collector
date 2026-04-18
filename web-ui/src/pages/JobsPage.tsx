@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   JobBatchAction,
   JobBatchResponse,
   JobRecord,
+  RuleSet,
   RuleSetDefinition,
+  TaskPackFile,
   TaskPackSummary,
   batchJobs,
   createJob,
   createTaskPack,
+  deleteTaskPack,
   deleteJob,
   getJob,
   getTaskPack,
@@ -21,7 +24,9 @@ import {
   updateTaskPack,
 } from "../api";
 import { DEFAULT_RULE_SET_DEFINITION, DEFAULT_SEARCH_SPEC, buildQueryPreview, cloneRuleDefinition, cloneSearchSpec } from "../collector";
+import { RuleSetEditor } from "../components/RuleSetEditor";
 import { SearchSpecEditor } from "../components/SearchSpecEditor";
+import { ImportedTaskPackDraft, readImportedTaskPack } from "../taskPacks";
 import { formatUtcPlus8Time } from "../time";
 
 type JobStatusFilter = "active" | "all" | "deleted";
@@ -117,6 +122,28 @@ function batchConfirmText(action: JobBatchAction, count: number) {
   return "";
 }
 
+function buildJobDraftComparable(form: JobFormState) {
+  return {
+    search_spec: cloneSearchSpec(form.search_spec),
+    rule_set: {
+      name: form.rule_set.name.trim(),
+      description: form.rule_set.description.trim(),
+      definition: cloneRuleDefinition(form.rule_set.definition),
+    },
+  };
+}
+
+function buildJobPackComparable(pack: TaskPackFile) {
+  return {
+    search_spec: cloneSearchSpec(pack.search_spec),
+    rule_set: {
+      name: String(pack.rule_set.name || "").trim(),
+      description: String(pack.rule_set.description || "").trim(),
+      definition: cloneRuleDefinition(pack.rule_set.definition),
+    },
+  };
+}
+
 function buildPackPayload(form: JobFormState, packName: string) {
   return {
     meta: {
@@ -132,6 +159,14 @@ function buildPackPayload(form: JobFormState, packName: string) {
       definition: cloneRuleDefinition(form.rule_set.definition),
     },
   };
+}
+
+type DraftSourceKind = "blank" | "pack" | "file";
+
+function draftSourceLabel(kind: DraftSourceKind) {
+  if (kind === "pack") return "任务包载入";
+  if (kind === "file") return "文件导入";
+  return "默认空白";
 }
 
 export function JobsPage() {
@@ -150,12 +185,17 @@ export function JobsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [form, setForm] = useState<JobFormState>(DEFAULT_FORM);
   const [saving, setSaving] = useState(false);
+  const [deletingPack, setDeletingPack] = useState(false);
   const [actionMessage, setActionMessage] = useState("");
   const [savingPack, setSavingPack] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [allMatchingSelected, setAllMatchingSelected] = useState(false);
   const [selectionWarning, setSelectionWarning] = useState("");
   const [selectedDeletedById, setSelectedDeletedById] = useState<Record<number, boolean>>({});
+  const [currentTaskPack, setCurrentTaskPack] = useState<TaskPackFile | null>(null);
+  const [draftSource, setDraftSource] = useState<DraftSourceKind>("blank");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingFileActionRef = useRef<"draft" | "save_new">("draft");
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
   const selectedOnPage = allMatchingSelected ? jobs.length : jobs.filter((job) => selectedIds.includes(job.id)).length;
@@ -171,6 +211,29 @@ export function JobsPage() {
     if (status === "deleted") return DELETED_BATCH_ACTIONS;
     return [...ACTIVE_BATCH_ACTIONS, ...DELETED_BATCH_ACTIONS];
   }, [status]);
+  const currentTaskPackComparable = useMemo(
+    () => (currentTaskPack ? buildJobPackComparable(currentTaskPack) : null),
+    [currentTaskPack],
+  );
+  const currentJobDraftComparable = useMemo(() => buildJobDraftComparable(form), [form]);
+  const taskPackDirty = useMemo(() => {
+    if (!currentTaskPackComparable) return false;
+    return JSON.stringify(currentTaskPackComparable) !== JSON.stringify(currentJobDraftComparable);
+  }, [currentTaskPackComparable, currentJobDraftComparable]);
+  const currentTaskPackName = currentTaskPack?.meta.name || (form.pack_name ? taskPacks.find((item) => item.pack_name === form.pack_name)?.name || form.pack_name : "未绑定");
+  const currentTaskPackDescription = currentTaskPack?.meta.description || "";
+  const currentRuleSetPreview = useMemo<RuleSet | null>(
+    () => ({
+      id: Number(form.rule_set.id ?? 0) || 0,
+      name: form.rule_set.name,
+      description: form.rule_set.description,
+      is_enabled: true,
+      is_builtin: currentTaskPack?.pack_name === "default-rule-set",
+      version: form.rule_set.version,
+      definition_json: cloneRuleDefinition(form.rule_set.definition),
+    }),
+    [currentTaskPack?.pack_name, form.rule_set],
+  );
 
   async function loadTaskPacks() {
     const data = await listTaskPacks();
@@ -232,6 +295,26 @@ export function JobsPage() {
 
   function resetForm() {
     setForm({ ...DEFAULT_FORM, search_spec: cloneSearchSpec(DEFAULT_SEARCH_SPEC), rule_set: { ...DEFAULT_FORM.rule_set, definition: cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION) }, import_pack_name: taskPacks[0]?.pack_name || "" });
+    setCurrentTaskPack(null);
+    setDraftSource("blank");
+  }
+
+  function resetTaskBodyToDraft() {
+    setForm((prev) => ({
+      ...prev,
+      pack_name: null,
+      import_pack_name: taskPacks[0]?.pack_name || "",
+      search_spec: cloneSearchSpec(DEFAULT_SEARCH_SPEC),
+      rule_set: {
+        ...prev.rule_set,
+        id: 1,
+        name: "Default Rule Set",
+        description: "Built-in opportunity discovery rules.",
+        version: 1,
+        definition: cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION),
+      },
+    }));
+    setCurrentTaskPack(null);
   }
 
   function clearSelection() {
@@ -254,11 +337,13 @@ export function JobsPage() {
       setSelectedJob(detail);
       setDrawerMode(mode);
       const pack = detail.pack_name ? await getTaskPack(detail.pack_name).catch(() => null) : null;
+      setCurrentTaskPack(pack);
+      setDraftSource(pack ? "pack" : "blank");
       setForm({
         name: detail.name,
         interval_minutes: detail.interval_minutes,
         enabled: Boolean(detail.enabled),
-        pack_name: detail.pack_name,
+        pack_name: detail.pack_name || pack?.pack_name || null,
         import_pack_name: detail.pack_name || taskPacks[0]?.pack_name || "",
         search_spec: cloneSearchSpec(pack?.search_spec || detail.search_spec_json),
         rule_set: {
@@ -360,6 +445,8 @@ export function JobsPage() {
     setError("");
     try {
       const pack = await getTaskPack(form.import_pack_name);
+      setCurrentTaskPack(pack);
+      setDraftSource(pack ? "pack" : "blank");
       setForm((prev) => ({
         ...prev,
         search_spec: cloneSearchSpec(pack.search_spec),
@@ -370,9 +457,9 @@ export function JobsPage() {
           version: pack.rule_set.version || 1,
           definition: cloneRuleDefinition(pack.rule_set.definition),
         },
-        pack_name: prev.pack_name,
+        pack_name: pack.pack_name,
       }));
-      setActionMessage(`已导入任务包 ${pack.meta.name}`);
+      setActionMessage(`已载入任务包 ${pack.meta.name}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "导入任务包失败");
     }
@@ -388,8 +475,10 @@ export function JobsPage() {
     try {
       const payload = buildPackPayload(form, targetName);
       const saved = mode === "overwrite" && form.pack_name ? await updateTaskPack(form.pack_name, payload) : await createTaskPack({ pack_name: targetName, ...payload });
+      setCurrentTaskPack(saved);
+      setDraftSource("pack");
       setForm((prev) => ({ ...prev, pack_name: saved.pack_name, import_pack_name: saved.pack_name }));
-      setActionMessage(mode === "overwrite" ? "已覆盖当前任务包" : `已导出任务包 ${saved.pack_name}`);
+      setActionMessage(mode === "overwrite" ? "已保存到当前任务包" : `已另存为新任务包 ${saved.pack_name}`);
       await loadTaskPacks();
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存任务包失败");
@@ -511,6 +600,106 @@ export function JobsPage() {
     }
   }
 
+  async function handleImportPackFile(file: File | null | undefined) {
+    if (!file) return;
+    setError("");
+    try {
+      const imported = await readImportedTaskPack(file);
+      setCurrentTaskPack(null);
+      setDraftSource("file");
+      setForm((prev) => ({
+        ...prev,
+        pack_name: null,
+        import_pack_name: taskPacks[0]?.pack_name || "",
+        search_spec: cloneSearchSpec(imported.searchSpec),
+        rule_set: {
+          id: imported.ruleSet.id ?? null,
+          name: imported.ruleSet.name,
+          description: imported.ruleSet.description || imported.description,
+          version: imported.ruleSet.version || 1,
+          definition: cloneRuleDefinition(imported.ruleSet.definition),
+        },
+      }));
+      setActionMessage(`已从文件导入任务包 ${imported.sourceName}，当前仍是未绑定草稿`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "导入任务包文件失败");
+    }
+  }
+
+  async function handleImportAndSavePackFile(file: File | null | undefined) {
+    if (!file) return;
+    setError("");
+    try {
+      const imported = await readImportedTaskPack(file);
+      const suggestedName = imported.metaName || imported.sourceName.replace(/\.json$/i, "") || "task-pack";
+      const targetName = window.prompt("请输入新任务包名称", suggestedName)?.trim();
+      if (!targetName) return;
+      setSavingPack(true);
+      const payload = {
+        meta: {
+          name: targetName,
+          description: imported.ruleSet.description || imported.description,
+        },
+        search_spec: cloneSearchSpec(imported.searchSpec),
+        rule_set: {
+          id: imported.ruleSet.id ?? null,
+          name: imported.ruleSet.name,
+          description: imported.ruleSet.description || imported.description,
+          version: imported.ruleSet.version,
+          definition: cloneRuleDefinition(imported.ruleSet.definition),
+        },
+      };
+      const saved = await createTaskPack({ pack_name: targetName, ...payload });
+      setCurrentTaskPack(saved);
+      setDraftSource("pack");
+      setForm((prev) => ({
+        ...prev,
+        pack_name: saved.pack_name,
+        import_pack_name: saved.pack_name,
+        search_spec: cloneSearchSpec(saved.search_spec),
+        rule_set: {
+          id: saved.rule_set.id ?? null,
+          name: saved.rule_set.name,
+          description: saved.rule_set.description || "",
+          version: saved.rule_set.version || 1,
+          definition: cloneRuleDefinition(saved.rule_set.definition),
+        },
+      }));
+      setActionMessage(`已从文件导入并保存为新任务包 ${saved.pack_name}`);
+      await loadTaskPacks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "导入并保存任务包失败");
+    } finally {
+      setSavingPack(false);
+    }
+  }
+
+  async function handleDeleteCurrentPack() {
+    if (!currentTaskPack?.pack_name) return;
+    if (!window.confirm(`确认删除当前任务包 ${currentTaskPack.pack_name} 吗？`)) return;
+
+    setDeletingPack(true);
+    setError("");
+    try {
+      const deletedPackName = currentTaskPack.pack_name;
+      await deleteTaskPack(deletedPackName);
+      resetTaskBodyToDraft();
+      setActionMessage(`已删除任务包 ${deletedPackName}`);
+      await loadTaskPacks();
+    } catch (err) {
+      const fallback = err instanceof Error ? err.message : "删除任务包失败";
+      if (fallback.includes("referenced by existing jobs")) {
+        setError("当前任务包仍被自动任务使用，请先更换绑定后再删除");
+      } else if (fallback.includes("default task pack cannot be deleted")) {
+        setError("默认规则任务包不可删除");
+      } else {
+        setError(fallback);
+      }
+    } finally {
+      setDeletingPack(false);
+    }
+  }
+
   async function handleBatchAction(action: JobBatchAction) {
     if (!isBatchActionEnabled(action)) return;
     const confirmText = batchConfirmText(action, selectedCount);
@@ -569,7 +758,7 @@ export function JobsPage() {
       <div className="jobs-header">
         <div>
           <h3>{"自动任务"}</h3>
-          <p className="kv">{"任务正文来自 task pack 文件，调度字段只保存在轻量 workspace job registry 中。"}</p>
+          <p className="kv">{"自动任务负责调度；任务正文来自当前绑定任务包，包含搜索条件和规则。"}</p>
         </div>
         <div className="jobs-toolbar">
           <input value={queryInput} onChange={(e) => setQueryInput(e.target.value)} placeholder={"按任务名称搜索"} aria-label="搜索任务" />
@@ -638,8 +827,7 @@ export function JobsPage() {
                     </label>
                   </th>
                   <th>{"任务"}</th>
-                  <th>{"规则集"}</th>
-                  <th>{"查询摘要"}</th>
+                  <th>{"任务包"}</th>
                   <th>{"间隔"}</th>
                   <th>{"状态"}</th>
                   <th>{"下次运行"}</th>
@@ -663,10 +851,9 @@ export function JobsPage() {
                       <div className="kv">#{job.id}</div>
                     </td>
                     <td>
-                      <div>{job.rule_set_summary?.name || "--"}</div>
-                      <div className="kv">{job.pack_name}</div>
+                      <div className="job-name">{job.pack_meta?.name || job.pack_name || "--"}</div>
+                      <div className="kv">{job.pack_name || "--"}</div>
                     </td>
-                    <td><div className="collector-text-snippet">{buildQueryPreview(job.search_spec_json) || "--"}</div></td>
                     <td>{job.interval_minutes} {"分钟"}</td>
                     <td><span className={`badge ${job.deleted_at ? "b" : job.enabled ? "a" : ""}`}>{jobState(job)}</span></td>
                     <td>{formatUtcPlus8Time(job.next_run_at)}</td>
@@ -679,7 +866,7 @@ export function JobsPage() {
                 ))}
                 {!jobs.length && (
                   <tr>
-                    <td colSpan={9} style={{ textAlign: "center", color: "#64748b" }}>{status === "deleted" ? "暂无已删除任务" : "暂无任务"}</td>
+                    <td colSpan={8} style={{ textAlign: "center", color: "#64748b" }}>{status === "deleted" ? "暂无已删除任务" : "暂无任务"}</td>
                   </tr>
                 )}
               </tbody>
@@ -709,14 +896,36 @@ export function JobsPage() {
 
               {selectedJob && (
                 <div className="drawer-section">
-                  <div className="kv">{"状态："}{jobState(selectedJob)}</div>
-                  <div className="kv">{"最近运行："}{selectedJob.last_run_status || "--"}</div>
-                  <div className="kv">{"下次运行："}{formatUtcPlus8Time(selectedJob.next_run_at)}</div>
-                  {selectedJob.deleted_at && <div className="kv">{"删除时间："}{formatUtcPlus8Time(selectedJob.deleted_at)}</div>}
+                  <h5>{"调度设置"}</h5>
+                  <div className="collector-grid collector-grid-2">
+                    <div className="dashboard-detail-item">
+                      <span>{"状态"}</span>
+                      <strong>{jobState(selectedJob)}</strong>
+                    </div>
+                    <div className="dashboard-detail-item">
+                      <span>{"下次运行"}</span>
+                      <strong>{formatUtcPlus8Time(selectedJob.next_run_at)}</strong>
+                    </div>
+                    <div className="dashboard-detail-item">
+                      <span>{"最近运行"}</span>
+                      <strong>{selectedJob.last_run_status || "--"}</strong>
+                    </div>
+                    <div className="dashboard-detail-item">
+                      <span>{"最近运行时间"}</span>
+                      <strong>{formatUtcPlus8Time(selectedJob.last_run_ended_at || selectedJob.last_run_started_at)}</strong>
+                    </div>
+                    {selectedJob.deleted_at && (
+                      <div className="dashboard-detail-item dashboard-detail-item-wide">
+                        <span>{"删除时间"}</span>
+                        <strong>{formatUtcPlus8Time(selectedJob.deleted_at)}</strong>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
               <div className="drawer-section">
+                <h5>{"调度设置"}</h5>
                 <div className="collector-grid collector-grid-2">
                   <label className="field">
                     <span>{"任务名称"}</span>
@@ -733,30 +942,141 @@ export function JobsPage() {
                     <input type="checkbox" checked={form.enabled} onChange={(e) => updateForm("enabled", e.target.checked)} disabled={drawerDisabled} />
                   </label>
                   <label className="field">
-                    <span>{"当前规则"}</span>
-                    <input value={form.rule_set.name} readOnly />
+                    <span>{"执行间隔说明"}</span>
+                    <input value={`${form.interval_minutes} 分钟`} readOnly />
                   </label>
                 </div>
-                <div className="collector-toolbar" style={{ marginTop: 12 }}>
-                  <select aria-label="job-pack-select" value={form.import_pack_name} onChange={(e) => updateForm("import_pack_name", e.target.value)} disabled={drawerDisabled}>
-                    <option value="">{"选择任务包"}</option>
-                    {taskPacks.map((item) => (
-                      <option key={item.pack_name} value={item.pack_name}>{item.name}</option>
-                    ))}
-                  </select>
-                  <button type="button" className="ghost" aria-label="import-job-pack" onClick={() => handleImportPack().catch(() => undefined)} disabled={drawerDisabled}>{"导入任务包"}</button>
-                  <button type="button" className="ghost" aria-label="export-job-pack" onClick={() => handleSavePack("create").catch(() => undefined)} disabled={drawerDisabled || savingPack}>{"导出为任务包"}</button>
-                  <button type="button" aria-label="overwrite-job-pack" onClick={() => handleSavePack("overwrite").catch(() => undefined)} disabled={drawerDisabled || savingPack || !form.pack_name}>{"覆盖当前任务包"}</button>
+              </div>
+
+              <div className="drawer-section">
+                <h5>{"任务正文"}</h5>
+                <div className="collector-card">
+                  <h6 style={{ margin: "0 0 10px", fontSize: 14 }}>{"当前绑定任务包"}</h6>
+                  <div className="collector-toolbar between">
+                    <div>
+                      <div className="job-name" style={{ marginTop: 6 }}>{currentTaskPackName}</div>
+                      <div className="kv" style={{ marginTop: 6 }}>{currentTaskPackDescription || "先把任务包载入到当前草稿，再决定是另存为新任务包，还是保存回当前任务包。"}</div>
+                      <div className="kv" style={{ marginTop: 8 }}>{`pack_name=${currentTaskPack?.pack_name || "--"}`}</div>
+                      <div className="kv">{`pack_path=${currentTaskPack?.pack_path || "--"}`}</div>
+                    </div>
+                    <div className="collector-grid" style={{ minWidth: 240 }}>
+                      <div className="dashboard-detail-item">
+                        <span>{"绑定状态"}</span>
+                        <strong>{currentTaskPack ? "已绑定本地任务包" : "未绑定"}</strong>
+                      </div>
+                      <div className="dashboard-detail-item">
+                        <span>{"草稿状态"}</span>
+                        <strong>{currentTaskPack ? (taskPackDirty ? "已修改未保存" : "未修改") : "未绑定"}</strong>
+                      </div>
+                      <div className="dashboard-detail-item">
+                        <span>{"草稿来源"}</span>
+                        <strong>{draftSourceLabel(draftSource)}</strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="collector-grid collector-grid-2" style={{ marginTop: 12 }}>
+                  <div className="collector-card">
+                    <div className="collector-subtitle">{"载入到当前草稿"}</div>
+                    <div className="kv" style={{ marginTop: 6 }}>{"可以从任务包列表载入，也可以直接从本地 JSON 文件导入。"}</div>
+                    <div className="collector-toolbar" style={{ marginTop: 12, flexWrap: "wrap" }}>
+                      <select aria-label="job-pack-select" value={form.import_pack_name} onChange={(e) => updateForm("import_pack_name", e.target.value)} disabled={drawerDisabled}>
+                        <option value="">{"选择任务包"}</option>
+                        {taskPacks.map((item) => (
+                          <option key={item.pack_name} value={item.pack_name}>{item.name}</option>
+                        ))}
+                      </select>
+                      <button type="button" className="ghost" aria-label="job-load-pack" onClick={() => handleImportPack().catch(() => undefined)} disabled={drawerDisabled}>{"载入任务包"}</button>
+                      <button type="button" className="ghost" aria-label="job-import-file-pack" onClick={() => { pendingFileActionRef.current = "draft"; fileInputRef.current?.click(); }} disabled={drawerDisabled}>{"从文件导入"}</button>
+                      <button type="button" className="ghost" aria-label="job-import-and-save-pack" onClick={() => { pendingFileActionRef.current = "save_new"; fileInputRef.current?.click(); }} disabled={drawerDisabled || savingPack}>{"导入并保存为新任务包"}</button>
+                      <input
+                        ref={fileInputRef}
+                        data-testid="job-pack-file-input"
+                        type="file"
+                        accept=".json,application/json"
+                        style={{ display: "none" }}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          void (pendingFileActionRef.current === "save_new" ? handleImportAndSavePackFile(file) : handleImportPackFile(file));
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                    </div>
+                    <div className="kv" style={{ marginTop: 10 }}>{"从文件导入：只替换当前草稿，不会创建任务包。"}</div>
+                    <div className="kv">{"导入并保存为新任务包：会先导入文件，再立刻保存成新的本地任务包并绑定。"}</div>
+                  </div>
+                  <div className="collector-card">
+                    <div className="collector-subtitle">{"保存当前草稿"}</div>
+                    <div className="kv" style={{ marginTop: 6 }}>{"把当前草稿另存为新任务包，或保存回当前绑定任务包。"}</div>
+                    <div className="collector-toolbar" style={{ marginTop: 12, flexWrap: "wrap" }}>
+                      <button type="button" className="ghost" aria-label="job-save-as-pack" onClick={() => handleSavePack("create").catch(() => undefined)} disabled={drawerDisabled || savingPack}>{"另存为新任务包"}</button>
+                      <button type="button" aria-label="job-save-current-pack" onClick={() => handleSavePack("overwrite").catch(() => undefined)} disabled={drawerDisabled || savingPack || !form.pack_name}>{"保存到当前任务包"}</button>
+                      <button
+                        type="button"
+                        className="danger"
+                        aria-label="job-delete-pack"
+                        onClick={() => handleDeleteCurrentPack().catch(() => undefined)}
+                        disabled={drawerDisabled || deletingPack || !currentTaskPack?.pack_name}
+                      >
+                        {deletingPack ? "删除中..." : "删除当前任务包"}
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 <div className="collector-query-preview" style={{ marginTop: 12 }}>
-                  <div className="collector-subtitle">{"查询摘要"}</div>
+                  <div className="collector-subtitle">{"任务正文摘要"}</div>
                   <code>{buildQueryPreview(form.search_spec) || "--"}</code>
                 </div>
               </div>
 
               <div className="drawer-section">
                 <h5>{"搜索条件"}</h5>
+                <div className="kv">{"这里定义自动任务具体要去搜什么。"}</div>
                 <SearchSpecEditor value={form.search_spec} onChange={(next) => updateForm("search_spec", next)} disabled={drawerDisabled} />
+              </div>
+
+              <div className="drawer-section">
+                <h5>{"规则"}</h5>
+                <div className="kv">{"这里定义原始结果如何筛选、打分和分级。"}</div>
+                <div className="collector-grid collector-grid-2" style={{ marginTop: 12, marginBottom: 12 }}>
+                  <label className="field">
+                    <span>{"规则名称"}</span>
+                    <input
+                      value={form.rule_set.name}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          rule_set: { ...prev.rule_set, name: e.target.value },
+                        }))
+                      }
+                      disabled={drawerDisabled}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{"规则说明"}</span>
+                    <input
+                      value={form.rule_set.description}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          rule_set: { ...prev.rule_set, description: e.target.value },
+                        }))
+                      }
+                      disabled={drawerDisabled}
+                    />
+                  </label>
+                </div>
+                <RuleSetEditor
+                  ruleSet={currentRuleSetPreview}
+                  draft={form.rule_set.definition}
+                  onDraftChange={(next) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      rule_set: { ...prev.rule_set, definition: next },
+                    }))
+                  }
+                  disabled={drawerDisabled}
+                />
               </div>
 
               {selectedJob?.last_run_stats && (
@@ -795,3 +1115,4 @@ export function JobsPage() {
     </div>
   );
 }
+

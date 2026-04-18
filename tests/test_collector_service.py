@@ -230,6 +230,38 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(set(saved.keys()), {"version", "meta", "environment", "jobs"})
         self.assertTrue(saved["jobs"][0]["pack_path"].endswith("config/packs/job-011-legacy-watch.json"))
 
+    def test_delete_task_pack_removes_unreferenced_local_pack(self) -> None:
+        created = self.service.create_task_pack(
+            {
+                "pack_name": "manual-alpha",
+                "meta": {"name": "Manual Alpha", "description": "manual pack"},
+                "search_spec": {"all_keywords": ["alpha"]},
+                "rule_set": {
+                    "id": 2,
+                    "name": "Manual Alpha Rule",
+                    "description": "rule",
+                    "version": 1,
+                    "definition": {"levels": [], "rules": []},
+                },
+            }
+        )
+
+        deleted = self.service.delete_task_pack(created["pack_name"])
+
+        self.assertEqual(deleted, {"pack_name": "manual-alpha", "deleted": 1})
+        with self.assertRaisesRegex(ValueError, "not found"):
+            self.service.get_task_pack("manual-alpha")
+
+    def test_delete_task_pack_rejects_pack_referenced_by_job(self) -> None:
+        job = self._create_job("alpha-watch")
+
+        with self.assertRaisesRegex(ValueError, "referenced by existing jobs"):
+            self.service.delete_task_pack(job["pack_name"])
+
+    def test_delete_task_pack_rejects_default_baseline_pack(self) -> None:
+        with self.assertRaisesRegex(ValueError, "default task pack cannot be deleted"):
+            self.service.delete_task_pack("default-rule-set")
+
     def test_create_and_toggle_job_with_new_search_spec(self) -> None:
         default_rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
         job = self.service.create_job(

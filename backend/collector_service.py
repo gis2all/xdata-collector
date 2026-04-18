@@ -618,6 +618,22 @@ class DesktopService:
         resolved_name = self.task_pack_store._resolve_pack_path(pack_name).stem
         return self._task_pack_response(resolved_name, pack)
 
+    def delete_task_pack(self, pack_name: str) -> dict[str, Any]:
+        resolved_path = self.task_pack_store._resolve_pack_path(pack_name)
+        resolved_name = resolved_path.stem
+        if resolved_name == "default-rule-set":
+            raise ValueError("default task pack cannot be deleted")
+        referenced_by = [
+            copy.deepcopy(item)
+            for item in self._ensure_builtin_rule_set().get("jobs", [])
+            if str(item.get("pack_name") or "").strip() == resolved_name
+            or str(item.get("pack_path") or "").replace("\\", "/").strip() == self.task_pack_store.relative_pack_path(resolved_name)
+        ]
+        if referenced_by:
+            raise ValueError("task pack is referenced by existing jobs")
+        deleted_name = self.task_pack_store.delete_pack(resolved_name)
+        return {"pack_name": deleted_name, "deleted": 1}
+
     def create_rule_set(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = utc_now_iso()
         next_rule_set_id = max((int(item.get("id") or 0) for item in self._rule_set_catalog()), default=0) + 1

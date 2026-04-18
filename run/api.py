@@ -138,6 +138,10 @@ class ApiHandler(BaseHTTPRequestHandler):
             if path == "/task-packs":
                 self._json(HTTPStatus.OK, self.service.create_task_pack(payload))
                 return
+            if path.startswith("/task-packs/") and path.endswith("/delete"):
+                pack_name = path.split("/")[2]
+                self._json(HTTPStatus.OK, self.service.delete_task_pack(pack_name))
+                return
             if path == "/manual/run":
                 self._json(HTTPStatus.OK, self.service.run_manual(payload))
                 return

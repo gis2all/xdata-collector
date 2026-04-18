@@ -308,6 +308,13 @@ class TaskPackStore:
         _atomic_write_text(path, json.dumps(normalized, ensure_ascii=False, indent=2) + "\n")
         return copy.deepcopy(normalized)
 
+    def delete_pack(self, pack_name_or_path: str | Path) -> str:
+        path = self._resolve_pack_path(pack_name_or_path)
+        if not path.exists():
+            raise ValueError(f"task pack {path.name} not found")
+        path.unlink()
+        return self._pack_name(path)
+
     def relative_pack_path(self, pack_name_or_path: str | Path) -> str:
         return _relative_path(self._resolve_pack_path(pack_name_or_path), self.project_root)
 

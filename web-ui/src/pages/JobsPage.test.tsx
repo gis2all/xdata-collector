@@ -18,15 +18,18 @@ vi.mock("../api", () => ({
   getTaskPack: vi.fn(),
   createTaskPack: vi.fn(),
   updateTaskPack: vi.fn(),
+  deleteTaskPack: vi.fn(),
 }));
 
-import { batchJobs, createJob, createTaskPack, getTaskPack, listJobs, listTaskPacks } from "../api";
+import { batchJobs, createJob, createTaskPack, deleteTaskPack, getJob, getTaskPack, listJobs, listTaskPacks } from "../api";
 
 const listJobsMock = vi.mocked(listJobs);
 const listTaskPacksMock = vi.mocked(listTaskPacks);
+const getJobMock = vi.mocked(getJob);
 const getTaskPackMock = vi.mocked(getTaskPack);
 const createJobMock = vi.mocked(createJob);
 const createTaskPackMock = vi.mocked(createTaskPack);
+const deleteTaskPackMock = vi.mocked(deleteTaskPack);
 const batchJobsMock = vi.mocked(batchJobs);
 
 const packFile = {
@@ -102,8 +105,28 @@ describe("JobsPage", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     listJobsMock.mockResolvedValue({ page: 1, page_size: 10, total: 0, items: [] } as any);
     listTaskPacksMock.mockResolvedValue({ items: [{ pack_name: "alpha-watch", pack_path: "config/packs/alpha-watch.json", name: "Alpha Watch", description: "watch alpha", updated_at: "2026-04-14T00:00:00+00:00" }] } as any);
+    getJobMock.mockResolvedValue(makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" } }) as any);
     getTaskPackMock.mockResolvedValue(packFile as any);
-    createTaskPackMock.mockResolvedValue(packFile as any);
+    createTaskPackMock.mockImplementation(async (payload: any) => ({
+      version: 1,
+      kind: "task_pack",
+      pack_name: payload.pack_name || "alpha-watch",
+      pack_path: `config/packs/${payload.pack_name || "alpha-watch"}.json`,
+      meta: {
+        name: payload.meta?.name || "Alpha Watch",
+        description: payload.meta?.description || "",
+        updated_at: "2026-04-14T00:00:00+00:00",
+      },
+      search_spec: payload.search_spec,
+      rule_set: {
+        id: payload.rule_set?.id ?? 1,
+        name: payload.rule_set?.name || "Default Rule Set",
+        description: payload.rule_set?.description || "",
+        version: payload.rule_set?.version || 1,
+        definition: payload.rule_set?.definition || { levels: [], rules: [] },
+      },
+    }) as any);
+    deleteTaskPackMock.mockResolvedValue({ pack_name: "alpha-watch", deleted: 1 } as any);
     batchJobsMock.mockResolvedValue({
       action: "delete",
       mode: "ids",
@@ -141,15 +164,32 @@ describe("JobsPage", () => {
       expect(listTaskPacksMock).toHaveBeenCalled();
     });
 
+    expect(screen.getByRole("columnheader", { name: "任务包" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "规则集" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "查询摘要" })).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByTestId("create-job-button"));
     fireEvent.change(screen.getByLabelText("job-name"), { target: { value: "scheduled-alpha" } });
     fireEvent.change(screen.getByLabelText("job-interval"), { target: { value: "120" } });
     fireEvent.change(screen.getByLabelText("job-pack-select"), { target: { value: "alpha-watch" } });
-    fireEvent.click(screen.getByLabelText("import-job-pack"));
+    fireEvent.click(screen.getByLabelText("job-load-pack"));
 
     await waitFor(() => {
       expect(getTaskPackMock).toHaveBeenCalledWith("alpha-watch");
     });
+
+    expect(screen.getByRole("heading", { name: "调度设置" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "任务正文" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "当前绑定任务包" })).toBeInTheDocument();
+    expect(screen.getByText("已绑定本地任务包")).toBeInTheDocument();
+    expect(screen.getByText("pack_name=alpha-watch")).toBeInTheDocument();
+    expect(screen.getByText("pack_path=config/packs/alpha-watch.json")).toBeInTheDocument();
+    expect(screen.getByText("规则可视化编辑器")).toBeInTheDocument();
+    expect(screen.getByLabelText("job-load-pack")).toBeInTheDocument();
+    expect(screen.getByLabelText("job-save-as-pack")).toBeInTheDocument();
+    expect(screen.getByLabelText("job-save-current-pack")).toBeInTheDocument();
+    expect(screen.getByText(/只替换当前草稿/)).toBeInTheDocument();
+    expect(screen.getByText(/会先导入文件，再立刻保存成新的本地任务包并绑定/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("submit-job"));
 
@@ -162,6 +202,81 @@ describe("JobsPage", () => {
     expect(payload.interval_minutes).toBe(120);
     expect(payload.search_spec.all_keywords).toEqual(["alpha"]);
     expect(payload.rule_set.name).toBe("Default Rule Set");
+  });
+
+
+
+  it("imports a task pack from a local file but keeps scheduling fields", async () => {
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(listJobsMock).toHaveBeenCalled();
+    });
+
+    fireEvent.click(screen.getByTestId("create-job-button"));
+    fireEvent.change(screen.getByLabelText("job-name"), { target: { value: "scheduled-local" } });
+    fireEvent.change(screen.getByLabelText("job-interval"), { target: { value: "90" } });
+
+    const fileInput = screen.getByTestId("job-pack-file-input") as HTMLInputElement;
+    const file = new File(
+      [JSON.stringify({
+        meta: { name: "Local Alpha", description: "from file" },
+        search_spec: { ...packFile.search_spec, all_keywords: ["local-alpha"] },
+        rule_set: { ...packFile.rule_set, name: "Local Rule", description: "local rule" },
+      })],
+      "local-alpha.json",
+      { type: "application/json" },
+    );
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("local-alpha")).toBeInTheDocument();
+    });
+
+    expect(screen.getByDisplayValue("scheduled-local")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("90")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Local Rule")).toBeInTheDocument();
+    expect(screen.getAllByText("未绑定").length).toBeGreaterThan(0);
+  });
+
+
+
+  it("imports a task pack file and saves it as a managed new task pack while keeping scheduling fields", async () => {
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("local-alpha-pack");
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(listJobsMock).toHaveBeenCalled();
+    });
+
+    fireEvent.click(screen.getByTestId("create-job-button"));
+    fireEvent.change(screen.getByLabelText("job-name"), { target: { value: "scheduled-local" } });
+    fireEvent.change(screen.getByLabelText("job-interval"), { target: { value: "90" } });
+
+    const fileInput = screen.getByTestId("job-pack-file-input") as HTMLInputElement;
+    const file = new File(
+      [JSON.stringify({
+        meta: { name: "Local Alpha", description: "from file" },
+        search_spec: { ...packFile.search_spec, all_keywords: ["saved-local-alpha"] },
+        rule_set: { ...packFile.rule_set, name: "Saved Local Rule", description: "saved local rule" },
+      })],
+      "saved-local-alpha.json",
+      { type: "application/json" },
+    );
+
+    fireEvent.click(screen.getByLabelText("job-import-and-save-pack"));
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(createTaskPackMock).toHaveBeenCalled();
+    });
+
+    expect(screen.getByDisplayValue("scheduled-local")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("90")).toBeInTheDocument();
+    expect(screen.getByText("任务包载入")).toBeInTheDocument();
+    expect(screen.getByText("pack_name=local-alpha-pack")).toBeInTheDocument();
+    expect(screen.getByText("pack_path=config/packs/local-alpha-pack.json")).toBeInTheDocument();
+    promptSpy.mockRestore();
   });
 
   it("supports two-step all matching selection and batch delete", async () => {
@@ -312,5 +427,61 @@ describe("JobsPage", () => {
     expect(await screen.findByText(/已成功 1 条，失败 2 条/)).toBeInTheDocument();
     expect(screen.getByText(/job-two: boom-two/)).toBeInTheDocument();
     expect(screen.getByText(/job-three: boom-three/)).toBeInTheDocument();
+  });
+
+  it("shows dirty task pack state after editing task body fields", async () => {
+    listJobsMock.mockResolvedValueOnce({
+      page: 1,
+      page_size: 10,
+      total: 1,
+      items: [makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" } })],
+    } as any);
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("alpha-watch-job").length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "查看" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("当前绑定任务包")).toBeInTheDocument();
+      expect(screen.getByText("未修改")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByDisplayValue("alpha"), { target: { value: "alpha,beta" } });
+
+    expect(screen.getByText("已修改未保存")).toBeInTheDocument();
+  });
+
+  it("shows a clear error when deleting a task pack still referenced by the current job", async () => {
+    listJobsMock.mockResolvedValueOnce({
+      page: 1,
+      page_size: 10,
+      total: 1,
+      items: [makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" } })],
+    } as any);
+    deleteTaskPackMock.mockRejectedValueOnce(new Error("task pack is referenced by existing jobs"));
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("alpha-watch-job").length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "查看" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "当前绑定任务包" })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText("job-delete-pack"));
+
+    await waitFor(() => {
+      expect(deleteTaskPackMock).toHaveBeenCalledWith("alpha-watch");
+    });
+
+    expect(screen.getByText("当前任务包仍被自动任务使用，请先更换绑定后再删除")).toBeInTheDocument();
   });
 });

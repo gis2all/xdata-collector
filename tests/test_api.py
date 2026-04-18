@@ -54,6 +54,10 @@ class FakeService:
         self.calls.append(("update_task_pack", {"pack_name": pack_name, "payload": payload}))
         return {"pack_name": pack_name, **payload}
 
+    def delete_task_pack(self, pack_name: str) -> dict:
+        self.calls.append(("delete_task_pack", pack_name))
+        return {"pack_name": pack_name, "deleted": 1}
+
     def list_runs(self, **kwargs) -> dict:
         self.calls.append(("list_runs", kwargs))
         return {"page": kwargs["page"], "page_size": kwargs["page_size"], "total": 1, "items": [{"id": 8, "status": "failed", "trigger_type": "manual", "job_id": None, "started_at": "2026-04-13T00:00:00+00:00", "ended_at": "2026-04-13T00:01:00+00:00", "error_text": "boom", "stats_json": {}}]}
@@ -447,6 +451,21 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body.decode("utf-8"))["pack_name"], "alpha-watch")
         self.assertEqual(service.calls[0], ("update_task_pack", {"pack_name": "alpha-watch", "payload": payload}))
+
+    def test_post_task_pack_delete_dispatches_to_service(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "POST",
+                "/task-packs/alpha-watch/delete",
+                body=b"{}",
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8")), {"pack_name": "alpha-watch", "deleted": 1})
+        self.assertEqual(service.calls[0], ("delete_task_pack", "alpha-watch"))
 
     def test_get_items_supports_sorting_query_params(self) -> None:
         service = FakeService()
