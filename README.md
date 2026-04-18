@@ -1,48 +1,24 @@
 # X数据采集器
 
-本项目是一个本地运行的 X 数据采集、规则筛选、结果沉淀工作台。
-它只负责 X 搜索、本地 API、任务调度、SQLite 结果存储和 Web UI。
+本项目是一个本地运行的X数据采集、规则筛选、结果沉淀收集器。它负责 X 搜索、本地 API、任务调度、SQLite 结果存储和 Web UI。
+
 ![image](artifacts/diagrams/workflow.png)
-
-主链路：
-
-```text
-task pack
-  = 搜索条件 + 规则
-
-手动执行 / 自动任务
-  -> X 搜索
-  -> x_items_raw
-  -> 规则评估
-  -> x_items_curated
-```
 
 ## 核心能力
 
-- 手动执行任务：直接编辑并运行任务草稿，不必先保存成任务包
+- 手动执行任务：直接编辑并运行任务草稿，支持以任务包形式采集数据
 - 自动任务：通过 `workspace.json` 里的 jobs registry 调度任务包
 - 结果浏览：支持 `x_items_raw` / `x_items_curated` 双表浏览、删除、去重
-- 运行总览 / 运行日志：查看 DB / X 状态、运行记录和当前服务日志
+- 运行总览 / 运行日志：查看数据库 / X 状态、运行记录和当前服务日志
 
 ## 快速开始
 
 ### 1. 准备本机依赖
-
-```bash
-python run/bootstrap.py
-```
-
-这个入口会准备本地运行所需依赖，包括：
-
-- `pipx`
-- `twitter-cli`
-- `agent-browser`
-
-它只负责准备依赖，不负责启动服务。
+运行 `python run/bootstrap.py`，这个入口会准备本地运行所需依赖，包括`pipx`、`twitter-cli`、`agent-browser`，它只负责准备依赖，不负责启动服务。
 
 ### 2. 获取 X cookie
 
-运行采集前，先在桌面浏览器里登录 `https://x.com`，然后打开开发者工具。Chrome 或 Edge 一般可以在 `Application -> Storage -> Cookies -> https://x.com` 里直接找到 `auth_token` 和 `ct0`，把这两个值复制出来就可以；如果 Cookies 面板里不方便找，也可以去 `Network` 面板点开任意一个发往 `x.com` 的请求，从请求头里的 `Cookie` 文本中把 `auth_token=...` 和 `ct0=...` 拆出来。它们本质上是你当前 X 登录会话的一部分，拿到后只写本地，不要提交到 Git，也不要贴到 issue、PR 或聊天记录里；如果怀疑泄露，最稳妥的处理方式就是回到 X 重新登录或清理会话，再把新的值更新到本地 `.env`。
+运行采集前，先在桌面浏览器里登录 `https://x.com`，然后打开开发者工具。Chrome 或 Edge 一般可以在 `Application -> Storage -> Cookies -> https://x.com` 里直接找到 `auth_token` 和 `ct0`，把这两个值复制出来就可以。它们本质上是你当前 X 登录会话的一部分，拿到后只写本地`.env`；如果怀疑泄露，最稳妥的处理方式就是回到 X 重新登录或清理会话，再把新的值更新到本地 `.env`。注意长时间获取X数据可能有封号风险，建议使用X测试账号不要使用主力账号。
 
 ### 3. 写入 `.env`
 
@@ -59,8 +35,6 @@ TWITTER_CT0=你的 ct0
 TWITTER_BROWSER=edge
 TWITTER_CHROME_PROFILE=Default
 ```
-
-如果后面遇到 X 会话异常、采集跑不起来或健康检查不通过，先看 `.env` 里是否真的填了 `TWITTER_AUTH_TOKEN` 和 `TWITTER_CT0`，再看 `http://127.0.0.1:8765/health` 返回的 X 会话状态，通常这两步就能先排掉大部分问题。
 
 ### 4. 安装前端依赖
 
@@ -86,7 +60,7 @@ python run/services.py restart
 
 开发界面默认打开：
 
-- `http://127.0.0.1:5177/`
+- `http://127.0.0.1:5177`
 
 ## 运行入口与端口
 
@@ -103,16 +77,9 @@ python run/services.py restart
 
 ## 关键边界
 
-- `config/`
-  - `workspace.json`：轻量环境配置和 jobs registry
-  - `packs/*.json`：任务包正文
-- `runtime/`
-  - 运行记录、健康快照、日志、PID、临时文件
-- `data/app.db`
-  - 正式结果库
-  - 当前只保留：
-    - `x_items_raw`
-    - `x_items_curated`
+- `config/`目录：`workspace.json`，轻量环境配置和 jobs registry；`packs/*.json`，任务包正文
+- `runtime/`目录：运行记录、健康快照、日志、PID、临时文件
+- `data/app.db`目录：数据库，保存获取到的X数据，当前只有两个表， `x_items_raw`原始搜索数据，`x_items_curated`基于原始数据的规则数据。
 
 ## 最小排障顺序
 
