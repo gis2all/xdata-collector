@@ -20,6 +20,7 @@ runtime/logs/
 runtime/pids/
 runtime/tmp/
 runtime/tmp/tests/
+.superpowers/
 
 # Local dynamic config
 config/workspace.json

@@ -136,6 +136,36 @@ textarea { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; min
 .collector-reason-list { flex-direction: column; }
 .collector-reason-item { padding: 8px 10px; background: #f8fafc; border-radius: 10px; border: 1px solid #e2e8f0; }
 .checkbox-row { flex-direction: row; justify-content: space-between; align-items: center; }
+.manual-page { gap: 18px; }
+.manual-page-header { padding: 18px 20px; }
+.manual-page-header-copy { min-width: 0; flex: 1 1 420px; }
+.manual-page-header-copy h3 { margin-bottom: 8px; }
+.manual-page-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.manual-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: 20px; align-items: start; }
+.manual-editor-pane { min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.manual-section-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.manual-section-copy { min-width: 0; flex: 1 1 320px; }
+.manual-section-copy h4 { margin: 0; }
+.manual-section-description { margin-top: 6px; line-height: 1.6; }
+.manual-section-aside { max-width: 100%; }
+.manual-pack-summary-grid .collector-card,
+.manual-pack-actions-grid .collector-card { min-width: 0; background: #ffffff; }
+.manual-pack-state-grid .dashboard-detail-item,
+.manual-rail-grid .dashboard-detail-item { background: #f8fafc; border: 1px solid #e2e8f0; }
+.manual-pack-path { margin-top: 12px; overflow-wrap: anywhere; word-break: break-word; }
+.manual-pack-toolbar { margin-top: 12px; align-items: flex-start; }
+.manual-pack-toolbar select { min-width: 220px; max-width: 100%; }
+.manual-pack-note { margin-top: 10px; line-height: 1.55; color: #475569; }
+.manual-body-preview { background: #ffffff; border-color: #dbe4f0; }
+.manual-body-preview code { display: block; min-height: 48px; line-height: 1.55; }
+.manual-execution-rail { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 16px; padding: 18px; background: #ffffff; }
+.manual-rail-grid { gap: 12px; }
+.manual-execution-note { padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0; background: #f8fafc; color: #475569; line-height: 1.55; }
+.manual-execution-note.failed { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+.manual-results-link { align-self: flex-start; }
+.manual-results-section { display: flex; flex-direction: column; gap: 16px; }
+.manual-results-empty { padding: 16px; border-radius: 14px; border: 1px dashed #cbd5e1; background: #f8fafc; }
+.manual-results-empty p { margin: 8px 0 0; }
 @media (max-width: 1380px) {
   .jobs-layout { grid-template-columns: minmax(0, 1fr) 12px minmax(420px, 520px); }
   .jobs-table-wrap { padding-right: 14px; }
@@ -146,6 +176,8 @@ textarea { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; min
   .jobs-layout { grid-template-columns: 1fr; }
   .jobs-table-wrap { padding-right: 0; }
   .jobs-drawer { padding-left: 0; position: static; }
+  .manual-layout { grid-template-columns: 1fr; }
+  .manual-execution-rail { position: static; }
 }
 
 @media (max-width: 1080px) and (min-width: 901px) {
@@ -164,6 +196,8 @@ textarea { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; min
   .collector-grid-4 { grid-template-columns: 1fr; }
   .collector-hero { flex-direction: column; }
   .collector-condition-row { grid-template-columns: 1fr; }
+  .manual-page-header-actions { width: 100%; justify-content: flex-start; }
+  .manual-page-header-actions button { width: 100%; }
 }
 
 .logs-page { display: flex; flex-direction: column; gap: 16px; }

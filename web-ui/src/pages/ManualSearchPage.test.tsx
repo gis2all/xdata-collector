@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ManualSearchPage } from "./ManualSearchPage";
@@ -102,7 +102,7 @@ describe("ManualSearchPage", () => {
     deleteTaskPackMock.mockResolvedValue({ pack_name: "alpha-watch", deleted: 1 } as any);
   });
 
-  it("renders multiple final queries after a manual run", async () => {
+  it("renders the execution-first workbench structure and updates the execution rail after a run", async () => {
     runManualMock.mockResolvedValue({
       run_id: 1,
       status: "success",
@@ -124,14 +124,21 @@ describe("ManualSearchPage", () => {
       expect(listTaskPacksMock).toHaveBeenCalled();
     });
 
+    const header = screen.getByTestId("manual-page-header");
     expect(screen.getByRole("heading", { name: "手动执行任务" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "当前任务包" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "任务正文" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "任务包操作" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "任务正文摘要" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "搜索条件" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "规则" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "立即执行任务" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "清空当前草稿" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "刷新任务包列表" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "执行上下文" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "执行结果" })).toBeInTheDocument();
+    expect(screen.getByTestId("manual-execution-rail")).toBeInTheDocument();
+    expect(within(header).getByRole("button", { name: "立即执行任务" })).toBeInTheDocument();
+    expect(within(header).queryByRole("button", { name: "清空当前草稿" })).not.toBeInTheDocument();
+    expect(within(header).queryByRole("button", { name: "刷新任务包列表" })).not.toBeInTheDocument();
+    expect(screen.getByText("尚未执行")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看执行结果" })).toBeInTheDocument();
     expect(screen.queryByText("复制规则集")).not.toBeInTheDocument();
     expect(screen.queryByText("保存规则集")).not.toBeInTheDocument();
     expect(screen.queryByText("删除规则集")).not.toBeInTheDocument();
@@ -144,6 +151,12 @@ describe("ManualSearchPage", () => {
 
     expect(runManualMock).toHaveBeenCalled();
     expect(screen.getByText("alpha lang:en -is:retweet")).toBeInTheDocument();
+    expect(screen.getByText("执行成功")).toBeInTheDocument();
+    expect(screen.getByText("最近执行")).toBeInTheDocument();
+    expect(screen.getByText("raw_total")).toBeInTheDocument();
+    expect(screen.getByText("matched_total")).toBeInTheDocument();
+    expect(screen.getByText("1")).toBeInTheDocument();
+    expect(screen.getByText("0")).toBeInTheDocument();
   });
 
   it("imports a task pack and exports the current editor state", async () => {
@@ -168,7 +181,10 @@ describe("ManualSearchPage", () => {
     expect(screen.getByText("未修改")).toBeInTheDocument();
     expect(screen.getByText("pack_name=alpha-watch")).toBeInTheDocument();
     expect(screen.getByText("pack_path=config/packs/alpha-watch.json")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "任务包操作" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "任务正文摘要" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "恢复任务包内容" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "刷新任务包列表" })).toBeInTheDocument();
     expect(screen.getByLabelText("manual-load-pack")).toBeInTheDocument();
     expect(screen.getByLabelText("manual-save-as-pack")).toBeInTheDocument();
     expect(screen.getByLabelText("manual-save-current-pack")).toBeInTheDocument();
