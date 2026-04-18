@@ -2,21 +2,31 @@
 
 ## 一句话定位
 
-这个仓库是一个本地运行的 X 采集与规则筛选工作台。当前结构已收口为 `run/ + backend/ + web-ui/ + config/ + runtime/ + data/` 这几个主目录。
+这个仓库是一个本地运行的 X 数据采集与规则筛选工作台。当前结构已经收口为：
+
+```text
+run/ + backend/ + web-ui/ + config/ + runtime/ + data/
+```
 
 ## 当前真相
 
 ### 1. 产品边界
 
-- 主仓只处理 X 搜索、规则评估、SQLite 结果沉淀、本地 API、Scheduler 和前端工作台
-- Notion 同步已经迁出主仓，不要再把 Notion 链路重新回灌到这个项目
+- 主仓只处理：
+  - X 搜索
+  - 规则评估
+  - SQLite 结果沉淀
+  - 本地 API
+  - Scheduler
+  - Web UI
+- Notion 同步已经迁出主仓，不要再把 Notion 链路写回这个项目
 
 ### 2. 主目录
 
 - `web-ui/`：前端单页工作台
 - `backend/`：核心业务编排、规则系统、X 搜索适配与存储
-- `run/`：运行入口和开发主链路服务总控
-- `config/`：通用基线配置 + 本地动态配置目录
+- `run/`：运行入口和开发主链路总控
+- `config/`：通用基线配置 + 本地动态配置
 - `runtime/`：运行态文件、快照、日志、PID 与临时产物
 - `data/`：正式只保留 `app.db` 和 `data/README.md`
 
@@ -26,7 +36,7 @@
 - Dev UI：`127.0.0.1:5177`
 - Static UI：`127.0.0.1:5178`
 - Scheduler：无端口，默认 `tick-seconds=30`
-- `run/services.py` 默认只管 API、Scheduler、Dev UI，不包含 `run/static_web_server.py`
+- `run/services.py` 默认只管理 API、Scheduler、Dev UI，不包含 `run/static_web_server.py`
 
 ### 4. X 认证依赖
 
@@ -43,9 +53,9 @@
 - `version`
 - `meta`
 - `environment`
-- `jobs[]` 自动任务注册表
+- `jobs[]`
 
-`jobs[]` 里的每条任务至少包括：
+`jobs[]` 是自动任务注册表。每条任务至少包含：
 
 - `id`
 - `name`
@@ -60,7 +70,7 @@
 
 ### 2. `config/packs/*.json`
 
-任务包是当前手动搜索和自动任务的正文真相。每个 pack 都必须同时包含：
+任务包是当前手动执行页和自动任务页的正文真相。每个 pack 都必须同时包含：
 
 - `version`
 - `kind: "task_pack"`
@@ -68,22 +78,23 @@
 - `search_spec`
 - `rule_set`
 
-重要：
+当前口径：
 
-- 手动搜索页和自动任务页导入 pack 后，只替换当前表单
+- `任务包 = 搜索条件 + 规则`
+- 导入或载入任务包后，只替换当前表单草稿
 - 继续编辑不会自动回写原 pack
-- 只有显式“导出为任务包 / 覆盖当前任务包”才会落盘
+- 只有显式“另存为新任务包 / 保存到当前任务包 / 导入并保存为新任务包”才会落盘
 - Git 中默认只保留 `default-rule-set.json` 这个通用基线 pack
-- 具体 job pack、manual preset pack、manual rule-set pack 都是本地动态配置，不应继续纳管
+- 具体 job pack、manual preset pack、manual rule-set pack 都属于本地动态配置，不应继续纳管
 
 ### 3. `runtime/`
 
-运行态主要在文件系统而不在 SQLite 里：
+运行态主要在文件系统而不在 SQLite：
 
 - `runtime/history/search_runs.jsonl`：运行记录
-- `runtime/state/runtime_health_snapshot.json`：健康快照
+- `runtime/state/runtime_health_snapshot.json`：后端健康快照
 - `runtime/state/sequences.json`：运行态序号
-- `runtime/logs/`：服务当前日志
+- `runtime/logs/`：当前服务日志
 - `runtime/pids/`：服务 PID
 - `runtime/tmp/`：临时产物
 
@@ -94,7 +105,7 @@
 - `x_items_raw`
 - `x_items_curated`
 
-不要再把 jobs、rule sets、health snapshot 或 search runs 写回 SQLite 当为主真相。
+不要再把 jobs、rule sets、health snapshot 或 search runs 写回 SQLite 当主真相。
 
 ## 核心架构
 
@@ -108,24 +119,24 @@
 
 ### `backend/` 层
 
-- `backend/collector_service.py` 是后端编排中枢
-- `backend/collector_rules.py` 负责搜索规范化、查询生成、规则评估
-- `backend/collector_store.py` 只维护 `x_items_raw` / `x_items_curated` schema 与连接
-- `backend/workspace_store.py` 负责 workspace、task pack 和 runtime state 的文件化存储
-- `backend/twitter_cli.py` 负责 X 搜索适配
+- `backend/collector_service.py`：后端编排中枢
+- `backend/collector_rules.py`：搜索规范化、查询生成、规则评估
+- `backend/collector_store.py`：只维护 `x_items_raw` / `x_items_curated` schema 与连接
+- `backend/workspace_store.py`：workspace、task pack 和 runtime state 的文件化存储
+- `backend/twitter_cli.py`：X 搜索适配
 
 ### `web-ui/` 层
 
-- `DashboardPage`：健康总览
-- `ManualSearchPage`：手动采集 + pack 管理
-- `JobsPage`：自动任务注册表 + pack 引入
-- `ResultsPage`：raw/curated 双表浏览与数据管理
+- `DashboardPage`：运行总览
+- `ManualSearchPage`：手动执行任务 + 任务包草稿管理
+- `JobsPage`：调度任务列表 + 绑定任务包
+- `ResultsPage`：`raw/curated` 双表结果浏览
 - `LogsPage`：运行记录 + 服务日志快照
 - `SettingsPage`：轻量 workspace 编辑
 
 ## 当前 API 口径
 
-### 配置相关
+### 配置与任务包
 
 - `GET /workspace`
 - `PUT /workspace`
@@ -135,19 +146,26 @@
 - `GET /task-packs/{pack_name}`
 - `POST /task-packs`
 - `PUT /task-packs/{pack_name}`
+- `POST /task-packs/{pack_name}/delete`
 
-### 自动任务与规则
+### 健康与运行态
 
-- `/jobs` 系列路由仍然保留，但底层已改为 workspace + pack 文件后端
-- `/rule-sets` 路由仍然保留，但 rule set 目录是从 builtin + task packs 派生出来的
-- `POST /scheduler/tick` 仍可用于手动触发 scheduler 逻辑
-
-### 手动执行与结果
-
-- `POST /manual/run`
+- `GET /health`
+- `GET /health/snapshot`
 - `GET /runs`
 - `GET /runs/{id}`
 - `GET /logs/runtime`
+
+### 手动执行与自动任务
+
+- `POST /manual/run`
+- `/jobs` 系列路由仍然保留，但底层已经改为 workspace + task pack 文件后端
+- `POST /jobs/batch` 已支持批量启用、停用、立即运行、删除、恢复、彻底删除
+- `POST /scheduler/tick` 仍可用于手动触发 scheduler 逻辑
+
+### 规则与结果浏览
+
+- `/rule-sets` 路由仍然保留，但 rule set 目录是从 builtin + task packs 派生出来的兼容视图
 - `GET /items?table=curated|raw`
 - `POST /items/{id}/delete`
 - `POST /items/delete`
@@ -155,26 +173,37 @@
 
 ## 典型工作流
 
-### 1. 手动搜索
+### 1. 手动执行任务
 
-1. `ManualSearchPage` 编辑 `SearchSpec` 和规则草稿
-2. 可以从 `config/packs/*.json` 导入任务包到当前表单
-3. 前端调用 `POST /manual/run`
-4. `DesktopService.run_manual()` 组装查询、拉取 X 结果、写 raw、评估 rule set、写 curated
-5. 成功 run 后会自动对 `x_items_curated` 执行全表去重
+1. `ManualSearchPage` 编辑任务包草稿
+2. 草稿正文由两部分组成：
+   - 搜索条件
+   - 规则
+3. 可以载入已有任务包，也可以从本地 JSON 文件导入到当前草稿
+4. 前端调用 `POST /manual/run`
+5. `run_manual()` 组装查询、拉取 X 结果、写 raw、评估规则、写 curated
+6. 成功 run 后会自动对 `x_items_curated` 执行全表去重
 
 ### 2. 自动任务
 
-1. `JobsPage` 维护本地 `workspace.json.jobs[]` 的注册信息
+1. `JobsPage` 维护 `workspace.json.jobs[]` 的注册信息
 2. 每条 job 通过 `pack_path` 指向一个 task pack
-3. `scheduler.tick()` 筛出已启用且到期的 job
-4. `run_job_now()` 读取 pack 正文后调用 `run_manual(..., trigger_type="auto")`
+3. scheduler 按固定 tick 扫描已启用且到期的 job
+4. `run_job_now()` 读取任务包正文后调用 `run_manual(..., trigger_type="auto")`
+5. Jobs 页支持两段式全选和批量操作
 
 ### 3. 结果浏览
 
 1. `ResultsPage` 以 `table=curated|raw` 切换数据源
-2. 排序、删除、去重都作用于当前选中的表
-3. `created_at_x` 排序按真实时间解析，而不是字符串直排
+2. 排序、删除、批量删除、去重都作用于当前选中的表
+3. 结果页支持列显隐、本地视图记忆和列宽拖拽
+
+### 4. 运行总览
+
+1. 浏览器刷新页面时，不会自动调用健康接口
+2. 首屏只恢复浏览器本地上次展示状态
+3. 只有点击 `重新加载` 才会调用 `GET /health`
+4. `GET /health/snapshot` 是后端只读快照接口，不是 Dashboard 首屏默认来源
 
 ## 编辑时的约束
 
@@ -184,13 +213,40 @@
 - 不要让 `data/` 回流日志、导出、测试临时文件
 - 不要让 `run/services.py` 默认管到 `run/static_web_server.py`
 - 改 X 采集链路时，先检查 `.env` 和 `/health`
-- 写中文 Markdown / TSX / JSON 时，注意 Windows PowerShell 的 mojibake 和 BOM 问题
+- 写中文 Markdown / TSX / JSON 时，注意 Windows PowerShell 的乱码和 BOM 风险
 
 ## Git 与提交边界
 
-- ????`backend/`?`run/`?`tests/`?`web-ui/src/`?`config/README.md`?`config/packs/default-rule-set.json`?`artifacts/legacy/README.md`??????`.env.example`?`.learnings/`
-- ????`.env`?`data/*.db`?`runtime/history/`?`runtime/state/`?`runtime/logs/`?`runtime/pids/`?`runtime/tmp/`?`web-ui/node_modules/`?`web-ui/dist/`?`config/workspace.json`?`config/packs/job-*.json`?`config/packs/manual-preset-*.json`?`config/packs/manual-rule-set-*.json`?`artifacts/legacy/*.json`
-- `.learnings/` 应提交，但不能写入真实 cookie、token 或一次性调试噪音
+默认应该提交：
+
+- `backend/`
+- `run/`
+- `tests/`
+- `web-ui/src/`
+- `config/README.md`
+- `config/packs/default-rule-set.json`
+- `artifacts/legacy/README.md`
+- `.env.example`
+- `.learnings/`
+
+默认不应该提交：
+
+- `.env`
+- `data/*.db`
+- `runtime/history/`
+- `runtime/state/`
+- `runtime/logs/`
+- `runtime/pids/`
+- `runtime/tmp/`
+- `web-ui/node_modules/`
+- `web-ui/dist/`
+- `config/workspace.json`
+- `config/packs/job-*.json`
+- `config/packs/manual-preset-*.json`
+- `config/packs/manual-rule-set-*.json`
+- `artifacts/legacy/*.json`
+
+`.learnings/` 应提交，但不能写入真实 cookie、token 或一次性调试噪音。
 
 ## 默认验证
 
@@ -215,3 +271,4 @@ cd web-ui && npm run build
 5. `web-ui/src/pages/ManualSearchPage.tsx`
 6. `web-ui/src/pages/JobsPage.tsx`
 7. `web-ui/src/pages/ResultsPage.tsx`
+8. `web-ui/src/pages/DashboardPage.tsx`

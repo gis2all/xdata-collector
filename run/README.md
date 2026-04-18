@@ -29,14 +29,30 @@ python run/services.py restart
 ```
 
 默认控制范围：
+
 - `run/api.py`
 - `run/scheduler.py`
 - `web-ui` dev server
 
 说明：
-- `services.py` 默认只管理开发主链路（API、Scheduler、Dev UI），不包含 `run/static_web_server.py`
+
+- `services.py` 默认只管理开发主链路，不包含 `run/static_web_server.py`
 - 运行状态写入 `runtime/pids/`
 - 当前日志写入 `runtime/logs/*.current.out.log` 和 `runtime/logs/*.current.err.log`
+
+## 健康接口语义
+
+- `GET /health`
+  - 主动探测数据库和 X 会话
+  - 更新 `runtime/state/runtime_health_snapshot.json`
+- `GET /health/snapshot`
+  - 只读取现有后端快照
+  - 不主动探测
+
+说明：
+
+- Dashboard 首屏当前不会自动调用这两个接口
+- 页面里的 `重新加载` 才会触发 `GET /health`
 
 ## 边界
 
