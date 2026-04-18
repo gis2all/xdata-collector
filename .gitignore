@@ -14,10 +14,18 @@ web-ui/dist/
 web-ui/.tmp-esbuild/
 
 # Runtime state and local tooling output
+runtime/history/
+runtime/state/
 runtime/logs/
 runtime/pids/
 runtime/tmp/
 runtime/tmp/tests/
+
+# Local dynamic config
+config/workspace.json
+config/packs/*.json
+!config/packs/default-rule-set.json
+artifacts/legacy/*.json
 
 # Local data and test databases
 data/*.db

@@ -1,163 +1,179 @@
-# XData Collector Project Pitfalls
+# XData Collector 项目踩坑记录
 
-This file is the fact source for `xdata-collector-guardrails`.
+这个文件是 `xdata-collector-guardrails` 的事实来源。
 
-Rules:
-- Record only recurring pitfalls that affect implementation, debugging, startup, verification, or documentation.
-- Write the learning here first, then decide whether it should be promoted into the global skill.
-- Never store real cookies, tokens, or other sensitive values.
-- Every item should include context, wrong approach, correct approach, impact, and related paths.
+规则：
+- 默认使用中文记录新增学习项，方便项目协作者直接审阅。
+- 只记录会影响实现、排障、启动、验证或文档的可复用踩坑点。
+- 先在这里写下学习项，再判断是否应该提升到全局 skill。
+- 不要存放真实 cookie、token 或其他敏感信息。
+- 每一条都要包含：场景、错误做法、正确做法、影响和相关路径。
 
-## Template
+## 模板
 
-Use this structure for new entries:
+新增踩坑记录时，默认使用以下结构：
 
 ```md
-## PIT-XXX Title
+## PIT-XXX 标题
 
-**Context**:
-**Wrong approach**:
-**Correct approach**:
-**Impact**:
-**Related paths**:
+**场景**：
+**错误做法**：
+**正确做法**：
+**影响**：
+**相关路径**：
 ```
 
-Record by default:
-- long-lived pitfalls that can break functionality
-- pitfalls that can cause wrong startup or wrong verification
-- pitfalls that can cause future collaborators to misread directories, entrypoints, ports, or product boundaries
+默认应该记录：
+- 会长期影响功能的踩坑点
+- 会导致启动或验证出错的踩坑点
+- 会让后续协作者误判目录、入口、端口或产品边界的踩坑点
 
-Do not record by default:
-- one-off logs
-- private cookies, tokens, or account data
-- temporary network failures
-- accidental issues unrelated to long-term project boundaries
+默认不需要记录：
+- 一次性日志
+- 私有 cookie、token、账号或其他数据
+- 临时性网络失败
+- 与项目长期边界无关的偶发问题
 
-## PIT-001 Main directories have been consolidated
+## PIT-001 主目录已经收口
 
-**Context**: when editing structure, documentation, or startup commands.
-**Wrong approach**: treating `desktop-ui/`, `src/`, or `scripts/` as the main active directories.
-**Correct approach**: use `web-ui/`, `backend/`, and `run/` as the current main directories.
-**Impact**: directory changes, docs, debugging, entrypoint selection.
-**Related paths**: `web-ui/`, `backend/`, `run/`
+**场景**：编辑目录结构、文档或启动命令时。
+**错误做法**：把 `desktop-ui/`、`src/` 或 `scripts/` 当成当前仍在使用的主目录。
+**正确做法**：当前主目录只看 `web-ui/`、`backend/` 和 `run/`。
+**影响**：目录调整、文档编写、排障方向和入口选择。
+**相关路径**：`web-ui/`、`backend/`、`run/`
 
-## PIT-002 Runtime entrypoints should come from run
+## PIT-002 运行入口必须从 run 下取
 
-**Context**: when starting services or updating run documentation.
-**Wrong approach**: guessing old script names first, or using historical shims as the real entrypoints.
-**Correct approach**: prefer `run/api.py`, `run/scheduler.py`, and `run/static_web_server.py`.
-**Impact**: startup commands, docs, collaboration, debugging.
-**Related paths**: `run/api.py`, `run/scheduler.py`, `run/static_web_server.py`
+**场景**：启动服务或更新 `run/` 相关文档时。
+**错误做法**：先猜测旧脚本名或把历史 shim 当成真实入口。
+**正确做法**：优先使用 `run/api.py`、`run/scheduler.py` 和 `run/static_web_server.py`。
+**影响**：启动命令、文档、协作和排障。
+**相关路径**：`run/api.py`、`run/scheduler.py`、`run/static_web_server.py`
 
-## PIT-003 Service roles and ports must stay explicit
+## PIT-003 服务角色和端口必须写清楚
 
-**Context**: when restarting services or explaining the runtime layout.
-**Wrong approach**: assuming every process is a port-based service, or thinking scheduler exposes an HTTP port.
-**Correct approach**: API is `127.0.0.1:8765`, Dev UI is `127.0.0.1:5177`, Static UI is `127.0.0.1:5178`, and scheduler has no port and defaults to `tick-seconds=30`.
-**Impact**: startup, shutdown, health checks, docs, debugging.
-**Related paths**: `run/api.py`, `run/scheduler.py`, `run/static_web_server.py`, `web-ui/vite.config.*`
+**场景**：重启服务或解释运行布局时。
+**错误做法**：假设每个进程都有 HTTP 端口，或以为 scheduler 也会对外监听。
+**正确做法**：API 是 `127.0.0.1:8765`，Dev UI 是 `127.0.0.1:5177`，Static UI 是 `127.0.0.1:5178`，scheduler 没有端口，默认 `tick-seconds=30`。
+**影响**：启动、停止、健康检查、文档和排障。
+**相关路径**：`run/api.py`、`run/scheduler.py`、`run/static_web_server.py`、`web-ui/vite.config.*`
 
-## PIT-004 Check X cookies before suspecting the UI
+## PIT-004 先检查 X cookie，再怀疑 UI
 
-**Context**: when collection fails, health checks degrade, or results are empty.
-**Wrong approach**: blaming the frontend or API first without validating `.env` cookies.
-**Correct approach**: check `TWITTER_AUTH_TOKEN` and `TWITTER_CT0` in `.env` first, then inspect `/health`; `TWITTER_BROWSER` and `TWITTER_CHROME_PROFILE` are only helper fields.
-**Impact**: manual search, jobs, health checks, debugging.
-**Related paths**: `.env`, `.env.example`, `backend/collector_service.py`, `backend/twitter_cli.py`
+**场景**：采集失败、健康检查降级或结果为空时。
+**错误做法**：还没检查 `.env` cookie 就先怪前端或 API。
+**正确做法**：先检查 `.env` 里的 `TWITTER_AUTH_TOKEN` 和 `TWITTER_CT0`，然后再看 `/health`；`TWITTER_BROWSER` 和 `TWITTER_CHROME_PROFILE` 只是辅助字段。
+**影响**：手动搜索、自动任务、健康检查和排障。
+**相关路径**：`.env`、`.env.example`、`backend/collector_service.py`、`backend/twitter_cli.py`
 
-## PIT-005 Windows dev server can leave child processes behind
+## PIT-005 Windows 下 dev server 会留子进程
 
-**Context**: when restarting the frontend or troubleshooting port `5177`.
-**Wrong approach**: stopping only the outer `npm` or PowerShell wrapper and assuming Vite has exited.
-**Correct approach**: check for `node` / `vite` child processes and verify that port `5177` is really free.
-**Impact**: frontend restart, port conflicts, manual testing.
-**Related paths**: `web-ui/`, `runtime/logs/`
+**场景**：重启前端或排查 `5177` 端口占用时。
+**错误做法**：只关掉外层 `npm` / PowerShell 窗口，就认为 Vite 已经退出。
+**正确做法**：检查 `node` / `vite` 子进程，并确认 `5177` 端口真的空出来了。
+**影响**：前端重启、端口冲突、手动测试。
+**相关路径**：`web-ui/`、`runtime/logs/`
 
-## PIT-006 Logs and temp files must not drift back to repo root
+## PIT-006 日志和临时文件不能漂回仓库根目录
 
-**Context**: when adding run scripts, redirecting logs, or doing smoke checks.
-**Wrong approach**: writing logs and temp output back into the repository root.
-**Correct approach**: keep logs in `runtime/logs/` and temp files in `runtime/tmp/`.
-**Impact**: repository hygiene, collaboration, debugging.
-**Related paths**: `runtime/logs/`, `runtime/tmp/`
+**场景**：新增 run 脚本、重定向日志或做 smoke check 时。
+**错误做法**：把日志或临时输出写回仓库根目录。
+**正确做法**：日志放 `runtime/logs/`，临时文件放 `runtime/tmp/`。
+**影响**：仓库整洁度、协作和排障。
+**相关路径**：`runtime/logs/`、`runtime/tmp/`
 
-## PIT-007 The main repo is X collection only
+## PIT-007 主仓的边界只是 X 采集
 
-**Context**: when describing product scope, health checks, or dashboard semantics.
-**Wrong approach**: reintroducing Notion or downstream sync behavior into the main repo narrative.
-**Correct approach**: the repo owns X search, rule filtering, SQLite persistence, local API, scheduler, and result browsing; health checks should focus on `summary`, `db`, and `x`.
-**Impact**: README, CLAUDE, dashboard, backend API, debugging.
-**Related paths**: `backend/collector_service.py`, `web-ui/src/pages/DashboardPage.tsx`, `README.md`, `CLAUDE.md`
+**场景**：描述产品范围、健康检查或 Dashboard 语义时。
+**错误做法**：又把 Notion 或其他下游同步逻辑写回主仓叙事。
+**正确做法**：这个仓库只负责 X 搜索、规则筛选、SQLite 存储、本地 API、Scheduler 和结果浏览；健康检查主要看 `summary`、`db` 和 `x`。
+**影响**：README、CLAUDE、Dashboard、backend API 和排障。
+**相关路径**：`backend/collector_service.py`、`web-ui/src/pages/DashboardPage.tsx`、`README.md`、`CLAUDE.md`
 
-## PIT-008 PowerShell mojibake does not always mean the file is broken
+## PIT-008 PowerShell 显示乱码不一定代表文件已坏
 
-**Context**: when inspecting Chinese README files, HTML, or JSON in PowerShell.
-**Wrong approach**: assuming terminal mojibake means the file itself is corrupted.
-**Correct approach**: verify the file with Python using UTF-8 reads; distinguish display-chain issues from real file corruption.
-**Impact**: document repair, page title checks, static file debugging.
-**Related paths**: `README.md`, `CLAUDE.md`, `web-ui/index.html`, `web-ui/dist/index.html`
+**场景**：在 PowerShell 里查看中文 README、HTML 或 JSON 时。
+**错误做法**：只因为终端里看起来是乱码，就认定文件本身被写坏了。
+**正确做法**：先用 Python 按 UTF-8 读取文件确认，区分“显示链路出问题”和“文件真损坏”。
+**影响**：文档修复、页面标题检查和 static file 排障。
+**相关路径**：`README.md`、`CLAUDE.md`、`web-ui/index.html`、`web-ui/dist/index.html`
 
-## PIT-009 Verify before claiming the change is done
+## PIT-009 声称改完之前先验证
 
-**Context**: after changing entrypoints, naming, docs, or startup flow.
-**Wrong approach**: relying only on diff inspection and then declaring success.
-**Correct approach**: run `python -m pytest -c tests/pytest.ini tests` and `cd web-ui && npm run build`; for runtime changes also check `/health`, `5177`, and `5178` responses.
-**Impact**: regression safety, trust, debugging cost.
-**Related paths**: `tests/pytest.ini`, `web-ui/package.json`, `run/api.py`, `run/static_web_server.py`
+**场景**：改了入口、命名、文档或启动流程后。
+**错误做法**：只看 diff 或心里觉得没问题，就直接宣称“已完成”。
+**正确做法**：先跑 `python -m pytest -c tests/pytest.ini tests` 和 `cd web-ui && npm run build`；如果涉及运行态变更，还要检查 `/health`、`5177` 和 `5178` 的实际响应。
+**影响**：回归安全、协作信任和排障成本。
+**相关路径**：`tests/pytest.ini`、`web-ui/package.json`、`run/api.py`、`run/static_web_server.py`
 
-## PIT-010 Shutdown must be checked by both process and port
+## PIT-010 停止服务要同时看进程和端口
 
-**Context**: when stopping API, scheduler, Dev UI, or Static UI before restart or rename work.
-**Wrong approach**: killing only a wrapper process or trusting that a closed window means the service is gone.
-**Correct approach**: confirm both the process state and port state for `8765`, `5177`, and `5178`; on Windows, pay extra attention to `node` / `vite` children.
-**Impact**: renames, restarts, port-conflict debugging.
-**Related paths**: `run/api.py`, `run/scheduler.py`, `run/static_web_server.py`, `web-ui/`, `runtime/logs/`
+**场景**：重启 API、Scheduler、Dev UI 或 Static UI 之前。
+**错误做法**：只 kill 外层 wrapper，或者觉得窗口关了就等于服务停了。
+**正确做法**：同时确认 `8765`、`5177`、`5178` 对应的进程状态和端口状态；Windows 下要额外留意 `node` / `vite` 子进程。
+**影响**：重命名、重启和端口冲突排障。
+**相关路径**：`run/api.py`、`run/scheduler.py`、`run/static_web_server.py`、`web-ui/`、`runtime/logs/`
 
-## PIT-011 Dependency bootstrap has moved to bootstrap.py
+## PIT-011 依赖准备入口已移到 bootstrap.py
 
-**Context**: when preparing local dependencies, fixing missing `twitter-cli`, or updating setup docs.
-**Wrong approach**: treating platform-specific scripts as the primary install path or forgetting to document dependency bootstrap.
-**Correct approach**: use `python run/bootstrap.py` directly; it installs `twitter-cli` and `agent-browser` by default and does not accept extra arguments.
-**Impact**: machine setup, README, runtime debugging.
-**Related paths**: `run/bootstrap.py`, `backend/twitter_cli.py`, `README.md`
+**场景**：准备本机依赖、修缺 `twitter-cli` 或更新安装文档时。
+**错误做法**：把旧的平台脚本当成主入口，或忘记在文档里写清楚依赖准备方式。
+**正确做法**：直接使用 `python run/bootstrap.py`；它默认安装 `twitter-cli` 和 `agent-browser`，而且不接受额外参数。
+**影响**：机器准备、README 和运行排障。
+**相关路径**：`run/bootstrap.py`、`backend/twitter_cli.py`、`README.md`
 
-## PIT-012 PowerShell UTF8 ? JSON ??? BOM
+## PIT-012 PowerShell 会给 JSON 文件带 UTF-8 BOM
 
-**Context**: when editing `package.json`, lockfiles, or other JSON config files on Windows with PowerShell.  
-**Wrong approach**: using `Set-Content -Encoding UTF8` and assuming the output is a BOM-free UTF-8 file.  
-**Correct approach**: for JSON and other strict config files, prefer rewriting with Python `utf-8` or another BOM-free writer; if a file suddenly becomes invalid after a small text change, check for a UTF-8 BOM first.  
-**Impact**: frontend build, config parsing, npm and Vite behavior.  
-**Related paths**: `web-ui/package.json`, `web-ui/package-lock.json`
-
+**场景**：在 Windows 下用 PowerShell 编辑 `package.json`、lockfile 或其他 JSON 配置时。
+**错误做法**：用 `Set-Content -Encoding UTF8` 写入，并且默认它会生成 BOM-free UTF-8 文件。
+**正确做法**：处理 JSON 这类严格配置文件时，优先用 Python `utf-8` 或其他 BOM-free 写入方式；如果文件在小改后突然无效，先检查 BOM。
+**影响**：前端 build、配置解析、npm 和 Vite 行为。
+**相关路径**：`web-ui/package.json`、`web-ui/package-lock.json`
 
 ## PIT-013 services.py 只管理开发主链路
 
-**Context**: when starting or stopping all services through the runtime controller.
-**Wrong approach**: assuming `run/services.py` also manages `run/static_web_server.py` or any build-preview process by default.
-**Correct approach**: treat `run/services.py` as the controller for API, Scheduler, and Dev UI only; keep `run/static_web_server.py` as a separate preview tool.
-**Impact**: startup expectations, docs, troubleshooting, port checks.
-**Related paths**: `run/services.py`, `run/static_web_server.py`, `run/README.md`, `README.md`
+**场景**：通过运行控制脚本启动或停止全部服务时。
+**错误做法**：以为 `run/services.py` 会默认管到 `run/static_web_server.py` 或其他 build-preview 进程。
+**正确做法**：把 `run/services.py` 当成 API、Scheduler 和 Dev UI 的控制器；`run/static_web_server.py` 仍然是单独的预览工具。
+**影响**：启动预期、文档、排障和端口检查。
+**相关路径**：`run/services.py`、`run/static_web_server.py`、`run/README.md`、`README.md`
 
-## Documentation Encoding Pitfall
+## 文档编码踩坑
 
-- Scenario: writing Chinese Markdown content through Windows PowerShell here-strings.
-- Wrong approach: piping Chinese literal text from a PowerShell here-string into `python -` or direct PowerShell file writers.
-- Correct approach: modify UTF-8 files with Python directly; if terminal encoding is unstable, use ASCII or Unicode escapes for inserted content.
-- Impact: `README.md`, `CLAUDE.md`, JSON/config templates, and other repo docs can be corrupted into `?` characters.
-- Related paths: `README.md`, `CLAUDE.md`, `.learnings/project-pitfalls.md`
+- 场景：在 Windows PowerShell 里用 here-string 写中文 Markdown。
+- 错误做法：把中文原文直接通过 PowerShell here-string 管道喂给 `python -`，或者直接用 PowerShell 写文件。
+- 正确做法：优先用 Python 直接以 UTF-8 写文件；如果终端编码不稳，则使用 ASCII 或 Unicode 转义的方式插入中文。
+- 影响：`README.md`、`CLAUDE.md`、JSON / config 模板和其他仓库文档都可能被写成 `?`。
+- 相关路径：`README.md`、`CLAUDE.md`、`.learnings/project-pitfalls.md`
 
-## PIT-014 PowerShell can corrupt Chinese TSX literals during scripted writes
+## PIT-014 PowerShell 可能把 TSX 里的中文写成问号
 
-**Context**: when generating or rewriting frontend files such as `web-ui/src/pages/*.tsx` from Windows shell commands.
-**Wrong approach**: writing Chinese JSX literals through PowerShell here-strings and assuming the file will stay UTF-8 clean.
-**Correct approach**: prefer ASCII-safe edits for scripted writes, such as Python writers that emit BOM-free UTF-8 plus `\u` escapes for visible Chinese UI text when needed.
-**Impact**: React pages and tests can silently turn into `?` characters even when logic is otherwise correct.
-**Related paths**: `web-ui/src/pages/LogsPage.tsx`, `web-ui/src/pages/*.test.tsx`
+**场景**：在 Windows shell 里生成或重写 `web-ui/src/pages/*.tsx` 这类前端文件时。
+**错误做法**：用 PowerShell here-string 直接写中文 JSX 字面量，并且假设文件会继续保持 UTF-8 正常。
+**正确做法**：对脚本生成的中文 UI 文本，优先用 ASCII-safe 编辑方式，例如 Python 写入 BOM-free UTF-8 配合 `\u` 转义。
+**影响**：React 页面和测试文件可能在逻辑没错的情况下，视觉文案却变成 `?`。
+**相关路径**：`web-ui/src/pages/LogsPage.tsx`、`web-ui/src/pages/*.test.tsx`
 
-## PIT-015 data directory must only retain app.db
+## PIT-015 data 目录只能留 `app.db`
 
-**Context**: when adding tests, temporary exports, or one-off debug artifacts.
-**Wrong approach**: treating `data/` as a general-purpose workspace for test databases, runtime log snapshots, JSON exports, or helper readmes.
-**Correct approach**: keep `data/` limited to `app.db`; put service logs in `runtime/logs/`, PID files in `runtime/pids/`, and test-only temporary files in `runtime/tmp/tests/`.
-**Impact**: repository structure, cleanup safety, documentation, test isolation.
-**Related paths**: `data/app.db`, `runtime/logs/`, `runtime/pids/`, `runtime/tmp/tests/`, `tests/test_collector_service.py`
+**场景**：新增测试、临时导出或 debug 产物时。
+**错误做法**：把 `data/` 当成通用工作目录，随手往里面丢测试 DB、日志快照、JSON 导出或说明垃圾。
+**正确做法**：`data/` 只保留运行 DB `app.db` 和官方说明 `data/README.md`；服务日志放 `runtime/logs/`，PID 放 `runtime/pids/`，test 临时文件放 `runtime/tmp/tests/`。
+**影响**：仓库结构、清理安全、文档和测试隔离。
+**相关路径**：`data/app.db`、`data/README.md`、`runtime/logs/`、`runtime/pids/`、`runtime/tmp/tests/`、`tests/test_collector_service.py`
+
+## PIT-016 workspace.json 必须保持轻量，packs 承载搜索 / 规则正文
+
+**场景**：调整手动搜索导入、rule set、preset、job 定义或 import/export 行为时。
+**错误做法**：又把 `search_spec` 和 `rule_set` 正文塞回 `workspace.json`、localStorage、SQLite 配置表，或者到处散落 preset 文件。
+**正确做法**：`config/workspace.json` 只保留轻量 environment 和 jobs registry；可复用的 `search_spec + rule_set` 正文放到 `config/packs/*.json`；runtime state 放 `runtime/history/` 和 `runtime/state/`；SQLite 只保留 `x_items_raw` 和 `x_items_curated`。
+**影响**：Settings 页、Manual Search 页、Jobs 页、迁移行为、Git 边界和文档。
+**相关路径**：`config/workspace.json`、`config/packs/`、`backend/workspace_store.py`、`runtime/history/search_runs.jsonl`、`runtime/state/runtime_health_snapshot.json`、`runtime/state/sequences.json`、`data/app.db`
+
+## PIT-017 config 目录不应默认绑定具体任务
+
+**场景**：设计仓库默认配置、整理 `.gitignore` 或清理 `config/` 边界时。
+**错误做法**：把 `config/workspace.json`、`config/packs/job-*.json`、`config/packs/manual-preset-*.json` 这类本地动态或具体业务配置继续作为 Git 基线长期跟踪。
+**正确做法**：仓库里的 `config/` 只保留通用基线，例如 `config/README.md` 和 `config/packs/default-rule-set.json`；具体 job pack、manual preset pack 和本地 workspace 应作为本地动态配置忽略；`artifacts/legacy/` 只保留说明文件，不再提交具体 `search_presets*.json`，也不再进入 bootstrap 主链路。
+**影响**：Git 噪音、clone 后默认状态、配置通用性、文档和 bootstrap 行为。
+**相关路径**：`.gitignore`、`config/README.md`、`config/workspace.json`、`config/packs/`、`artifacts/legacy/`、`backend/workspace_store.py`

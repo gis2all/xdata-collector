@@ -15,7 +15,7 @@ const UI_TEXT = {
   loading: "\u6b63\u5728\u52a0\u8f7d\u65e5\u5fd7...",
   loadError: "\u65e5\u5fd7\u52a0\u8f7d\u5931\u8d25",
   runsTitle: "\u91c7\u96c6\u8fd0\u884c\u65e5\u5fd7",
-  runsHint: "\u6765\u81ea search_runs\uff0c\u5c55\u793a\u6700\u8fd1\u6267\u884c\u8bb0\u5f55\u548c\u57fa\u7840\u8fd0\u884c\u7ed3\u679c\u3002",
+  runsHint: "\u6765\u81ea runtime/history/search_runs.jsonl\uff0c\u5c55\u793a\u6700\u8fd1\u6267\u884c\u8bb0\u5f55\u548c\u57fa\u7840\u8fd0\u884c\u7ed3\u679c\u3002",
   noRuns: "\u6682\u65e0\u91c7\u96c6\u8fd0\u884c\u8bb0\u5f55",
   runDetail: "\u8fd0\u884c\u8be6\u60c5",
   triggerType: "\u89e6\u53d1\u65b9\u5f0f",
@@ -113,6 +113,48 @@ export function LogsPage() {
       <section className="card logs-section">
         <div className="logs-section-header">
           <div>
+            <h4>{UI_TEXT.runtimeTitle}</h4>
+            <p className="kv">{UI_TEXT.runtimeHint}</p>
+          </div>
+        </div>
+
+        <div className="logs-service-grid">
+          {SERVICE_GROUPS.map((group) => {
+            const files = runtimeLogs.filter((item) => item.name.startsWith(group.key));
+            return (
+              <div key={group.key} className="drawer-section logs-service-group">
+                <h5>{group.label}</h5>
+                <div className="logs-service-stack">
+                  {files.map((file) => (
+                    <div key={file.name} className="logs-file-card">
+                      <div className="logs-file-meta">
+                        <div>
+                          <strong>{file.name}</strong>
+                          <div className="kv">
+                            {logKind(file.name)} / {file.size} bytes / {formatUtcPlus8Time(file.updated_at)}
+                          </div>
+                        </div>
+                      </div>
+                      {file.error ? (
+                        <div className="alert error">{`${UI_TEXT.readError}${file.error}`}</div>
+                      ) : file.content ? (
+                        <pre className="logs-pre logs-pre-compact">{file.content}</pre>
+                      ) : (
+                        <div className="drawer-empty">{UI_TEXT.noLogContent}</div>
+                      )}
+                    </div>
+                  ))}
+                  {!files.length && <div className="drawer-empty">{UI_TEXT.noLogContent}</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="card logs-section">
+        <div className="logs-section-header">
+          <div>
             <h4>{UI_TEXT.runsTitle}</h4>
             <p className="kv">{UI_TEXT.runsHint}</p>
           </div>
@@ -204,48 +246,6 @@ export function LogsPage() {
             </div>
           </div>
         )}
-      </section>
-
-      <section className="card logs-section">
-        <div className="logs-section-header">
-          <div>
-            <h4>{UI_TEXT.runtimeTitle}</h4>
-            <p className="kv">{UI_TEXT.runtimeHint}</p>
-          </div>
-        </div>
-
-        <div className="logs-service-grid">
-          {SERVICE_GROUPS.map((group) => {
-            const files = runtimeLogs.filter((item) => item.name.startsWith(group.key));
-            return (
-              <div key={group.key} className="drawer-section logs-service-group">
-                <h5>{group.label}</h5>
-                <div className="logs-service-stack">
-                  {files.map((file) => (
-                    <div key={file.name} className="logs-file-card">
-                      <div className="logs-file-meta">
-                        <div>
-                          <strong>{file.name}</strong>
-                          <div className="kv">
-                            {logKind(file.name)} / {file.size} bytes / {formatUtcPlus8Time(file.updated_at)}
-                          </div>
-                        </div>
-                      </div>
-                      {file.error ? (
-                        <div className="alert error">{`${UI_TEXT.readError}${file.error}`}</div>
-                      ) : file.content ? (
-                        <pre className="logs-pre logs-pre-compact">{file.content}</pre>
-                      ) : (
-                        <div className="drawer-empty">{UI_TEXT.noLogContent}</div>
-                      )}
-                    </div>
-                  ))}
-                  {!files.length && <div className="drawer-empty">{UI_TEXT.noLogContent}</div>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
       </section>
     </div>
   );

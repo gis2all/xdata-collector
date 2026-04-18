@@ -1,210 +1,274 @@
-# 项目背景与代码结构
+# XData Collector 协作说明
 
 ## 一句话定位
 
-这是一个本地运行的 X数据采集器，当前主链路是：`X 搜索 -> 规则筛选 -> SQLite 落库 -> 结果浏览 / 自动任务调度`。
+这个仓库是一个本地运行的 X 数据采集与规则筛选工作台。当前结构已经收口为：
 
-说明边界：
-- 以下内容只基于当前仓库代码与一次本地运行页面观察整理
-- 已从代码确认的内容会直接陈述
-- 带“判断”字样的内容表示基于代码结构做出的合理推断
-- Notion 能力已迁出主仓；后续如需同步，默认由独立仓库 `D:\Code\xdata-to-notion` 直接读取 `data/app.db`
+```text
+run/ + backend/ + web-ui/ + config/ + runtime/ + data/
+```
 
-## 项目专用 Skill
+## 当前真相
 
-在这个仓库工作时，涉及以下主题必须先使用 `xdata-collector-guardrails`：
-- 启动或停止服务
-- 目录命名、路径选择、兼容 shim 判断
-- `web-ui` / `backend` / `run` 相关改动
-- `.env`、X cookie、健康检查排障
-- 文档更新、端口说明、验证命令选择
+### 1. 产品边界
 
-更新闭环要求：
-- 如果这次工作暴露出新的 recurring gotcha、用户纠正、路径误判、端口误判、编码坑、残留进程坑、兼容层误用，先写入 `.learnings/project-pitfalls.md`
-- 只有当该学习项已经稳定、可复用时，才同步回全局 skill `xdata-collector-guardrails`
-- 不要把一次性日志、真实 cookie/token、私有配置值或临时调试结论直接写进 skill
+- 主仓只处理：
+  - X 搜索
+  - 规则评估
+  - SQLite 结果沉淀
+  - 本地 API
+  - Scheduler
+  - Web UI
+- Notion 同步已经迁出主仓，不要再把 Notion 链路写回这个项目
 
-## 项目目标与主流程
+### 2. 主目录
 
-已确认的事实：
-- 前端 `web-ui` 提供单页工作台，用来配置搜索参数、编辑规则集、手动执行采集、管理自动任务和浏览结果
-- 后端通过本地 HTTP API 与 scheduler 驱动采集任务
-- 核心搜索结果先落入 `x_items_raw`，再经规则评估进入 `x_items_curated`
-- 当前系统不再承担 Notion 同步、Notion 去重或 Notion 健康检查
-- 当前仓库默认要求在 `.env` 中提供 `TWITTER_AUTH_TOKEN` 和 `TWITTER_CT0`
+- `web-ui/`：前端单页工作台
+- `backend/`：核心业务编排、规则系统、X 搜索适配与存储
+- `run/`：运行入口和开发主链路总控
+- `config/`：通用基线配置 + 本地动态配置
+- `runtime/`：运行态文件、快照、日志、PID 与临时产物
+- `data/`：正式只保留 `app.db` 和 `data/README.md`
 
-一次手动采集的主流程：
-1. 前端在 `web-ui/src/pages/ManualSearchPage.tsx` 收集 `SearchSpec` 和 `RuleSet`
-2. 前端调用 `POST /manual/run`
-3. `run/api.py` 转发给 `DesktopService.run_manual()`
-4. `backend/collector_service.py` 规范化搜索配置并生成最终 X 查询语句
-5. `backend/twitter_cli.py` 执行搜索，并把结果归一化成 `SearchResult`
-6. 原始结果写入 `x_items_raw`
-7. `backend/collector_rules.py` 做规则评估和互动门槛过滤
-8. 命中结果写入 `x_items_curated`
-9. 前端展示原始结果、命中结果、分数、等级和命中原因
+### 3. 默认运行常量
 
-判断：
-- 当前产品目标更偏向“机会线索采集与本地沉淀”，而不是完整投研中台
-- 项目已经从早期 CLI 工具阶段演进到“本地 API + scheduler + 单页工作台”的网页应用形态
+- API：`127.0.0.1:8765`
+- Dev UI：`127.0.0.1:5177`
+- Static UI：`127.0.0.1:5178`
+- Scheduler：无端口，默认 `tick-seconds=30`
+- `run/services.py` 默认只管理 API、Scheduler、Dev UI，不包含 `run/static_web_server.py`
 
-## 架构分层
+### 4. X 认证依赖
 
-### 1. `web-ui`
+- `TWITTER_AUTH_TOKEN`
+- `TWITTER_CT0`
+- `TWITTER_BROWSER` 和 `TWITTER_CHROME_PROFILE` 只是辅助提示，不能代替 cookie
 
-职责：操作台与可视化层。
+## 配置与存储模型
 
-页面结构：
-- `DashboardPage.tsx`：运行总览
-- `ManualSearchPage.tsx`：手动搜索
-- `JobsPage.tsx`：自动任务
-- `ResultsPage.tsx`：结果浏览
-- `LogsPage.tsx`：运行日志占位页
-- `SettingsPage.tsx`：设置占位页
+### 1. `config/workspace.json`
 
-页面实测结论：
-- 应用标题和浏览器标签页都是 `X数据采集器`
-- 左侧导航是单页工作台模式，不是多路由站点
-- 当前真实主线页面是：运行总览、手动搜索、自动任务、结果浏览
-- 运行日志、设置仍然偏说明性占位
+它是本地轻量 workspace 底座，只保留这些类型的信息：
 
-### 2. `run`
+- `version`
+- `meta`
+- `environment`
+- `jobs[]`
 
-职责：主运行入口层。
+`jobs[]` 是自动任务注册表。每条任务至少包含：
 
-当前结构：
-- `run/api.py`：本地 HTTP API 主入口
-- `run/scheduler.py`：调度器主入口
-- `run/static_web_server.py`：构建后前端静态文件服务
-- `run/bootstrap.py`：跨平台本机依赖准备脚本
-- `run/services.py`：开发主链路服务总控脚本
+- `id`
+- `name`
+- `enabled`
+- `interval_minutes`
+- `pack_name`
+- `pack_path`
+- `next_run_at`
+- `created_at`
+- `updated_at`
+- `deleted_at`
 
-已确认的事实：
-- 旧 Notion 脚本 `sync_notion.py`、`dedupe_notion.py`、`ingest_x_latest_curated.py` 已从主仓移除
-- 当前主产品相关运行入口已经统一收口到 `run/`
-- `bootstrap.py` 是唯一的依赖准备入口，默认安装 `pipx`、`twitter-cli` 和 `agent-browser`
-- `services.py` 默认只管理开发主链路（API、Scheduler、Dev UI），不包含 `run/static_web_server.py`
+### 2. `config/packs/*.json`
 
-运行项说明：
-- `run/api.py`：本地后端 API，默认监听 `127.0.0.1:8765`
-- `web-ui` dev server：开发态前端，默认监听 `127.0.0.1:5177`
-- `run/static_web_server.py`：构建后前端静态服务，默认监听 `127.0.0.1:5178`
-- `run/scheduler.py`：后台轮询进程，不监听端口，默认每 30 秒执行一次 `tick()`
-- `run/services.py`：开发主链路服务总控脚本，用于统一启动、停止、查看状态和重启
+任务包是当前手动执行页和自动任务页的正文真相。每个 pack 都必须同时包含：
 
-补充说明：
-- 三个有端口的服务是 `8765`、`5177`、`5178`
-- 日常开发最常用的三个进程通常是 API、Dev UI、Scheduler
-- scheduler 没有端口，因为它不是 HTTP 服务，而是后台定时执行任务的进程
+- `version`
+- `kind: "task_pack"`
+- `meta`
+- `search_spec`
+- `rule_set`
 
-### 3. `backend`
+当前口径：
 
-职责：核心业务与适配层。
+- `任务包 = 搜索条件 + 规则`
+- 导入或载入任务包后，只替换当前表单草稿
+- 继续编辑不会自动回写原 pack
+- 只有显式“另存为新任务包 / 保存到当前任务包 / 导入并保存为新任务包”才会落盘
+- Git 中默认只保留 `default-rule-set.json` 这个通用基线 pack
+- 具体 job pack、manual preset pack、manual rule-set pack 都属于本地动态配置，不应继续纳管
 
-当前关键模块：
-- `backend/collector_service.py`：后端编排核心
-- `backend/collector_rules.py`：规则系统、查询构造、结果评估
-- `backend/collector_store.py`：SQLite schema 与连接辅助
+### 3. `runtime/`
+
+运行态主要在文件系统而不在 SQLite：
+
+- `runtime/history/search_runs.jsonl`：运行记录
+- `runtime/state/runtime_health_snapshot.json`：后端健康快照
+- `runtime/state/sequences.json`：运行态序号
+- `runtime/logs/`：当前服务日志
+- `runtime/pids/`：服务 PID
+- `runtime/tmp/`：临时产物
+
+### 4. `data/app.db`
+
+当前 SQLite 只保留两张业务表：
+
+- `x_items_raw`
+- `x_items_curated`
+
+不要再把 jobs、rule sets、health snapshot 或 search runs 写回 SQLite 当主真相。
+
+## 核心架构
+
+### `run/` 层
+
+- `run/bootstrap.py`：本机依赖准备
+- `run/services.py`：开发主链路总控
+- `run/api.py`：HTTP API 门面
+- `run/scheduler.py`：固定 tick 调度器
+- `run/static_web_server.py`：构建产物预览
+
+### `backend/` 层
+
+- `backend/collector_service.py`：后端编排中枢
+- `backend/collector_rules.py`：搜索规范化、查询生成、规则评估
+- `backend/collector_store.py`：只维护 `x_items_raw` / `x_items_curated` schema 与连接
+- `backend/workspace_store.py`：workspace、task pack 和 runtime state 的文件化存储
 - `backend/twitter_cli.py`：X 搜索适配
-- `backend/source_identity.py`：来源 URL 归一化与去重 key 生成
-- `backend/opportunity_signals.py`：X 域内关键字与可信作者常量
-- `backend/config.py`：`.env` 与搜索预设加载
-- `backend/models.py`：数据模型
 
-重点说明：
-- `backend/collector_service.py` 是当前后端编排中枢，任务、规则、健康检查、运行和落库都从这里收口
-- `backend/` 不再反向依赖 `run/` 或旧脚本入口
-- `backend/twitter_cli.py` / `xreach` 链路默认依赖 `.env` 中提供的 X cookie；`TWITTER_BROWSER`、`TWITTER_CHROME_PROFILE` 只作为辅助排障提示
+### `web-ui/` 层
 
-## SQLite 数据模型与职责
+- `DashboardPage`：运行总览
+- `ManualSearchPage`：手动执行任务 + 任务包草稿管理
+- `JobsPage`：调度任务列表 + 绑定任务包
+- `ResultsPage`：`raw/curated` 双表结果浏览
+- `LogsPage`：运行记录 + 服务日志快照
+- `SettingsPage`：轻量 workspace 编辑
 
-当前核心表：
-- `search_jobs`：自动任务定义
-- `search_runs`：采集运行记录
-- `x_items_raw`：原始搜索结果池
-- `x_items_curated`：规则命中结果池
-- `rule_sets`：规则集定义
-- `runtime_health_snapshot`：最近一次健康状态快照
+## 当前 API 口径
 
-一次手动采集的落库顺序：
-1. 记录一次 `search_runs`
-2. 原始结果写入 `x_items_raw`
-3. 规则评估后的结果写入 `x_items_curated`
-4. 刷新 `runtime_health_snapshot`
+### 配置与任务包
 
-## 规则系统说明
+- `GET /workspace`
+- `PUT /workspace`
+- `POST /workspace/import`
+- `GET /workspace/export`
+- `GET /task-packs`
+- `GET /task-packs/{pack_name}`
+- `POST /task-packs`
+- `PUT /task-packs/{pack_name}`
+- `POST /task-packs/{pack_name}/delete`
 
-当前规则系统分两层：
-- `SearchSpec`：决定“搜什么”
-- `RuleSetDefinition`：决定“如何筛选、如何打分、如何分级”
+### 健康与运行态
 
-规则能力包括：
-- 关键词、作者、语言、时间窗、互动阈值
-- 是否要求媒体、是否要求外链
-- 条件关系、动作、分数、等级提示
-
-## 关键 API / 交互链路
-
-当前主要 API：
 - `GET /health`
-- `GET /jobs`
-- `GET /rule-sets`
-- `GET /items`
+- `GET /health/snapshot`
+- `GET /runs`
+- `GET /runs/{id}`
+- `GET /logs/runtime`
+
+### 手动执行与自动任务
+
 - `POST /manual/run`
-- `POST /jobs/create`
-- `POST /jobs/{id}/update`
-- `POST /jobs/{id}/toggle`
-- `POST /jobs/{id}/run-now`
-- `POST /jobs/{id}/delete`
-- `POST /jobs/{id}/restore`
-- `POST /jobs/{id}/purge`
-- `POST /rule-sets`
-- `POST /rule-sets/{id}/clone`
-- `POST /rule-sets/{id}/update`
-- `POST /rule-sets/{id}/delete`
-- `POST /scheduler/tick`
+- `/jobs` 系列路由仍然保留，但底层已经改为 workspace + task pack 文件后端
+- `POST /jobs/batch` 已支持批量启用、停用、立即运行、删除、恢复、彻底删除
+- `POST /scheduler/tick` 仍可用于手动触发 scheduler 逻辑
 
-前后端主交互链路：
-- 手动搜索页发起采集请求
-- API 调用 `DesktopService`
-- 结果落库后回传前端
-- 自动任务页通过 API 读写任务并触发 scheduler 相关动作
-- 结果浏览页读取 `x_items_curated`
+### 规则与结果浏览
 
-## 当前实现状态
+- `/rule-sets` 路由仍然保留，但 rule set 目录是从 builtin + task packs 派生出来的兼容视图
+- `GET /items?table=curated|raw`
+- `POST /items/{id}/delete`
+- `POST /items/delete`
+- `POST /items/dedupe`
 
-成熟部分：
-- `运行总览`：已经接上真实 DB / X 健康信息
-- `手动搜索`：当前最重、最核心的操作页
-- `自动任务`：具备查看、编辑、立即执行、启停、删除等完整工作流
-- `结果浏览`：已接入真实结果池
+## 典型工作流
 
-较轻量部分：
-- `结果浏览` 目前更像 curated 结果浏览器，交互深度有限
-- `运行日志`、`设置` 仍偏占位
+### 1. 手动执行任务
 
-维护判断：
-- 当前项目已经收口为纯 X 采集主仓
-- 后续如果要做下游同步、归档或外部系统集成，建议在独立仓库完成，不再回灌到本仓
+1. `ManualSearchPage` 编辑任务包草稿
+2. 草稿正文由两部分组成：
+   - 搜索条件
+   - 规则
+3. 可以载入已有任务包，也可以从本地 JSON 文件导入到当前草稿
+4. 前端调用 `POST /manual/run`
+5. `run_manual()` 组装查询、拉取 X 结果、写 raw、评估规则、写 curated
+6. 成功 run 后会自动对 `x_items_curated` 执行全表去重
 
-## Git 边界
+### 2. 自动任务
 
-版本控制边界约定：
-- 应提交：`backend/`、`run/`、`tests/`、`web-ui/src/`、`config/`、`artifacts/`、文档、`.env.example`、`.learnings/`
-- ?????`.env`?`data/*.db`?`runtime/logs/`?`runtime/pids/`?`runtime/tmp/`?`web-ui/node_modules/`?`web-ui/dist/`?????
-- `.learnings/` 属于项目级协作知识，应纳入版本控制，但不能写入真实 cookie、token、账号或一次性调试噪音
+1. `JobsPage` 维护 `workspace.json.jobs[]` 的注册信息
+2. 每条 job 通过 `pack_path` 指向一个 task pack
+3. scheduler 按固定 tick 扫描已启用且到期的 job
+4. `run_job_now()` 读取任务包正文后调用 `run_manual(..., trigger_type="auto")`
+5. Jobs 页支持两段式全选和批量操作
 
-## 维护建议与推荐阅读顺序
+### 3. 结果浏览
 
-推荐阅读顺序：
-1. `web-ui/src/pages/ManualSearchPage.tsx`
-2. `run/api.py`
-3. `backend/collector_service.py`
+1. `ResultsPage` 以 `table=curated|raw` 切换数据源
+2. 排序、删除、批量删除、去重都作用于当前选中的表
+3. 结果页支持列显隐、本地视图记忆和列宽拖拽
+
+### 4. 运行总览
+
+1. 浏览器刷新页面时，不会自动调用健康接口
+2. 首屏只恢复浏览器本地上次展示状态
+3. 只有点击 `重新加载` 才会调用 `GET /health`
+4. `GET /health/snapshot` 是后端只读快照接口，不是 Dashboard 首屏默认来源
+
+## 编辑时的约束
+
+- 文档、路径、启动命令默认以 `run/` 下主入口为准
+- 不要把 `workspace.json` 重新做成“搜索草稿 + presets + rule sets + jobs 全内联快照”
+- 不要把 `config/` 默认绑定到具体业务任务；仓库基线只保留通用配置
+- 不要让 `data/` 回流日志、导出、测试临时文件
+- 不要让 `run/services.py` 默认管到 `run/static_web_server.py`
+- 改 X 采集链路时，先检查 `.env` 和 `/health`
+- 写中文 Markdown / TSX / JSON 时，注意 Windows PowerShell 的乱码和 BOM 风险
+
+## Git 与提交边界
+
+默认应该提交：
+
+- `backend/`
+- `run/`
+- `tests/`
+- `web-ui/src/`
+- `config/README.md`
+- `config/packs/default-rule-set.json`
+- `artifacts/legacy/README.md`
+- `.env.example`
+- `.learnings/`
+
+默认不应该提交：
+
+- `.env`
+- `data/*.db`
+- `runtime/history/`
+- `runtime/state/`
+- `runtime/logs/`
+- `runtime/pids/`
+- `runtime/tmp/`
+- `web-ui/node_modules/`
+- `web-ui/dist/`
+- `config/workspace.json`
+- `config/packs/job-*.json`
+- `config/packs/manual-preset-*.json`
+- `config/packs/manual-rule-set-*.json`
+- `artifacts/legacy/*.json`
+
+`.learnings/` 应提交，但不能写入真实 cookie、token 或一次性调试噪音。
+
+## 默认验证
+
+```bash
+python -m pytest -c tests/pytest.ini tests
+cd web-ui && npm test
+cd web-ui && npm run build
+```
+
+如果改了运行入口、services、端口说明或健康相关逻辑，额外检查：
+
+- `python run/services.py status`
+- `http://127.0.0.1:8765/health`
+- `http://127.0.0.1:5177/`
+
+## 推荐阅读顺序
+
+1. `run/api.py`
+2. `backend/collector_service.py`
+3. `backend/workspace_store.py`
 4. `backend/collector_rules.py`
-5. `backend/collector_store.py`
-
-维护建议：
-- 改启动链路前，先确认 `run/` 下的主入口是否受影响
-- 改认证或采集链路前，先检查 `.env` 和 `/health`
-- 改文档时，优先避免 PowerShell 直接读写无 BOM UTF-8 中文文件
-- 宣称完成前，至少跑 `python -m pytest -c tests/pytest.ini tests` 和 `cd web-ui && npm run build`
+5. `web-ui/src/pages/ManualSearchPage.tsx`
+6. `web-ui/src/pages/JobsPage.tsx`
+7. `web-ui/src/pages/ResultsPage.tsx`
+8. `web-ui/src/pages/DashboardPage.tsx`

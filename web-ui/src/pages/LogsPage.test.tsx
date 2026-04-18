@@ -77,6 +77,44 @@ describe("LogsPage", () => {
     expect(screen.getAllByText("2026-04-13 08:01:00 UTC+8").length).toBeGreaterThanOrEqual(2);
   });
 
+  it("shows runtime service logs above collection run logs", async () => {
+    listRunsMock.mockResolvedValue({
+      page: 1,
+      page_size: 50,
+      total: 1,
+      items: [
+        {
+          id: 9,
+          job_id: null,
+          trigger_type: "manual",
+          status: "failed",
+          started_at: "2026-04-13T00:00:00.123456+00:00",
+          ended_at: "2026-04-13T00:01:00.654321+00:00",
+          error_text: "boom",
+          stats_json: { matched: 0 },
+        },
+      ],
+    });
+    getRuntimeLogsMock.mockResolvedValue({
+      items: [
+        {
+          name: "api.current.out.log",
+          exists: true,
+          size: 6,
+          updated_at: "2026-04-13T00:00:00+00:00",
+          content: "ready!",
+        },
+      ],
+    });
+
+    render(<LogsPage />);
+
+    const runtimeHeading = await screen.findByRole("heading", { name: TEXT.runtimeTitle });
+    const runsHeading = await screen.findByRole("heading", { name: TEXT.runsTitle });
+
+    expect(runtimeHeading.compareDocumentPosition(runsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("renders empty states when both sources are empty", async () => {
     listRunsMock.mockResolvedValue({ page: 1, page_size: 50, total: 0, items: [] });
     getRuntimeLogsMock.mockResolvedValue({

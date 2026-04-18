@@ -5,11 +5,7 @@ type Props = {
   ruleSet: RuleSet | null;
   draft: RuleSetDefinition;
   onDraftChange: (next: RuleSetDefinition) => void;
-  onSave: () => void;
-  onClone: () => void;
-  onDelete: () => void;
-  saving?: boolean;
-  deleting?: boolean;
+  disabled?: boolean;
 };
 
 const CONDITION_LABELS: Array<{ value: RuleCondition["type"]; label: string }> = [
@@ -42,27 +38,16 @@ function updateCondition(conditions: RuleCondition[], index: number, patch: Part
   return conditions.map((condition, idx) => (idx === index ? { ...condition, ...patch } : condition));
 }
 
-export function RuleSetEditor({ ruleSet, draft, onDraftChange, onSave, onClone, onDelete, saving = false, deleting = false }: Props) {
+export function RuleSetEditor({ ruleSet, draft, onDraftChange, disabled = false }: Props) {
   const current = cloneRuleDefinition(draft);
   const levelOptions = current.levels.map((level) => level.id);
 
   return (
     <div className="collector-panel">
-      <div className="collector-toolbar between">
+      <div>
         <div>
           <div className="collector-title">规则可视化编辑器</div>
           <div className="kv">{ruleSet ? `${ruleSet.name} · v${ruleSet.version}` : "临时规则"}</div>
-        </div>
-        <div className="collector-toolbar">
-          <button type="button" className="ghost" onClick={onClone} disabled={!ruleSet}>
-            复制规则集
-          </button>
-          <button type="button" onClick={onSave} disabled={saving}>
-            {saving ? "保存中..." : "保存规则集"}
-          </button>
-          <button type="button" className="danger" onClick={onDelete} disabled={!ruleSet || Boolean(ruleSet?.is_builtin) || deleting}>
-            {deleting ? "删除中..." : "删除规则集"}
-          </button>
         </div>
       </div>
 
@@ -72,19 +57,19 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, onSave, onClone, 
           <div key={`${level.id}-${index}`} className="collector-card">
             <label className="field">
               <span>等级 ID</span>
-              <input value={level.id} onChange={(e) => onDraftChange({ ...current, levels: updateLevel(current.levels, index, { id: e.target.value }) })} />
+              <input disabled={disabled} value={level.id} onChange={(e) => onDraftChange({ ...current, levels: updateLevel(current.levels, index, { id: e.target.value }) })} />
             </label>
             <label className="field">
               <span>标签</span>
-              <input value={level.label} onChange={(e) => onDraftChange({ ...current, levels: updateLevel(current.levels, index, { label: e.target.value }) })} />
+              <input disabled={disabled} value={level.label} onChange={(e) => onDraftChange({ ...current, levels: updateLevel(current.levels, index, { label: e.target.value }) })} />
             </label>
             <label className="field">
               <span>最低分</span>
-              <input type="number" value={level.min_score} onChange={(e) => onDraftChange({ ...current, levels: updateLevel(current.levels, index, { min_score: Number(e.target.value) }) })} />
+              <input disabled={disabled} type="number" value={level.min_score} onChange={(e) => onDraftChange({ ...current, levels: updateLevel(current.levels, index, { min_score: Number(e.target.value) }) })} />
             </label>
             <label className="field">
               <span>颜色</span>
-              <input value={level.color} onChange={(e) => onDraftChange({ ...current, levels: updateLevel(current.levels, index, { color: e.target.value }) })} />
+              <input disabled={disabled} value={level.color} onChange={(e) => onDraftChange({ ...current, levels: updateLevel(current.levels, index, { color: e.target.value }) })} />
             </label>
           </div>
         ))}
@@ -92,7 +77,7 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, onSave, onClone, 
 
       <div className="collector-toolbar between" style={{ marginTop: 16 }}>
         <div className="collector-subtitle">规则块</div>
-        <button type="button" className="ghost" onClick={() => onDraftChange({ ...current, rules: [...current.rules, newRule(levelOptions)] })}>
+        <button type="button" className="ghost" disabled={disabled} onClick={() => onDraftChange({ ...current, rules: [...current.rules, newRule(levelOptions)] })}>
           新增规则
         </button>
       </div>
@@ -102,13 +87,13 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, onSave, onClone, 
           <div key={rule.id} className="collector-card collector-rule-card">
             <div className="collector-toolbar between">
               <div className="collector-toolbar">
-                <input value={rule.name} onChange={(e) => onDraftChange({ ...current, rules: updateRule(current.rules, index, { name: e.target.value }) })} />
+                <input disabled={disabled} value={rule.name} onChange={(e) => onDraftChange({ ...current, rules: updateRule(current.rules, index, { name: e.target.value }) })} />
                 <label className="field checkbox-row">
                   <span>启用</span>
-                  <input type="checkbox" checked={rule.enabled} onChange={(e) => onDraftChange({ ...current, rules: updateRule(current.rules, index, { enabled: e.target.checked }) })} />
+                  <input disabled={disabled} type="checkbox" checked={rule.enabled} onChange={(e) => onDraftChange({ ...current, rules: updateRule(current.rules, index, { enabled: e.target.checked }) })} />
                 </label>
               </div>
-              <button type="button" className="ghost" onClick={() => onDraftChange({ ...current, rules: current.rules.filter((_, idx) => idx !== index) })}>
+              <button type="button" className="ghost" disabled={disabled} onClick={() => onDraftChange({ ...current, rules: current.rules.filter((_, idx) => idx !== index) })}>
                 删除规则
               </button>
             </div>
@@ -116,25 +101,25 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, onSave, onClone, 
             <div className="collector-grid collector-grid-4" style={{ marginTop: 8 }}>
               <label className="field">
                 <span>条件关系</span>
-                <select value={rule.operator} onChange={(e) => onDraftChange({ ...current, rules: updateRule(current.rules, index, { operator: e.target.value as ScoringRule["operator"] }) })}>
+                <select disabled={disabled} value={rule.operator} onChange={(e) => onDraftChange({ ...current, rules: updateRule(current.rules, index, { operator: e.target.value as ScoringRule["operator"] }) })}>
                   <option value="AND">AND</option>
                   <option value="OR">OR</option>
                 </select>
               </label>
               <label className="field">
                 <span>动作</span>
-                <select value={rule.effect.action} onChange={(e) => onDraftChange({ ...current, rules: updateRule(current.rules, index, { effect: { ...rule.effect, action: e.target.value as ScoringRule["effect"]["action"] } }) })}>
+                <select disabled={disabled} value={rule.effect.action} onChange={(e) => onDraftChange({ ...current, rules: updateRule(current.rules, index, { effect: { ...rule.effect, action: e.target.value as ScoringRule["effect"]["action"] } }) })}>
                   <option value="score">加分</option>
                   <option value="exclude">排除</option>
                 </select>
               </label>
               <label className="field">
                 <span>分数</span>
-                <input type="number" value={rule.effect.score} onChange={(e) => onDraftChange({ ...current, rules: updateRule(current.rules, index, { effect: { ...rule.effect, score: Number(e.target.value) } }) })} />
+                <input disabled={disabled} type="number" value={rule.effect.score} onChange={(e) => onDraftChange({ ...current, rules: updateRule(current.rules, index, { effect: { ...rule.effect, score: Number(e.target.value) } }) })} />
               </label>
               <label className="field">
                 <span>等级提示</span>
-                <select value={rule.effect.level} onChange={(e) => onDraftChange({ ...current, rules: updateRule(current.rules, index, { effect: { ...rule.effect, level: e.target.value } }) })}>
+                <select disabled={disabled} value={rule.effect.level} onChange={(e) => onDraftChange({ ...current, rules: updateRule(current.rules, index, { effect: { ...rule.effect, level: e.target.value } }) })}>
                   <option value="">不指定</option>
                   {levelOptions.map((level) => (
                     <option key={level} value={level}>{level}</option>
@@ -156,6 +141,7 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, onSave, onClone, 
                       }),
                     })
                   }
+                  disabled={disabled}
                   onDelete={() =>
                     onDraftChange({
                       ...current,
@@ -171,6 +157,7 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, onSave, onClone, 
               type="button"
               className="ghost"
               style={{ marginTop: 10 }}
+              disabled={disabled}
               onClick={() =>
                 onDraftChange({
                   ...current,
@@ -189,36 +176,46 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, onSave, onClone, 
   );
 }
 
-function ConditionEditor({ value, onChange, onDelete }: { value: RuleCondition; onChange: (next: Partial<RuleCondition>) => void; onDelete: () => void }) {
+function ConditionEditor({
+  value,
+  onChange,
+  onDelete,
+  disabled = false,
+}: {
+  value: RuleCondition;
+  onChange: (next: Partial<RuleCondition>) => void;
+  onDelete: () => void;
+  disabled?: boolean;
+}) {
   const usesValues = ["text_contains_any", "text_not_contains_any", "author_in", "author_not_in", "author_contains_any"].includes(value.type);
   const usesMetric = value.type === "metric_at_least";
   const usesSingleValue = ["language_is", "age_within_days"].includes(value.type);
   return (
     <div className="collector-condition-row">
-      <select value={value.type} onChange={(e) => onChange({ type: e.target.value as RuleCondition["type"] })}>
+      <select disabled={disabled} value={value.type} onChange={(e) => onChange({ type: e.target.value as RuleCondition["type"] })}>
         {CONDITION_LABELS.map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
         ))}
       </select>
       {usesValues && (
-        <input value={joinCommaLines(value.values)} onChange={(e) => onChange({ values: splitCommaLines(e.target.value) })} placeholder="逗号分隔" />
+        <input disabled={disabled} value={joinCommaLines(value.values)} onChange={(e) => onChange({ values: splitCommaLines(e.target.value) })} placeholder="逗号分隔" />
       )}
       {usesMetric && (
         <>
-          <select value={value.metric || "views"} onChange={(e) => onChange({ metric: e.target.value as RuleCondition["metric"] })}>
+          <select disabled={disabled} value={value.metric || "views"} onChange={(e) => onChange({ metric: e.target.value as RuleCondition["metric"] })}>
             <option value="views">views</option>
             <option value="likes">likes</option>
             <option value="replies">replies</option>
             <option value="retweets">retweets</option>
           </select>
-          <input type="number" value={Number(value.value || 0)} onChange={(e) => onChange({ value: Number(e.target.value) })} />
+          <input disabled={disabled} type="number" value={Number(value.value || 0)} onChange={(e) => onChange({ value: Number(e.target.value) })} />
         </>
       )}
       {usesSingleValue && (
-        <input value={String(value.value || "")} onChange={(e) => onChange({ value: e.target.value })} />
+        <input disabled={disabled} value={String(value.value || "")} onChange={(e) => onChange({ value: e.target.value })} />
       )}
       {!usesValues && !usesMetric && !usesSingleValue && <span className="kv">无额外参数</span>}
-      <button type="button" className="ghost" onClick={onDelete}>删除</button>
+      <button type="button" className="ghost" disabled={disabled} onClick={onDelete}>删除</button>
     </div>
   );
 }

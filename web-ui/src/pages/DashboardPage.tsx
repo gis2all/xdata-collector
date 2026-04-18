@@ -1,6 +1,8 @@
-﻿import { useEffect, useState } from "react";
+import { useState } from "react";
 import { DatabaseHealth, HealthSnapshot, XHealth, health } from "../api";
 import { formatUtcPlus8Time } from "../time";
+
+const DASHBOARD_HEALTH_STATE_KEY = "dashboard.healthSnapshot.v1";
 
 function healthStatus(target: { configured: boolean; connected: boolean; last_error: string }) {
   if (!target.configured) return "未配置";
@@ -14,27 +16,27 @@ function renderDatabaseInfo(info: DatabaseHealth) {
   return (
     <div className="dashboard-detail-grid">
       <div className="dashboard-detail-item">
-        <span>数据库路径</span>
+        <span>{"数据库路径"}</span>
         <strong>{info.db_path || "unknown"}</strong>
       </div>
       <div className="dashboard-detail-item">
-        <span>文件存在</span>
+        <span>{"文件存在"}</span>
         <strong>{info.db_exists ? "是" : "否"}</strong>
       </div>
       <div className="dashboard-detail-item">
-        <span>任务数</span>
+        <span>{"任务数"}</span>
         <strong>{info.job_count}</strong>
       </div>
       <div className="dashboard-detail-item">
-        <span>运行数</span>
+        <span>{"运行数"}</span>
         <strong>{info.run_count}</strong>
       </div>
       <div className="dashboard-detail-item">
-        <span>最近校验</span>
-        <strong>{formatUtcPlus8Time(info.last_checked_at, "\u5c1a\u672a\u6821\u9a8c")}</strong>
+        <span>{"最近校验"}</span>
+        <strong>{formatUtcPlus8Time(info.last_checked_at, "尚未校验")}</strong>
       </div>
       <div className="dashboard-detail-item">
-        <span>最近错误</span>
+        <span>{"最近错误"}</span>
         <strong>{info.last_error || "无"}</strong>
       </div>
     </div>
@@ -45,31 +47,54 @@ function renderXInfo(info: XHealth) {
   return (
     <div className="dashboard-detail-grid">
       <div className="dashboard-detail-item">
-        <span>认证来源</span>
+        <span>{"认证来源"}</span>
         <strong>{info.auth_source || "unknown"}</strong>
       </div>
       <div className="dashboard-detail-item">
-        <span>浏览器提示</span>
+        <span>{"浏览器提示"}</span>
         <strong>{info.browser_hint || "unknown"}</strong>
       </div>
       <div className="dashboard-detail-item">
-        <span>账号摘要</span>
+        <span>{"账号摘要"}</span>
         <strong>{info.account_hint || "unknown"}</strong>
       </div>
       <div className="dashboard-detail-item">
-        <span>最近校验</span>
-        <strong>{formatUtcPlus8Time(info.last_checked_at, "\u5c1a\u672a\u6821\u9a8c")}</strong>
+        <span>{"最近校验"}</span>
+        <strong>{formatUtcPlus8Time(info.last_checked_at, "尚未校验")}</strong>
       </div>
       <div className="dashboard-detail-item dashboard-detail-item-wide">
-        <span>最近错误</span>
+        <span>{"最近错误"}</span>
         <strong>{info.last_error || "无"}</strong>
       </div>
     </div>
   );
 }
 
+function readStoredDashboardHealth() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const raw = window.localStorage.getItem(DASHBOARD_HEALTH_STATE_KEY);
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as HealthSnapshot;
+  } catch {
+    window.localStorage.removeItem(DASHBOARD_HEALTH_STATE_KEY);
+    return null;
+  }
+}
+
+function writeStoredDashboardHealth(snapshot: HealthSnapshot) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(DASHBOARD_HEALTH_STATE_KEY, JSON.stringify(snapshot));
+}
+
 export function DashboardPage() {
-  const [state, setState] = useState<HealthSnapshot | null>(null);
+  const [state, setState] = useState<HealthSnapshot | null>(() => readStoredDashboardHealth());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -79,6 +104,7 @@ export function DashboardPage() {
     try {
       const next = await health();
       setState(next);
+      writeStoredDashboardHealth(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载失败");
     } finally {
@@ -86,29 +112,29 @@ export function DashboardPage() {
     }
   }
 
-  useEffect(() => {
-    loadHealth().catch(() => {});
-  }, []);
+  const updatedAtLabel = state?.summary.source === "runtime_snapshot"
+    ? "运行快照更新时间"
+    : "后端快照更新时间";
 
   return (
     <>
       <div className="card" data-testid="dashboard-health">
-        <h3>运行总览</h3>
+        <h3>{"运行总览"}</h3>
         <div className="grid-3">
           <div className="kv">
             <b>{state ? healthStatus(state.db) : loading ? "加载中" : "尚未校验"}</b>
-            本地数据库
+            {"本地数据库"}
           </div>
           <div className="kv">
             <b>{state ? healthStatus(state.x) : loading ? "加载中" : "尚未校验"}</b>
-            X 会话
+            {"X 会话"}
           </div>
         </div>
         <div className="kv" style={{ marginTop: 8 }}>
           {error
             ? `错误: ${error}`
             : state
-              ? `后端快照更新时间: ${formatUtcPlus8Time(state.summary.updated_at, "\u5c1a\u672a\u6821\u9a8c")}`
+              ? `${updatedAtLabel}: ${formatUtcPlus8Time(state.summary.updated_at, "尚未校验")}`
               : loading
                 ? "正在读取后端快照..."
                 : "尚未刷新"}
@@ -118,19 +144,19 @@ export function DashboardPage() {
       {state && (
         <>
           <div className="card" data-testid="dashboard-db-info">
-            <h3>数据库基本信息</h3>
+            <h3>{"数据库基本信息"}</h3>
             {renderDatabaseInfo(state.db)}
           </div>
 
           <div className="card" data-testid="dashboard-x-info">
-            <h3>X 基本信息</h3>
+            <h3>{"X 基本信息"}</h3>
             {renderXInfo(state.x)}
           </div>
         </>
       )}
 
       <div className="card" data-testid="dashboard-actions">
-        <h3>快速操作</h3>
+        <h3>{"快速操作"}</h3>
         <div className="row">
           <button type="button" onClick={loadHealth} disabled={loading}>
             {loading ? "刷新中..." : "重新加载"}

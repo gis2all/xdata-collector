@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -35,8 +35,24 @@ class ApiHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         try:
             parsed = urlparse(self.path)
+            if parsed.path == "/workspace":
+                self._json(HTTPStatus.OK, self.service.get_workspace())
+                return
+            if parsed.path == "/workspace/export":
+                self._json(HTTPStatus.OK, self.service.export_workspace())
+                return
+            if parsed.path == "/task-packs":
+                self._json(HTTPStatus.OK, self.service.list_task_packs())
+                return
+            if parsed.path.startswith("/task-packs/"):
+                pack_name = parsed.path.split("/")[-1]
+                self._json(HTTPStatus.OK, self.service.get_task_pack(pack_name))
+                return
             if parsed.path == "/health":
                 self._json(HTTPStatus.OK, self.service.health())
+                return
+            if parsed.path == "/health/snapshot":
+                self._json(HTTPStatus.OK, self.service.health_snapshot())
                 return
             if parsed.path == "/jobs":
                 q = parse_qs(parsed.query)
@@ -79,10 +95,38 @@ class ApiHandler(BaseHTTPRequestHandler):
                 page_size = int(q.get("page_size", ["50"])[0])
                 level = q.get("level", [None])[0]
                 keyword = q.get("keyword", [None])[0]
+                sort_by = q.get("sort_by", [None])[0]
+                sort_dir = q.get("sort_dir", [None])[0]
+                table = q.get("table", ["curated"])[0]
                 self._json(
                     HTTPStatus.OK,
-                    self.service.list_items(page=page, page_size=page_size, level=level, keyword=keyword),
+                    self.service.list_items(
+                        page=page,
+                        page_size=page_size,
+                        level=level,
+                        keyword=keyword,
+                        sort_by=sort_by,
+                        sort_dir=sort_dir,
+                        table=table,
+                    ),
                 )
+                return
+            self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+        except FileNotFoundError as exc:
+            self._json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
+        except Exception as exc:  # noqa: BLE001
+            self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
+    def do_PUT(self) -> None:  # noqa: N802
+        try:
+            payload = self._read_json()
+            parsed = urlparse(self.path)
+            if parsed.path == "/workspace":
+                self._json(HTTPStatus.OK, self.service.update_workspace(payload))
+                return
+            if parsed.path.startswith("/task-packs/"):
+                pack_name = parsed.path.split("/")[-1]
+                self._json(HTTPStatus.OK, self.service.update_task_pack(pack_name, payload))
                 return
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
         except Exception as exc:  # noqa: BLE001
@@ -93,11 +137,24 @@ class ApiHandler(BaseHTTPRequestHandler):
             payload = self._read_json()
             parsed = urlparse(self.path)
             path = parsed.path
+            if path == "/workspace/import":
+                self._json(HTTPStatus.OK, self.service.import_workspace(payload))
+                return
+            if path == "/task-packs":
+                self._json(HTTPStatus.OK, self.service.create_task_pack(payload))
+                return
+            if path.startswith("/task-packs/") and path.endswith("/delete"):
+                pack_name = path.split("/")[2]
+                self._json(HTTPStatus.OK, self.service.delete_task_pack(pack_name))
+                return
             if path == "/manual/run":
                 self._json(HTTPStatus.OK, self.service.run_manual(payload))
                 return
             if path in {"/jobs", "/jobs/create"}:
                 self._json(HTTPStatus.OK, self.service.create_job(payload))
+                return
+            if path == "/jobs/batch":
+                self._json(HTTPStatus.OK, self.service.batch_jobs(payload))
                 return
             if path == "/rule-sets":
                 self._json(HTTPStatus.OK, self.service.create_rule_set(payload))
@@ -138,6 +195,27 @@ class ApiHandler(BaseHTTPRequestHandler):
                 job_id = int(path.split("/")[2])
                 self._json(HTTPStatus.OK, self.service.purge_job(job_id))
                 return
+            if path == "/items/delete":
+                table = payload.get("table", "curated")
+                if payload.get("mode") == "all_matching":
+                    self._json(
+                        HTTPStatus.OK,
+                        self.service.delete_items_matching(
+                            keyword=payload.get("keyword"),
+                            level=payload.get("level"),
+                            table=table,
+                        ),
+                    )
+                else:
+                    self._json(HTTPStatus.OK, self.service.delete_items(payload.get("ids", []), table=table))
+                return
+            if path == "/items/dedupe":
+                self._json(HTTPStatus.OK, self.service.dedupe_items(table=payload.get("table", "curated")))
+                return
+            if path.startswith("/items/") and path.endswith("/delete"):
+                item_id = int(path.split("/")[2])
+                self._json(HTTPStatus.OK, self.service.delete_item(item_id, table=payload.get("table", "curated")))
+                return
             if path == "/scheduler/tick":
                 self._json(HTTPStatus.OK, self.service.tick())
                 return
@@ -166,7 +244,7 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def _set_cors_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
 
