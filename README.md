@@ -1,7 +1,8 @@
 # X数据采集器
 
-本项目是一个本地运行的 X 数据采集、规则筛选、结果沉淀工作台。  
+本项目是一个本地运行的 X 数据采集、规则筛选、结果沉淀工作台。
 它只负责 X 搜索、本地 API、任务调度、SQLite 结果存储和 Web UI。
+![image](artifacts\diagrams\workflow.png)
 
 主链路：
 
@@ -89,40 +90,7 @@ python run/services.py restart
 
 ## 运行入口与端口
 
-日常使用时，最常用的其实只有两个入口：
-
-- `python run/bootstrap.py`
-- `python run/services.py start`
-
-但仓库里实际运行入口分工如下。
-
-### `run/bootstrap.py`
-
-作用：
-
-- 准备本机依赖
-- 安装 `twitter-cli` 和 `agent-browser`
-
-特点：
-
-- 不启动 API
-- 不启动 scheduler
-- 不启动前端
-
-适用场景：
-
-- 新机器第一次拉起项目
-- 本地缺依赖
-- `twitter-cli not found` 这类错误
-
-### `run/services.py`
-
-作用：
-
-- 管理开发主链路
-- 一次性控制 API、Scheduler、Dev UI
-
-支持命令：
+平时真正常用的入口只有两个：`python run/bootstrap.py` 和 `python run/services.py start`。前者只负责准备本机依赖，会安装 `twitter-cli` 和 `agent-browser`，适合新机器首次启动、补依赖，或者遇到 `twitter-cli not found` 这类问题时使用；它不会启动 API、Scheduler 或前端。后者才是日常开发主入口，会统一拉起 `run/api.py`、`run/scheduler.py` 和 `web-ui` dev server，常用命令就是：
 
 ```bash
 python run/services.py start
@@ -131,92 +99,7 @@ python run/services.py stop
 python run/services.py restart
 ```
 
-默认管理范围：
-
-- `run/api.py`
-- `run/scheduler.py`
-- `web-ui` dev server
-
-不包含：
-
-- `run/static_web_server.py`
-
-适用场景：
-
-- 日常开发
-- 本地联调
-- 查看服务状态
-
-### `run/api.py`
-
-作用：
-
-- 提供本地 HTTP API
-- 承载 `/health`、`/jobs`、`/items`、`/manual/run` 等接口
-
-默认端口：
-
-- `127.0.0.1:8765`
-
-你通常不需要单独跑它，除非你在单独调 API 或排查服务问题。
-
-### `run/scheduler.py`
-
-作用：
-
-- 后台定时扫描自动任务
-- 按 `next_run_at` 触发到期 job
-
-特点：
-
-- 没有 HTTP 端口
-- 默认 `tick-seconds=30`
-
-你通常不需要单独跑它，除非你在单独调度试。
-
-### `web-ui` dev server
-
-作用：
-
-- 前端开发态界面
-
-默认端口：
-
-- `127.0.0.1:5177`
-
-说明：
-
-- 平时由 `run/services.py` 统一拉起
-- 前端默认请求本地 API `127.0.0.1:8765`
-
-### `run/static_web_server.py`
-
-作用：
-
-- 提供构建后的静态预览
-
-默认端口：
-
-- `127.0.0.1:5178`
-
-典型用法：
-
-```bash
-cd web-ui && npm run build
-python run/static_web_server.py --root web-ui/dist
-```
-
-说明：
-
-- 它是单独的预览入口
-- `run/services.py` 默认不会帮你启动它
-
-### 默认端口一览
-
-- API：`127.0.0.1:8765`
-- Dev UI：`127.0.0.1:5177`
-- Static UI：`127.0.0.1:5178`
-- Scheduler：无端口
+如果只是正常开发或联调，直接用它就够了。对应默认端口也很简单：API 是 `127.0.0.1:8765`，开发态 Web UI 是 `127.0.0.1:5177`，Scheduler 没有 HTTP 端口，前端默认请求本地 API。只有在你想看构建后的静态页面时，才需要单独使用 `run/static_web_server.py`，它不由 `run/services.py` 管理，默认端口是 `127.0.0.1:5178`，典型用法是先执行 `cd web-ui && npm run build`，再执行 `python run/static_web_server.py --root web-ui/dist`。除非你在单独调 API、调 Scheduler 或做静态预览，否则不需要分别手动启动这些底层入口。
 
 ## 关键边界
 
