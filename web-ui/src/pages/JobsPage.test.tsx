@@ -156,6 +156,77 @@ describe("JobsPage", () => {
     } as any);
   });
 
+  it("renders a draggable resizer in split layout on wide screens", async () => {
+    Object.defineProperty(window, "innerWidth", { value: 1440, writable: true });
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(listJobsMock).toHaveBeenCalled();
+    });
+
+    expect(screen.getByTestId("jobs-layout")).toBeInTheDocument();
+    expect(screen.getByTestId("jobs-resizer")).toBeInTheDocument();
+  });
+
+  it("updates the split width in real time while dragging the resizer", async () => {
+    Object.defineProperty(window, "innerWidth", { value: 1440, writable: true });
+
+    render(<JobsPage />);
+
+    const layout = await screen.findByTestId("jobs-layout");
+    const resizer = screen.getByTestId("jobs-resizer");
+    Object.defineProperty(layout, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, width: 1400, height: 800, right: 1400, bottom: 800, x: 0, y: 0, toJSON: () => ({}) }),
+    });
+
+    fireEvent.mouseDown(resizer, { clientX: 760 });
+    fireEvent.mouseMove(window, { clientX: 700 });
+
+    expect(layout).toHaveStyle({ gridTemplateColumns: "700px 12px minmax(520px, 1fr)" });
+    expect(layout.className).toContain("dragging");
+
+    fireEvent.mouseUp(window);
+
+    expect(layout.className).not.toContain("dragging");
+  });
+
+  it("does not render the resizer in stacked layout on narrower screens", async () => {
+    Object.defineProperty(window, "innerWidth", { value: 1100, writable: true });
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(listJobsMock).toHaveBeenCalled();
+    });
+
+    expect(screen.queryByTestId("jobs-resizer")).not.toBeInTheDocument();
+  });
+
+  it("does not persist a dragged width after remount", async () => {
+    Object.defineProperty(window, "innerWidth", { value: 1440, writable: true });
+
+    const first = render(<JobsPage />);
+    const firstLayout = await screen.findByTestId("jobs-layout");
+    const firstResizer = screen.getByTestId("jobs-resizer");
+    Object.defineProperty(firstLayout, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, width: 1400, height: 800, right: 1400, bottom: 800, x: 0, y: 0, toJSON: () => ({}) }),
+    });
+
+    fireEvent.mouseDown(firstResizer, { clientX: 760 });
+    fireEvent.mouseMove(window, { clientX: 680 });
+    fireEvent.mouseUp(window);
+
+    expect(firstLayout).toHaveStyle({ gridTemplateColumns: "680px 12px minmax(520px, 1fr)" });
+
+    first.unmount();
+
+    render(<JobsPage />);
+    const secondLayout = await screen.findByTestId("jobs-layout");
+
+    expect(secondLayout.style.gridTemplateColumns).toBe("");
+  });
+
   it("imports a task pack into the current form but preserves scheduling fields", async () => {
     render(<JobsPage />);
 

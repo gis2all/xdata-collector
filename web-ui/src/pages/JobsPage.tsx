@@ -90,6 +90,11 @@ const DELETED_BATCH_ACTIONS: BatchActionSpec[] = [
   { action: "purge", label: "批量彻底删除", tone: "danger" },
 ];
 
+const MIN_LIST_PANE_WIDTH = 320;
+const MIN_DRAWER_PANE_WIDTH = 520;
+const RESIZER_WIDTH = 12;
+const SPLIT_LAYOUT_BREAKPOINT = 1160;
+
 function jobState(job: JobRecord) {
   if (job.deleted_at) return "已删除";
   return job.enabled ? "已启用" : "已停用";
@@ -194,9 +199,15 @@ export function JobsPage() {
   const [selectedDeletedById, setSelectedDeletedById] = useState<Record<number, boolean>>({});
   const [currentTaskPack, setCurrentTaskPack] = useState<TaskPackFile | null>(null);
   const [draftSource, setDraftSource] = useState<DraftSourceKind>("blank");
+  const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? SPLIT_LAYOUT_BREAKPOINT : window.innerWidth));
+  const [leftPaneWidth, setLeftPaneWidth] = useState<number | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingFileActionRef = useRef<"draft" | "save_new">("draft");
+  const layoutRef = useRef<HTMLDivElement | null>(null);
+  const dragBoundsRef = useRef<{ left: number; width: number } | null>(null);
 
+  const isSplitLayout = viewportWidth > SPLIT_LAYOUT_BREAKPOINT;
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
   const selectedOnPage = allMatchingSelected ? jobs.length : jobs.filter((job) => selectedIds.includes(job.id)).length;
   const selectedCount = allMatchingSelected ? total : selectedIds.length;
@@ -234,6 +245,22 @@ export function JobsPage() {
     }),
     [currentTaskPack?.pack_name, form.rule_set],
   );
+
+  function applyLeftPaneWidth(nextWidth: number | null) {
+    setLeftPaneWidth(nextWidth);
+    if (!layoutRef.current) return;
+    layoutRef.current.style.gridTemplateColumns = nextWidth === null
+      ? ""
+      : `${nextWidth}px ${RESIZER_WIDTH}px minmax(${MIN_DRAWER_PANE_WIDTH}px, 1fr)`;
+  }
+
+  function updateDraggedWidth(clientX: number | undefined) {
+    const bounds = dragBoundsRef.current;
+    if (!bounds || typeof clientX !== "number" || Number.isNaN(clientX)) return;
+    const maxWidth = Math.max(MIN_LIST_PANE_WIDTH, bounds.width - MIN_DRAWER_PANE_WIDTH - RESIZER_WIDTH);
+    const nextWidth = Math.min(Math.max(clientX - bounds.left, MIN_LIST_PANE_WIDTH), maxWidth);
+    applyLeftPaneWidth(nextWidth);
+  }
 
   async function loadTaskPacks() {
     const data = await listTaskPacks();
@@ -286,6 +313,55 @@ export function JobsPage() {
   }, []);
 
   useEffect(() => {
+    function handleWindowResize() {
+      setViewportWidth(window.innerWidth);
+    }
+
+    window.addEventListener("resize", handleWindowResize);
+
+    function handlePointerMove(event: PointerEvent) {
+      updateDraggedWidth(event.clientX);
+    }
+
+    function handleMouseMove(event: MouseEvent) {
+      updateDraggedWidth(event.clientX);
+    }
+
+    function stopResizing() {
+      dragBoundsRef.current = null;
+      setIsResizing(false);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResizing);
+    window.addEventListener("pointercancel", stopResizing);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", stopResizing);
+
+    return () => {
+      window.removeEventListener("resize", handleWindowResize);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResizing);
+      window.removeEventListener("pointercancel", stopResizing);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", stopResizing);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isSplitLayout) return;
+    setIsResizing(false);
+    applyLeftPaneWidth(null);
+    dragBoundsRef.current = null;
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+  }, [isSplitLayout]);
+
+  useEffect(() => {
     if (selectionState === "mixed") {
       setSelectionWarning("当前选择同时包含已删除和未删除任务，请先按状态筛选或重新勾选。");
       return;
@@ -322,6 +398,25 @@ export function JobsPage() {
     setAllMatchingSelected(false);
     setSelectionWarning("");
     setSelectedDeletedById({});
+  }
+
+  function startResizing() {
+    if (!isSplitLayout || !layoutRef.current) return;
+    const bounds = layoutRef.current.getBoundingClientRect();
+    dragBoundsRef.current = { left: bounds.left, width: bounds.width };
+    setIsResizing(true);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+  }
+
+  function handleResizerPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    startResizing();
+    event.preventDefault();
+  }
+
+  function handleResizerMouseDown(event: React.MouseEvent<HTMLDivElement>) {
+    startResizing();
+    event.preventDefault();
   }
 
   function openCreate() {
@@ -812,7 +907,11 @@ export function JobsPage() {
       {selectionWarning && <div className="alert error">{selectionWarning}</div>}
       {actionMessage && <div className="alert success" style={{ whiteSpace: "pre-line" }}>{actionMessage}</div>}
 
-      <div className="jobs-layout">
+      <div
+        ref={layoutRef}
+        className={`jobs-layout${isResizing ? " dragging" : ""}`}
+        data-testid="jobs-layout"
+      >
         <div className="jobs-table-wrap">
           {loading ? (
             <div className="searching"><span className="spinner" /> {"正在加载任务..."}</div>
@@ -883,6 +982,18 @@ export function JobsPage() {
           </div>
         </div>
 
+        {isSplitLayout && (
+          <div
+            className={`jobs-resizer${isResizing ? " dragging" : ""}`}
+            data-testid="jobs-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整区域宽度"
+            onPointerDown={handleResizerPointerDown}
+            onMouseDown={handleResizerMouseDown}
+          />
+        )}
+
         <aside className={`jobs-drawer ${drawerOpen ? "open" : ""}`}>
           {drawerOpen ? (
             <>
@@ -950,16 +1061,16 @@ export function JobsPage() {
 
               <div className="drawer-section">
                 <h5>{"任务正文"}</h5>
-                <div className="collector-card">
+                <div className="collector-card jobs-pack-summary">
                   <h6 style={{ margin: "0 0 10px", fontSize: 14 }}>{"当前绑定任务包"}</h6>
                   <div className="collector-toolbar between">
-                    <div>
+                    <div className="jobs-pack-meta">
                       <div className="job-name" style={{ marginTop: 6 }}>{currentTaskPackName}</div>
                       <div className="kv" style={{ marginTop: 6 }}>{currentTaskPackDescription || "先把任务包载入到当前草稿，再决定是另存为新任务包，还是保存回当前任务包。"}</div>
                       <div className="kv" style={{ marginTop: 8 }}>{`pack_name=${currentTaskPack?.pack_name || "--"}`}</div>
                       <div className="kv">{`pack_path=${currentTaskPack?.pack_path || "--"}`}</div>
                     </div>
-                    <div className="collector-grid" style={{ minWidth: 240 }}>
+                    <div className="collector-grid collector-grid-3 jobs-pack-state-grid">
                       <div className="dashboard-detail-item">
                         <span>{"绑定状态"}</span>
                         <strong>{currentTaskPack ? "已绑定本地任务包" : "未绑定"}</strong>
@@ -975,7 +1086,7 @@ export function JobsPage() {
                     </div>
                   </div>
                 </div>
-                <div className="collector-grid collector-grid-2" style={{ marginTop: 12 }}>
+                <div className="collector-grid collector-grid-2 jobs-pack-manager-grid" style={{ marginTop: 12 }}>
                   <div className="collector-card">
                     <div className="collector-subtitle">{"载入到当前草稿"}</div>
                     <div className="kv" style={{ marginTop: 6 }}>{"可以从任务包列表载入，也可以直接从本地 JSON 文件导入。"}</div>
@@ -1002,8 +1113,8 @@ export function JobsPage() {
                         }}
                       />
                     </div>
-                    <div className="kv" style={{ marginTop: 10 }}>{"从文件导入：只替换当前草稿，不会创建任务包。"}</div>
-                    <div className="kv">{"导入并保存为新任务包：会先导入文件，再立刻保存成新的本地任务包并绑定。"}</div>
+                    <div className="kv jobs-pack-note">{"从文件导入：只替换当前草稿，不会创建任务包。"}</div>
+                    <div className="kv jobs-pack-note">{"导入并保存为新任务包：会先导入文件，再立刻保存成新的本地任务包并绑定。"}</div>
                   </div>
                   <div className="collector-card">
                     <div className="collector-subtitle">{"保存当前草稿"}</div>
