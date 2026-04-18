@@ -21,6 +21,37 @@ def _rule_set_payload(rule_set_id: int, name: str) -> dict:
 
 
 class WorkspaceStoreTests(unittest.TestCase):
+    def test_bootstrap_workspace_does_not_migrate_repo_search_preset_files(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_dir = root / "config"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            workspace_path = config_dir / "workspace.json"
+            (config_dir / "search_presets.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "name": "legacy-preset",
+                            "query": "alpha from:demo",
+                            "max_results": 20,
+                        }
+                    ],
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            store = WorkspaceStore(workspace_path=workspace_path, legacy_config_dir=config_dir, legacy_db_path=root / "data" / "app.db")
+
+            workspace = store.get_workspace()
+            pack_store = TaskPackStore(packs_dir=config_dir / "packs")
+
+            self.assertEqual(workspace["jobs"], [])
+            self.assertFalse((config_dir / "packs").exists())
+            self.assertEqual(pack_store.list_packs(), [])
+
     def test_migrates_legacy_workspace_to_light_registry_and_task_packs(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

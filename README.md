@@ -31,6 +31,7 @@
 - 支持新建、编辑、立即运行、启停、删除、恢复、彻底删除
 - 任务表单可以导入 task pack 作为当前搜索 + 规则正文，但不会自动回写原 pack
 - Scheduler 默认每 30 秒 tick 一次，按 `next_run_at` 触发已启用任务
+- 仓库默认不再预置具体业务任务；clone 后应从空白状态新建或导入本地 pack
 
 ### 3. 结果浏览
 
@@ -47,7 +48,7 @@
 ### 5. 设置页
 
 - Settings 页已从“全量 workspace 快照编辑器”改成“轻量 workspace 管理页”
-- 当前只维护 `config/workspace.json`，重点是 environment 与 jobs registry
+- 当前只维护本地 `config/workspace.json`，重点是 environment 与 jobs registry
 
 ## 快速开始
 
@@ -178,9 +179,16 @@ python run/static_web_server.py --root web-ui/dist
 
 ### `config/`
 
-- `config/workspace.json`：轻量 workspace 底座
-- `config/packs/*.json`：任务包目录，每个 pack 固定包含 `search_spec + rule_set`
-- `config/search_presets*.json`：历史迁移来源，不再是主真相
+- Git 中只保留通用基线：
+  - `config/README.md`
+  - `config/packs/default-rule-set.json`
+- 本地动态配置：
+  - `config/workspace.json`
+  - `config/packs/job-*.json`
+  - `config/packs/manual-preset-*.json`
+  - `config/packs/manual-rule-set-*.json`
+- `config/workspace.json` 缺失时，系统会自动 bootstrap 一个空白但可运行的默认 workspace
+- 旧 `search_presets*.json` 不再保留在仓库基线中；`artifacts/legacy/` 只保留说明文件，不再提交具体历史预设 JSON
 
 ### `runtime/`
 
@@ -248,7 +256,8 @@ python run/static_web_server.py --root web-ui/dist
 建议提交的内容：
 
 - `backend/`、`run/`、`tests/`、`web-ui/src/`
-- `config/`（包括 `workspace.json` 和 `packs/`）
+- `config/README.md`
+- `config/packs/default-rule-set.json`
 - `README.md`、`CLAUDE.md`、`data/README.md`、`config/README.md`、`runtime/README.md`
 - `.env.example`、`.learnings/`、`artifacts/`
 
@@ -257,6 +266,10 @@ python run/static_web_server.py --root web-ui/dist
 - `.env`
 - `data/*.db`
 - `runtime/history/`、`runtime/state/`、`runtime/logs/`、`runtime/pids/`、`runtime/tmp/`
+- `config/workspace.json`
+- `config/packs/job-*.json`
+- `config/packs/manual-preset-*.json`
+- `config/packs/manual-rule-set-*.json`
 - `web-ui/node_modules/`、`web-ui/dist/`、`web-ui/.tmp-esbuild/`
 - Python 缓存与 test cache
 

@@ -16,7 +16,7 @@
 - `web-ui/`：前端单页工作台
 - `backend/`：核心业务编排、规则系统、X 搜索适配与存储
 - `run/`：运行入口和开发主链路服务总控
-- `config/`：可版本化配置，包括轻量 `workspace.json` 与 `packs/`
+- `config/`：通用基线配置 + 本地动态配置目录
 - `runtime/`：运行态文件、快照、日志、PID 与临时产物
 - `data/`：正式只保留 `app.db` 和 `data/README.md`
 
@@ -38,7 +38,7 @@
 
 ### 1. `config/workspace.json`
 
-它是轻量 workspace 底座，只保留这些类型的信息：
+它是本地轻量 workspace 底座，只保留这些类型的信息：
 
 - `version`
 - `meta`
@@ -73,6 +73,8 @@
 - 手动搜索页和自动任务页导入 pack 后，只替换当前表单
 - 继续编辑不会自动回写原 pack
 - 只有显式“导出为任务包 / 覆盖当前任务包”才会落盘
+- Git 中默认只保留 `default-rule-set.json` 这个通用基线 pack
+- 具体 job pack、manual preset pack、manual rule-set pack 都是本地动态配置，不应继续纳管
 
 ### 3. `runtime/`
 
@@ -163,7 +165,7 @@
 
 ### 2. 自动任务
 
-1. `JobsPage` 维护 `workspace.json.jobs[]` 的注册信息
+1. `JobsPage` 维护本地 `workspace.json.jobs[]` 的注册信息
 2. 每条 job 通过 `pack_path` 指向一个 task pack
 3. `scheduler.tick()` 筛出已启用且到期的 job
 4. `run_job_now()` 读取 pack 正文后调用 `run_manual(..., trigger_type="auto")`
@@ -178,6 +180,7 @@
 
 - 文档、路径、启动命令默认以 `run/` 下主入口为准
 - 不要把 `workspace.json` 重新做成“搜索草稿 + presets + rule sets + jobs 全内联快照”
+- 不要把 `config/` 默认绑定到具体业务任务；仓库基线只保留通用配置
 - 不要让 `data/` 回流日志、导出、测试临时文件
 - 不要让 `run/services.py` 默认管到 `run/static_web_server.py`
 - 改 X 采集链路时，先检查 `.env` 和 `/health`
@@ -185,8 +188,8 @@
 
 ## Git 与提交边界
 
-- 应提交：`backend/`、`run/`、`tests/`、`web-ui/src/`、`config/`、`artifacts/`、文档、`.env.example`、`.learnings/`
-- 应忽略：`.env`、`data/*.db`、`runtime/history/`、`runtime/state/`、`runtime/logs/`、`runtime/pids/`、`runtime/tmp/`、`web-ui/node_modules/`、`web-ui/dist/`
+- ????`backend/`?`run/`?`tests/`?`web-ui/src/`?`config/README.md`?`config/packs/default-rule-set.json`?`artifacts/legacy/README.md`??????`.env.example`?`.learnings/`
+- ????`.env`?`data/*.db`?`runtime/history/`?`runtime/state/`?`runtime/logs/`?`runtime/pids/`?`runtime/tmp/`?`web-ui/node_modules/`?`web-ui/dist/`?`config/workspace.json`?`config/packs/job-*.json`?`config/packs/manual-preset-*.json`?`config/packs/manual-rule-set-*.json`?`artifacts/legacy/*.json`
 - `.learnings/` 应提交，但不能写入真实 cookie、token 或一次性调试噪音
 
 ## 默认验证

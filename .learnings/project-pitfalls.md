@@ -169,3 +169,11 @@
 **正确做法**：`config/workspace.json` 只保留轻量 environment 和 jobs registry；可复用的 `search_spec + rule_set` 正文放到 `config/packs/*.json`；runtime state 放 `runtime/history/` 和 `runtime/state/`；SQLite 只保留 `x_items_raw` 和 `x_items_curated`。
 **影响**：Settings 页、Manual Search 页、Jobs 页、迁移行为、Git 边界和文档。
 **相关路径**：`config/workspace.json`、`config/packs/`、`backend/workspace_store.py`、`runtime/history/search_runs.jsonl`、`runtime/state/runtime_health_snapshot.json`、`runtime/state/sequences.json`、`data/app.db`
+
+## PIT-017 config 目录不应默认绑定具体任务
+
+**场景**：设计仓库默认配置、整理 `.gitignore` 或清理 `config/` 边界时。
+**错误做法**：把 `config/workspace.json`、`config/packs/job-*.json`、`config/packs/manual-preset-*.json` 这类本地动态或具体业务配置继续作为 Git 基线长期跟踪。
+**正确做法**：仓库里的 `config/` 只保留通用基线，例如 `config/README.md` 和 `config/packs/default-rule-set.json`；具体 job pack、manual preset pack 和本地 workspace 应作为本地动态配置忽略；`artifacts/legacy/` 只保留说明文件，不再提交具体 `search_presets*.json`，也不再进入 bootstrap 主链路。
+**影响**：Git 噪音、clone 后默认状态、配置通用性、文档和 bootstrap 行为。
+**相关路径**：`.gitignore`、`config/README.md`、`config/workspace.json`、`config/packs/`、`artifacts/legacy/`、`backend/workspace_store.py`

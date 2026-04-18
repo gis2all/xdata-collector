@@ -14,7 +14,6 @@ from backend.collector_rules import (
     normalize_search_spec,
 )
 from backend.collector_store import utc_now_iso
-from backend.config import load_search_presets
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_WORKSPACE_PATH = PROJECT_ROOT / "config" / "workspace.json"
@@ -390,8 +389,7 @@ class WorkspaceStore:
             rule_sets = [default_builtin_rule_set(rule_set_id=1)]
         default_rule_set_id = int(rule_sets[0]["id"]) if rule_sets else 1
         jobs = self._load_legacy_jobs(default_rule_set_id=default_rule_set_id)
-        presets = self._load_legacy_manual_presets()
-        if not jobs and not presets and not rule_sets:
+        if not jobs and not rule_sets:
             return None
         return {
             "version": 1,
@@ -402,36 +400,11 @@ class WorkspaceStore:
             "manual": {
                 "draft": normalize_search_spec(default_search_spec()),
                 "selected_rule_set_id": default_rule_set_id,
-                "presets": presets,
+                "presets": [],
             },
             "rule_sets": rule_sets,
             "jobs": jobs,
         }
-
-    def _load_legacy_manual_presets(self) -> list[dict[str, Any]]:
-        presets: list[dict[str, Any]] = []
-        next_id = 1
-        if not self.legacy_config_dir.exists():
-            return presets
-        for path in sorted(self.legacy_config_dir.glob("search_presets*.json")):
-            try:
-                loaded = load_search_presets(path)
-            except Exception:
-                continue
-            for item in loaded:
-                presets.append(
-                    _normalize_manual_preset(
-                        {
-                            "id": next_id,
-                            "name": item.name,
-                            "description": f"Imported from {path.name}",
-                            "search_spec": {"raw_query": item.query, "max_results": item.max_results},
-                        },
-                        fallback_id=next_id,
-                    )
-                )
-                next_id += 1
-        return presets
 
     def _legacy_table_exists(self, conn: sqlite3.Connection, table: str) -> bool:
         row = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)).fetchone()
