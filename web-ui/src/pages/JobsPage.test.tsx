@@ -21,7 +21,7 @@ vi.mock("../api", () => ({
   deleteTaskPack: vi.fn(),
 }));
 
-import { batchJobs, createJob, createTaskPack, deleteTaskPack, getJob, getTaskPack, listJobs, listTaskPacks } from "../api";
+import { batchJobs, createJob, createTaskPack, deleteTaskPack, getJob, getTaskPack, listJobs, listTaskPacks, updateJob } from "../api";
 
 const listJobsMock = vi.mocked(listJobs);
 const listTaskPacksMock = vi.mocked(listTaskPacks);
@@ -31,6 +31,7 @@ const createJobMock = vi.mocked(createJob);
 const createTaskPackMock = vi.mocked(createTaskPack);
 const deleteTaskPackMock = vi.mocked(deleteTaskPack);
 const batchJobsMock = vi.mocked(batchJobs);
+const updateJobMock = vi.mocked(updateJob);
 
 const packFile = {
   version: 1,
@@ -154,6 +155,7 @@ describe("JobsPage", () => {
       created_at: "2026-04-14T00:00:00+00:00",
       updated_at: "2026-04-14T00:00:00+00:00",
     } as any);
+    updateJobMock.mockResolvedValue(makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" } }) as any);
   });
 
   it("renders a draggable resizer in split layout on wide screens", async () => {
@@ -273,6 +275,113 @@ describe("JobsPage", () => {
     expect(payload.interval_minutes).toBe(120);
     expect(payload.search_spec.all_keywords).toEqual(["alpha"]);
     expect(payload.rule_set.name).toBe("Default Rule Set");
+  });
+
+  it("shows a top save button for create mode and keeps the footer save button", async () => {
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(listJobsMock).toHaveBeenCalled();
+    });
+
+    fireEvent.click(screen.getByTestId("create-job-button"));
+    fireEvent.change(screen.getByLabelText("job-name"), { target: { value: "scheduled-alpha" } });
+    fireEvent.change(screen.getByLabelText("job-interval"), { target: { value: "120" } });
+    fireEvent.change(screen.getByLabelText("job-pack-select"), { target: { value: "alpha-watch" } });
+    fireEvent.click(screen.getByLabelText("job-load-pack"));
+
+    await waitFor(() => {
+      expect(getTaskPackMock).toHaveBeenCalledWith("alpha-watch");
+    });
+
+    expect(screen.getByLabelText("submit-job-top")).toBeInTheDocument();
+    expect(screen.getByLabelText("submit-job")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("submit-job-top"));
+
+    await waitFor(() => {
+      expect(createJobMock).toHaveBeenCalled();
+    });
+  });
+
+  it("shows loading state on the top save button while creating", async () => {
+    let resolveCreate: ((value: any) => void) | null = null;
+    createJobMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveCreate = resolve;
+        }) as any,
+    );
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(listJobsMock).toHaveBeenCalled();
+    });
+
+    fireEvent.click(screen.getByTestId("create-job-button"));
+    fireEvent.change(screen.getByLabelText("job-name"), { target: { value: "scheduled-alpha" } });
+    fireEvent.change(screen.getByLabelText("job-pack-select"), { target: { value: "alpha-watch" } });
+    fireEvent.click(screen.getByLabelText("job-load-pack"));
+
+    await waitFor(() => {
+      expect(getTaskPackMock).toHaveBeenCalledWith("alpha-watch");
+    });
+
+    fireEvent.click(screen.getByLabelText("submit-job-top"));
+
+    expect(screen.getByLabelText("submit-job-top")).toBeDisabled();
+    expect(screen.getByLabelText("submit-job-top")).toHaveTextContent("保存中...");
+
+    resolveCreate?.({
+      id: 10,
+      name: "scheduled-alpha",
+      keywords_json: ["alpha"],
+      interval_minutes: 60,
+      days: 20,
+      thresholds_json: { views: 0, likes: 0, replies: 0, retweets: 0, mode: "OR" },
+      levels_json: [],
+      search_spec_json: packFile.search_spec,
+      rule_set_id: 1,
+      rule_set_summary: { id: 1, name: "Default Rule Set", description: "builtin", version: 1, is_builtin: true },
+      pack_name: "job-010-scheduled-alpha",
+      pack_path: "config/packs/job-010-scheduled-alpha.json",
+      enabled: 1,
+      next_run_at: null,
+      created_at: "2026-04-14T00:00:00+00:00",
+      updated_at: "2026-04-14T00:00:00+00:00",
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText("submit-job-top")).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows a top save button in edit mode but not in view mode", async () => {
+    listJobsMock.mockResolvedValueOnce({
+      page: 1,
+      page_size: 10,
+      total: 1,
+      items: [makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" } })],
+    } as any);
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("alpha-watch-job").length).toBeGreaterThan(0);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "查看" }));
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText("submit-job-top")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("submit-job-top")).toBeInTheDocument();
+    });
   });
 
 

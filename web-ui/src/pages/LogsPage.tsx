@@ -113,6 +113,48 @@ export function LogsPage() {
       <section className="card logs-section">
         <div className="logs-section-header">
           <div>
+            <h4>{UI_TEXT.runtimeTitle}</h4>
+            <p className="kv">{UI_TEXT.runtimeHint}</p>
+          </div>
+        </div>
+
+        <div className="logs-service-grid">
+          {SERVICE_GROUPS.map((group) => {
+            const files = runtimeLogs.filter((item) => item.name.startsWith(group.key));
+            return (
+              <div key={group.key} className="drawer-section logs-service-group">
+                <h5>{group.label}</h5>
+                <div className="logs-service-stack">
+                  {files.map((file) => (
+                    <div key={file.name} className="logs-file-card">
+                      <div className="logs-file-meta">
+                        <div>
+                          <strong>{file.name}</strong>
+                          <div className="kv">
+                            {logKind(file.name)} / {file.size} bytes / {formatUtcPlus8Time(file.updated_at)}
+                          </div>
+                        </div>
+                      </div>
+                      {file.error ? (
+                        <div className="alert error">{`${UI_TEXT.readError}${file.error}`}</div>
+                      ) : file.content ? (
+                        <pre className="logs-pre logs-pre-compact">{file.content}</pre>
+                      ) : (
+                        <div className="drawer-empty">{UI_TEXT.noLogContent}</div>
+                      )}
+                    </div>
+                  ))}
+                  {!files.length && <div className="drawer-empty">{UI_TEXT.noLogContent}</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="card logs-section">
+        <div className="logs-section-header">
+          <div>
             <h4>{UI_TEXT.runsTitle}</h4>
             <p className="kv">{UI_TEXT.runsHint}</p>
           </div>
@@ -204,48 +246,6 @@ export function LogsPage() {
             </div>
           </div>
         )}
-      </section>
-
-      <section className="card logs-section">
-        <div className="logs-section-header">
-          <div>
-            <h4>{UI_TEXT.runtimeTitle}</h4>
-            <p className="kv">{UI_TEXT.runtimeHint}</p>
-          </div>
-        </div>
-
-        <div className="logs-service-grid">
-          {SERVICE_GROUPS.map((group) => {
-            const files = runtimeLogs.filter((item) => item.name.startsWith(group.key));
-            return (
-              <div key={group.key} className="drawer-section logs-service-group">
-                <h5>{group.label}</h5>
-                <div className="logs-service-stack">
-                  {files.map((file) => (
-                    <div key={file.name} className="logs-file-card">
-                      <div className="logs-file-meta">
-                        <div>
-                          <strong>{file.name}</strong>
-                          <div className="kv">
-                            {logKind(file.name)} / {file.size} bytes / {formatUtcPlus8Time(file.updated_at)}
-                          </div>
-                        </div>
-                      </div>
-                      {file.error ? (
-                        <div className="alert error">{`${UI_TEXT.readError}${file.error}`}</div>
-                      ) : file.content ? (
-                        <pre className="logs-pre logs-pre-compact">{file.content}</pre>
-                      ) : (
-                        <div className="drawer-empty">{UI_TEXT.noLogContent}</div>
-                      )}
-                    </div>
-                  ))}
-                  {!files.length && <div className="drawer-empty">{UI_TEXT.noLogContent}</div>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
       </section>
     </div>
   );

@@ -847,6 +847,7 @@ export function JobsPage() {
   }
 
   const drawerDisabled = Boolean(selectedJob?.deleted_at) && drawerMode !== "create";
+  const showTopSaveButton = drawerMode !== "view";
 
   return (
     <div className="card jobs-page" data-testid="jobs-page">
@@ -1002,7 +1003,14 @@ export function JobsPage() {
                   <h4>{drawerMode === "create" ? "新建任务" : drawerMode === "edit" ? "编辑任务" : "任务详情"}</h4>
                   <div className="kv">{selectedJob ? `任务 #${selectedJob.id}` : "未保存新任务"}</div>
                 </div>
-                <button type="button" className="ghost" onClick={() => { setSelectedJob(null); setDrawerMode("create"); resetForm(); setDrawerOpen(false); }}>{"关闭"}</button>
+                <div className="drawer-header-actions">
+                  {showTopSaveButton && (
+                    <button type="button" aria-label="submit-job-top" onClick={handleSave} disabled={saving}>
+                      {saving ? "保存中..." : "保存任务"}
+                    </button>
+                  )}
+                  <button type="button" className="ghost" onClick={() => { setSelectedJob(null); setDrawerMode("create"); resetForm(); setDrawerOpen(false); }}>{"关闭"}</button>
+                </div>
               </div>
 
               {selectedJob && (
