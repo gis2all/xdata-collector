@@ -2,7 +2,7 @@
 
 本项目是一个本地运行的 X 数据采集、规则筛选、结果沉淀工作台。
 它只负责 X 搜索、本地 API、任务调度、SQLite 结果存储和 Web UI。
-![image](artifacts\diagrams\workflow.png)
+![image](artifacts/diagrams/workflow.png)
 
 主链路：
 
