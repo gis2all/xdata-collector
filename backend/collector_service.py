@@ -446,6 +446,103 @@ class DesktopService:
                 return index
         return -1
 
+    def _normalize_job_batch_action(self, action: Any) -> str:
+        normalized = str(action or "").strip().lower()
+        allowed = {"enable", "disable", "run_now", "delete", "restore", "purge"}
+        if normalized not in allowed:
+            raise ValueError(f"unsupported batch action: {action}")
+        return normalized
+
+    def _normalize_job_ids(self, ids: list[Any] | None) -> list[int]:
+        normalized: list[int] = []
+        seen: set[int] = set()
+        for raw in ids or []:
+            job_id = int(raw)
+            if job_id in seen:
+                continue
+            seen.add(job_id)
+            normalized.append(job_id)
+        return normalized
+
+    def _select_batch_jobs(self, payload: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+        workspace_jobs = [copy.deepcopy(item) for item in self._ensure_builtin_rule_set().get("jobs", [])]
+        mode = "all_matching" if str(payload.get("mode") or "").strip().lower() == "all_matching" else "ids"
+        if mode == "all_matching":
+            query = payload.get("query")
+            status = str(payload.get("status") or "active")
+            jobs = [
+                item
+                for item in workspace_jobs
+                if self._job_matches_status(item, status) and self._job_matches_query(item, query)
+            ]
+            jobs.sort(key=lambda item: int(item.get("id") or 0), reverse=True)
+            jobs.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+            jobs.sort(key=lambda item: 0 if not item.get("deleted_at") else 1)
+            if not jobs:
+                raise ValueError("no jobs matched current filters")
+            return mode, jobs
+
+        normalized_ids = self._normalize_job_ids(payload.get("ids"))
+        if not normalized_ids:
+            raise ValueError("no jobs selected")
+        job_by_id = {int(item.get("id") or 0): item for item in workspace_jobs}
+        jobs = [copy.deepcopy(job_by_id[job_id]) for job_id in normalized_ids if job_id in job_by_id]
+        if not jobs:
+            raise ValueError("no jobs matched selected ids")
+        return mode, jobs
+
+    def _validate_batch_jobs(self, action: str, jobs: list[dict[str, Any]]) -> str:
+        deleted_states = {bool(item.get("deleted_at")) for item in jobs}
+        if len(deleted_states) > 1:
+            raise ValueError("batch target jobs mix deleted and non-deleted states")
+        deleted_state = "deleted" if deleted_states.pop() else "active"
+        if action in {"restore", "purge"} and deleted_state != "deleted":
+            raise ValueError(f"action {action} requires deleted jobs")
+        if action in {"enable", "disable", "run_now", "delete"} and deleted_state != "active":
+            raise ValueError(f"action {action} requires non-deleted jobs")
+        return deleted_state
+
+    def batch_jobs(self, payload: dict[str, Any]) -> dict[str, Any]:
+        action = self._normalize_job_batch_action(payload.get("action"))
+        mode, jobs = self._select_batch_jobs(payload)
+        self._validate_batch_jobs(action, jobs)
+
+        execution_jobs = [copy.deepcopy(item) for item in jobs]
+        if action == "run_now":
+            execution_jobs.sort(key=lambda item: int(item.get("id") or 0))
+
+        succeeded_ids: list[int] = []
+        failed_items: list[dict[str, Any]] = []
+
+        for job in execution_jobs:
+            job_id = int(job["id"])
+            try:
+                if action == "enable":
+                    self.toggle_job(job_id, True)
+                elif action == "disable":
+                    self.toggle_job(job_id, False)
+                elif action == "run_now":
+                    self.run_job_now(job_id)
+                elif action == "delete":
+                    self.delete_job(job_id)
+                elif action == "restore":
+                    self.restore_job(job_id)
+                elif action == "purge":
+                    self.purge_job(job_id)
+                succeeded_ids.append(job_id)
+            except Exception as exc:  # noqa: BLE001
+                failed_items.append({"id": job_id, "name": str(job.get("name") or ""), "error": str(exc)})
+
+        return {
+            "action": action,
+            "mode": mode,
+            "total_targeted": len(execution_jobs),
+            "succeeded": len(succeeded_ids),
+            "failed": len(failed_items),
+            "succeeded_ids": succeeded_ids,
+            "failed_items": failed_items,
+        }
+
     def list_rule_sets(self) -> dict[str, Any]:
         return {"items": self._rule_set_catalog()}
 

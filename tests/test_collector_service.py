@@ -146,6 +146,22 @@ class DesktopServiceTests(unittest.TestCase):
             "rule_set_id": rule_set_id,
         }
 
+    def _create_job(self, name: str, *, enabled: bool = True) -> dict[str, object]:
+        default_rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        return self.service.create_job(
+            {
+                "name": name,
+                "interval_minutes": 30,
+                "enabled": enabled,
+                "rule_set_id": default_rule_set_id,
+                "search_spec": {
+                    "all_keywords": [name],
+                    "language_mode": "en",
+                    "days_filter": {"mode": "lte", "max": 20},
+                },
+            }
+        )
+
     def test_default_rule_set_exists_and_can_clone(self) -> None:
         rule_sets = self.service.list_rule_sets()["items"]
         self.assertGreaterEqual(len(rule_sets), 1)
@@ -317,6 +333,78 @@ class DesktopServiceTests(unittest.TestCase):
         purged = self.service.purge_job(job_id)
         self.assertEqual(purged["id"], job_id)
         self.assertEqual(self.service.list_jobs(status="all")["total"], 0)
+
+    def test_batch_jobs_runs_in_job_id_order_and_keeps_going_after_failures(self) -> None:
+        job_one = self._create_job("job-one")
+        job_two = self._create_job("job-two")
+        job_three = self._create_job("job-three")
+        run_order: list[int] = []
+
+        def fake_run_job_now(job_id: int) -> dict[str, object]:
+            run_order.append(job_id)
+            if job_id == int(job_two["id"]):
+                raise RuntimeError("boom-two")
+            return {"job_id": job_id, "status": "success"}
+
+        with patch.object(self.service, "run_job_now", side_effect=fake_run_job_now):
+            result = self.service.batch_jobs(
+                {
+                    "action": "run_now",
+                    "ids": [int(job_three["id"]), int(job_one["id"]), int(job_two["id"])],
+                }
+            )
+
+        self.assertEqual(run_order, [int(job_one["id"]), int(job_two["id"]), int(job_three["id"])])
+        self.assertEqual(result["action"], "run_now")
+        self.assertEqual(result["mode"], "ids")
+        self.assertEqual(result["total_targeted"], 3)
+        self.assertEqual(result["succeeded"], 2)
+        self.assertEqual(result["failed"], 1)
+        self.assertEqual(result["succeeded_ids"], [int(job_one["id"]), int(job_three["id"])])
+        self.assertEqual(result["failed_items"][0]["id"], int(job_two["id"]))
+        self.assertEqual(result["failed_items"][0]["name"], "job-two")
+        self.assertIn("boom-two", result["failed_items"][0]["error"])
+
+    def test_batch_jobs_all_matching_deletes_only_matching_active_jobs(self) -> None:
+        live_alpha = self._create_job("alpha-live")
+        live_beta = self._create_job("beta-live")
+        deleted_alpha = self._create_job("alpha-deleted")
+        self.service.delete_job(int(deleted_alpha["id"]))
+
+        result = self.service.batch_jobs(
+            {
+                "action": "delete",
+                "mode": "all_matching",
+                "query": "alpha",
+                "status": "active",
+            }
+        )
+
+        self.assertEqual(result["total_targeted"], 1)
+        self.assertEqual(result["succeeded"], 1)
+        self.assertEqual(result["failed"], 0)
+        self.assertIsNotNone(self.service.get_job(int(live_alpha["id"]))["deleted_at"])
+        self.assertIsNone(self.service.get_job(int(live_beta["id"]))["deleted_at"])
+        self.assertIsNotNone(self.service.get_job(int(deleted_alpha["id"]))["deleted_at"])
+
+    def test_batch_jobs_rejects_mixed_deleted_state(self) -> None:
+        live_job = self._create_job("live-job")
+        deleted_job = self._create_job("deleted-job")
+        self.service.delete_job(int(deleted_job["id"]))
+
+        with self.assertRaisesRegex(ValueError, "mix deleted and non-deleted states"):
+            self.service.batch_jobs(
+                {
+                    "action": "delete",
+                    "ids": [int(live_job["id"]), int(deleted_job["id"])],
+                }
+            )
+
+    def test_batch_jobs_rejects_action_state_mismatch(self) -> None:
+        live_job = self._create_job("live-job")
+
+        with self.assertRaisesRegex(ValueError, "requires deleted jobs"):
+            self.service.batch_jobs({"action": "restore", "ids": [int(live_job["id"])]})
 
     @patch("backend.collector_service.find_twitter_cli")
     @patch("backend.collector_service.run_twitter_search")

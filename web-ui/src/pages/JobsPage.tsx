@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  JobBatchAction,
+  JobBatchResponse,
   JobRecord,
   RuleSetDefinition,
   TaskPackSummary,
+  batchJobs,
   createJob,
   createTaskPack,
   deleteJob,
@@ -23,6 +26,7 @@ import { formatUtcPlus8Time } from "../time";
 
 type JobStatusFilter = "active" | "all" | "deleted";
 type DrawerMode = "create" | "view" | "edit";
+type JobSelectionState = "none" | "active" | "deleted" | "mixed";
 type RefreshOptions = {
   page?: number;
   query?: string;
@@ -47,6 +51,12 @@ type JobFormState = {
   };
 };
 
+type BatchActionSpec = {
+  action: JobBatchAction;
+  label: string;
+  tone?: "danger" | "ghost";
+};
+
 const DEFAULT_FORM: JobFormState = {
   name: "mining-watch",
   interval_minutes: 60,
@@ -63,9 +73,48 @@ const DEFAULT_FORM: JobFormState = {
   },
 };
 
+const ACTIVE_BATCH_ACTIONS: BatchActionSpec[] = [
+  { action: "enable", label: "批量启用", tone: "ghost" },
+  { action: "disable", label: "批量停用", tone: "ghost" },
+  { action: "run_now", label: "批量立即运行" },
+  { action: "delete", label: "批量删除", tone: "danger" },
+];
+
+const DELETED_BATCH_ACTIONS: BatchActionSpec[] = [
+  { action: "restore", label: "批量恢复" },
+  { action: "purge", label: "批量彻底删除", tone: "danger" },
+];
+
 function jobState(job: JobRecord) {
   if (job.deleted_at) return "已删除";
   return job.enabled ? "已启用" : "已停用";
+}
+
+function jobSelectionState(status: JobStatusFilter, allMatchingSelected: boolean, selectedIds: number[], selectedDeletedById: Record<number, boolean>) {
+  if (allMatchingSelected) {
+    if (status === "active") return "active" as JobSelectionState;
+    if (status === "deleted") return "deleted" as JobSelectionState;
+    return "mixed" as JobSelectionState;
+  }
+  if (!selectedIds.length) return "none" as JobSelectionState;
+  const deletedStates = new Set(selectedIds.map((id) => Boolean(selectedDeletedById[id])));
+  if (deletedStates.size > 1) return "mixed" as JobSelectionState;
+  return deletedStates.has(true) ? "deleted" : "active";
+}
+
+function batchActionMessage(result: JobBatchResponse) {
+  const summary = `已成功 ${result.succeeded} 条，失败 ${result.failed} 条`;
+  if (result.action === "run_now" && result.failed_items.length) {
+    return [summary, ...result.failed_items.slice(0, 3).map((item) => `${item.name}: ${item.error}`)].join("\n");
+  }
+  return summary;
+}
+
+function batchConfirmText(action: JobBatchAction, count: number) {
+  if (action === "delete") return `确认删除 ${count} 条任务吗？`;
+  if (action === "purge") return `确认彻底删除 ${count} 条任务吗？此操作不可恢复。`;
+  if (action === "run_now") return `确认顺序执行 ${count} 条任务吗？`;
+  return "";
 }
 
 function buildPackPayload(form: JobFormState, packName: string) {
@@ -103,8 +152,25 @@ export function JobsPage() {
   const [saving, setSaving] = useState(false);
   const [actionMessage, setActionMessage] = useState("");
   const [savingPack, setSavingPack] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [allMatchingSelected, setAllMatchingSelected] = useState(false);
+  const [selectionWarning, setSelectionWarning] = useState("");
+  const [selectedDeletedById, setSelectedDeletedById] = useState<Record<number, boolean>>({});
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
+  const selectedOnPage = allMatchingSelected ? jobs.length : jobs.filter((job) => selectedIds.includes(job.id)).length;
+  const selectedCount = allMatchingSelected ? total : selectedIds.length;
+  const allPageSelected = jobs.length > 0 && selectedOnPage === jobs.length;
+  const selectionState = useMemo(
+    () => jobSelectionState(status, allMatchingSelected, selectedIds, selectedDeletedById),
+    [status, allMatchingSelected, selectedIds, selectedDeletedById],
+  );
+  const showSelectAllMatching = !allMatchingSelected && jobs.length > 0 && selectedOnPage === jobs.length && total > jobs.length;
+  const batchActionSpecs = useMemo(() => {
+    if (status === "active") return ACTIVE_BATCH_ACTIONS;
+    if (status === "deleted") return DELETED_BATCH_ACTIONS;
+    return [...ACTIVE_BATCH_ACTIONS, ...DELETED_BATCH_ACTIONS];
+  }, [status]);
 
   async function loadTaskPacks() {
     const data = await listTaskPacks();
@@ -132,6 +198,16 @@ export function JobsPage() {
       setJobs(items);
       setTotal(totalItems);
       setPage(currentPage);
+      setSelectedDeletedById((prev) => {
+        if (!selectedIds.length) return prev;
+        const next = { ...prev };
+        for (const job of items) {
+          if (selectedIds.includes(job.id)) {
+            next[job.id] = Boolean(job.deleted_at);
+          }
+        }
+        return next;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载任务失败");
       setJobs([]);
@@ -146,8 +222,23 @@ export function JobsPage() {
     loadJobs(1, query, status).catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    if (selectionState === "mixed") {
+      setSelectionWarning("当前选择同时包含已删除和未删除任务，请先按状态筛选或重新勾选。");
+      return;
+    }
+    setSelectionWarning("");
+  }, [selectionState]);
+
   function resetForm() {
     setForm({ ...DEFAULT_FORM, search_spec: cloneSearchSpec(DEFAULT_SEARCH_SPEC), rule_set: { ...DEFAULT_FORM.rule_set, definition: cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION) }, import_pack_name: taskPacks[0]?.pack_name || "" });
+  }
+
+  function clearSelection() {
+    setSelectedIds([]);
+    setAllMatchingSelected(false);
+    setSelectionWarning("");
+    setSelectedDeletedById({});
   }
 
   function openCreate() {
@@ -186,6 +277,60 @@ export function JobsPage() {
 
   function updateForm<K extends keyof JobFormState>(key: K, value: JobFormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function toggleRowSelection(job: JobRecord, checked: boolean) {
+    if (allMatchingSelected) {
+      clearSelection();
+      return;
+    }
+    setSelectedIds((prev) => {
+      if (checked) {
+        return prev.includes(job.id) ? prev : [...prev, job.id];
+      }
+      return prev.filter((item) => item !== job.id);
+    });
+    setSelectedDeletedById((prev) => {
+      if (!checked) {
+        const next = { ...prev };
+        delete next[job.id];
+        return next;
+      }
+      return { ...prev, [job.id]: Boolean(job.deleted_at) };
+    });
+  }
+
+  function togglePageSelection() {
+    if (allMatchingSelected || allPageSelected) {
+      clearSelection();
+      return;
+    }
+    const pageIds = jobs.map((job) => job.id);
+    setSelectedIds((prev) => {
+      const next = [...prev];
+      for (const id of pageIds) {
+        if (!next.includes(id)) next.push(id);
+      }
+      return next;
+    });
+    setSelectedDeletedById((prev) => {
+      const next = { ...prev };
+      for (const job of jobs) {
+        next[job.id] = Boolean(job.deleted_at);
+      }
+      return next;
+    });
+  }
+
+  function selectAllMatchingJobs() {
+    setAllMatchingSelected(true);
+    setSelectedIds([]);
+  }
+
+  function isBatchActionEnabled(action: JobBatchAction) {
+    if (!selectedCount || selectionState === "none" || selectionState === "mixed") return false;
+    const requiresDeleted = action === "restore" || action === "purge";
+    return requiresDeleted ? selectionState === "deleted" : selectionState === "active";
   }
 
   async function refreshJobs(options: RefreshOptions = {}) {
@@ -366,8 +511,33 @@ export function JobsPage() {
     }
   }
 
+  async function handleBatchAction(action: JobBatchAction) {
+    if (!isBatchActionEnabled(action)) return;
+    const confirmText = batchConfirmText(action, selectedCount);
+    if (confirmText && !window.confirm(confirmText)) return;
+
+    setError("");
+    try {
+      const result = allMatchingSelected
+        ? await batchJobs({ action, mode: "all_matching", query: query || undefined, status })
+        : await batchJobs({ action, ids: [...selectedIds] });
+      setActionMessage(batchActionMessage(result));
+      clearSelection();
+
+      const shouldSwitchToAll = action === "restore" && status === "deleted" && result.succeeded > 0;
+      const nextStatus = shouldSwitchToAll ? "all" : status;
+      if (shouldSwitchToAll) {
+        setStatus("all");
+      }
+      await refreshJobs({ page: shouldSwitchToAll ? 1 : page, status: nextStatus, keepDrawer: false, reloadSelected: false });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "批量操作失败");
+    }
+  }
+
   function submitQuery() {
     setQuery(queryInput.trim());
+    clearSelection();
     refreshJobs({ page: 1, query: queryInput.trim() }).catch(() => undefined);
   }
 
@@ -403,7 +573,16 @@ export function JobsPage() {
         </div>
         <div className="jobs-toolbar">
           <input value={queryInput} onChange={(e) => setQueryInput(e.target.value)} placeholder={"按任务名称搜索"} aria-label="搜索任务" />
-          <select value={status} onChange={(e) => { const nextStatus = e.target.value as JobStatusFilter; setStatus(nextStatus); refreshJobs({ page: 1, status: nextStatus }).catch(() => undefined); }} aria-label="任务状态">
+          <select
+            value={status}
+            onChange={(e) => {
+              const nextStatus = e.target.value as JobStatusFilter;
+              setStatus(nextStatus);
+              clearSelection();
+              refreshJobs({ page: 1, status: nextStatus }).catch(() => undefined);
+            }}
+            aria-label="任务状态"
+          >
             <option value="active">{"启用中"}</option>
             <option value="all">{"全部"}</option>
             <option value="deleted">{"已删除"}</option>
@@ -413,8 +592,36 @@ export function JobsPage() {
         </div>
       </div>
 
+      <div className="jobs-toolbar" style={{ marginTop: 12, flexWrap: "wrap" }}>
+        <span className="kv">{`selected=${selectedCount}`}</span>
+        <span className="kv">{`total=${total}`}</span>
+        <span className="kv">{`status=${status}`}</span>
+        {showSelectAllMatching && (
+          <button type="button" className="ghost" aria-label="select-all-matching-jobs" onClick={selectAllMatchingJobs}>
+            {`已选中本页 ${jobs.length} 条。选择全部 ${total} 条匹配结果`}
+          </button>
+        )}
+        {selectedCount > 0 && (
+          <button type="button" className="ghost" aria-label="clear-job-selection" onClick={clearSelection}>
+            {"清空选择"}
+          </button>
+        )}
+        {batchActionSpecs.map((item) => (
+          <button
+            key={item.action}
+            type="button"
+            className={item.tone === "danger" ? "danger" : item.tone === "ghost" ? "ghost" : undefined}
+            disabled={!isBatchActionEnabled(item.action)}
+            onClick={() => handleBatchAction(item.action).catch(() => undefined)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
       {error && <div className="alert error">{error}</div>}
-      {actionMessage && <div className="alert success">{actionMessage}</div>}
+      {selectionWarning && <div className="alert error">{selectionWarning}</div>}
+      {actionMessage && <div className="alert success" style={{ whiteSpace: "pre-line" }}>{actionMessage}</div>}
 
       <div className="jobs-layout">
         <div className="jobs-table-wrap">
@@ -424,6 +631,12 @@ export function JobsPage() {
             <table className="table jobs-table">
               <thead>
                 <tr>
+                  <th>
+                    <label className="field checkbox-row" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <input aria-label="jobs-select-page" type="checkbox" checked={allPageSelected} onChange={togglePageSelection} />
+                      <span>{"本页全选"}</span>
+                    </label>
+                  </th>
                   <th>{"任务"}</th>
                   <th>{"规则集"}</th>
                   <th>{"查询摘要"}</th>
@@ -437,6 +650,14 @@ export function JobsPage() {
               <tbody>
                 {jobs.map((job) => (
                   <tr key={job.id} className={job.deleted_at ? "row-deleted" : ""}>
+                    <td>
+                      <input
+                        aria-label={`select-job-${job.id}`}
+                        type="checkbox"
+                        checked={allMatchingSelected || selectedIds.includes(job.id)}
+                        onChange={(event) => toggleRowSelection(job, event.target.checked)}
+                      />
+                    </td>
                     <td>
                       <div className="job-name">{job.name}</div>
                       <div className="kv">#{job.id}</div>
@@ -458,7 +679,7 @@ export function JobsPage() {
                 ))}
                 {!jobs.length && (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: "center", color: "#64748b" }}>{status === "deleted" ? "暂无已删除任务" : "暂无任务"}</td>
+                    <td colSpan={9} style={{ textAlign: "center", color: "#64748b" }}>{status === "deleted" ? "暂无已删除任务" : "暂无任务"}</td>
                   </tr>
                 )}
               </tbody>

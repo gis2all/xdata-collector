@@ -282,6 +282,36 @@ export type JobRecord = {
   last_run_stats?: Record<string, unknown>;
 };
 
+export type JobBatchAction = "enable" | "disable" | "run_now" | "delete" | "restore" | "purge";
+
+export type JobBatchFailureItem = {
+  id: number;
+  name: string;
+  error: string;
+};
+
+export type JobBatchRequest =
+  | {
+      action: JobBatchAction;
+      ids: number[];
+    }
+  | {
+      action: JobBatchAction;
+      mode: "all_matching";
+      query?: string;
+      status?: "active" | "all" | "deleted";
+    };
+
+export type JobBatchResponse = {
+  action: JobBatchAction;
+  mode: "ids" | "all_matching";
+  total_targeted: number;
+  succeeded: number;
+  failed: number;
+  succeeded_ids: number[];
+  failed_items: JobBatchFailureItem[];
+};
+
 export type RunRecord = {
   id: number;
   job_id: number | null;
@@ -581,6 +611,10 @@ export function restoreJob(id: number) {
 
 export function purgeJob(id: number) {
   return req<JobRecord>(`/jobs/${id}/purge`, { method: "POST", body: "{}" });
+}
+
+export function batchJobs(payload: JobBatchRequest) {
+  return req<JobBatchResponse>("/jobs/batch", { method: "POST", body: JSON.stringify(payload) });
 }
 
 export function listRuleSets() {

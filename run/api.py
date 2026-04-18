@@ -144,6 +144,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             if path in {"/jobs", "/jobs/create"}:
                 self._json(HTTPStatus.OK, self.service.create_job(payload))
                 return
+            if path == "/jobs/batch":
+                self._json(HTTPStatus.OK, self.service.batch_jobs(payload))
+                return
             if path == "/rule-sets":
                 self._json(HTTPStatus.OK, self.service.create_rule_set(payload))
                 return

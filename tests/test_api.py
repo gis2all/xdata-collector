@@ -86,6 +86,19 @@ class FakeService:
         self.calls.append(("run_job_now", job_id))
         return {"status": "success", "job_id": job_id}
 
+    def batch_jobs(self, payload: dict) -> dict:
+        self.calls.append(("batch_jobs", payload))
+        total_targeted = len(payload.get("ids", [])) if "ids" in payload else 12
+        return {
+            "action": payload["action"],
+            "mode": payload.get("mode", "ids"),
+            "total_targeted": total_targeted,
+            "succeeded": total_targeted,
+            "failed": 0,
+            "succeeded_ids": payload.get("ids", []),
+            "failed_items": [],
+        }
+
     def list_items(self, **kwargs) -> dict:
         self.calls.append(("list_items", kwargs))
         if kwargs.get("table") == "raw":
@@ -263,6 +276,41 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body.decode("utf-8"))["job_id"], 42)
         self.assertEqual(service.calls[0], ("run_job_now", 42))
+
+    def test_post_jobs_batch_dispatches_explicit_ids(self) -> None:
+        service = FakeService()
+        payload = {"action": "delete", "ids": [1, 2, 3]}
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "POST",
+                "/jobs/batch",
+                body=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+
+        parsed = json.loads(body.decode("utf-8"))
+        self.assertEqual(status, 200)
+        self.assertEqual(parsed["action"], "delete")
+        self.assertEqual(parsed["mode"], "ids")
+        self.assertEqual(service.calls[0], ("batch_jobs", payload))
+
+    def test_post_jobs_batch_dispatches_all_matching(self) -> None:
+        service = FakeService()
+        payload = {"action": "restore", "mode": "all_matching", "query": "alpha", "status": "deleted"}
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "POST",
+                "/jobs/batch",
+                body=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+
+        parsed = json.loads(body.decode("utf-8"))
+        self.assertEqual(status, 200)
+        self.assertEqual(parsed["mode"], "all_matching")
+        self.assertEqual(service.calls[0], ("batch_jobs", payload))
 
     def test_get_runs_returns_run_page(self) -> None:
         service = FakeService()
