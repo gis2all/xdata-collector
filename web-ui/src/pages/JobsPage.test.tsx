@@ -229,7 +229,7 @@ describe("JobsPage", () => {
     expect(secondLayout.style.gridTemplateColumns).toBe("");
   });
 
-  it("imports a task pack into the current form but preserves scheduling fields", async () => {
+  it("renders the reorganized editable workspace structure after loading a task pack", async () => {
     render(<JobsPage />);
 
     await waitFor(() => {
@@ -251,9 +251,12 @@ describe("JobsPage", () => {
       expect(getTaskPackMock).toHaveBeenCalledWith("alpha-watch");
     });
 
-    expect(screen.getByRole("heading", { name: "调度设置" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "任务正文" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "当前任务" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "当前绑定任务包" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "任务包操作" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "任务正文摘要" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "搜索条件" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "规则" })).toBeInTheDocument();
     expect(screen.getByText("已绑定本地任务包")).toBeInTheDocument();
     expect(screen.getByText("pack_name=alpha-watch")).toBeInTheDocument();
     expect(screen.getByText("pack_path=config/packs/alpha-watch.json")).toBeInTheDocument();
@@ -275,6 +278,23 @@ describe("JobsPage", () => {
     expect(payload.interval_minutes).toBe(120);
     expect(payload.search_spec.all_keywords).toEqual(["alpha"]);
     expect(payload.rule_set.name).toBe("Default Rule Set");
+  });
+
+  it("separates page header, filter layer, and list manage layer", async () => {
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(listJobsMock).toHaveBeenCalled();
+    });
+
+    expect(screen.getByRole("heading", { name: "自动任务" })).toBeInTheDocument();
+    expect(screen.getByText("自动任务负责调度；任务正文来自当前绑定任务包，包含搜索条件和规则。")).toBeInTheDocument();
+    expect(screen.getByTestId("create-job-button")).toBeInTheDocument();
+    expect(screen.getByTestId("jobs-filter-bar")).toBeInTheDocument();
+    expect(screen.getByTestId("jobs-manage-bar")).toBeInTheDocument();
+    expect(screen.getByText("selected=0")).toBeInTheDocument();
+    expect(screen.getByText("total=0")).toBeInTheDocument();
+    expect(screen.getByText("status=active")).toBeInTheDocument();
   });
 
   it("shows a top save button for create mode and keeps the footer save button", async () => {
@@ -304,7 +324,7 @@ describe("JobsPage", () => {
     });
   });
 
-  it("shows loading state on the top save button while creating", async () => {
+  it("shows loading state on the top save button while creating and keeps the workspace editable after save", async () => {
     let resolveCreate: ((value: any) => void) | null = null;
     createJobMock.mockImplementationOnce(
       () =>
@@ -353,11 +373,14 @@ describe("JobsPage", () => {
     });
 
     await waitFor(() => {
-      expect(screen.queryByLabelText("submit-job-top")).not.toBeInTheDocument();
+      expect(screen.getByText("已保存")).toBeInTheDocument();
     });
+
+    expect(screen.getByLabelText("submit-job-top")).toBeInTheDocument();
+    expect(screen.getByLabelText("submit-job-top")).not.toBeDisabled();
   });
 
-  it("shows a top save button in edit mode but not in view mode", async () => {
+  it("shows a top save button in both view and edit entry flows for active jobs", async () => {
     listJobsMock.mockResolvedValueOnce({
       page: 1,
       page_size: 10,
@@ -374,7 +397,7 @@ describe("JobsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "查看" }));
 
     await waitFor(() => {
-      expect(screen.queryByLabelText("submit-job-top")).not.toBeInTheDocument();
+      expect(screen.getByLabelText("submit-job-top")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "编辑" }));
