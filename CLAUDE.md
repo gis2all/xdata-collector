@@ -207,6 +207,7 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 
 ## 编辑时的约束
 
+- 当前端设计、样式调整、页面布局重构或组件视觉变更发生时，优先遵循根目录 `DESIGN.md`；如果规范与现有实现冲突，先保证信息清晰、操作顺手和工作台效率。
 - 文档、路径、启动命令默认以 `run/` 下主入口为准
 - 不要把 `workspace.json` 重新做成“搜索草稿 + presets + rule sets + jobs 全内联快照”
 - 不要把 `config/` 默认绑定到具体业务任务；仓库基线只保留通用配置
