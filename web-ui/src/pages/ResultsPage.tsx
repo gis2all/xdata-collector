@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   dedupeItems,
@@ -15,7 +15,10 @@ import {
 import { formatUtcPlus8Time } from "../time";
 
 const RESULTS_VISIBLE_COLUMNS_KEY = "results.visibleColumns.v1";
+const RESULTS_COLUMN_WIDTHS_KEY = "results.columnWidths.v1";
 const PAGE_SIZE = 100;
+const RESULTS_SELECT_COLUMN_WIDTH = 92;
+const RESULTS_OPERATION_COLUMN_WIDTH = 88;
 
 const TEXT = {
   title: "\u7ed3\u679c\u67e5\u8be2",
@@ -54,6 +57,16 @@ type ColumnDefinition = {
   defaultVisible: boolean;
   width?: number;
   render: (item: ResultItemRecord) => ReactNode;
+};
+
+type ColumnWidthsByTable = Record<ItemTable, Partial<Record<ItemSortField, number>>>;
+
+type ColumnResizeState = {
+  table: ItemTable;
+  key: ItemSortField;
+  startX: number;
+  startWidth: number;
+  minWidth: number;
 };
 
 function truncate(value: unknown, maxLength = 120) {
@@ -307,6 +320,71 @@ function writeVisibleColumns(visibleColumns: ItemSortField[]) {
   window.localStorage.setItem(RESULTS_VISIBLE_COLUMNS_KEY, JSON.stringify(visibleColumns));
 }
 
+function emptyColumnWidths(): ColumnWidthsByTable {
+  return {
+    curated: {},
+    raw: {},
+  };
+}
+
+function normalizeColumnWidthsForTable(table: ItemTable, value: unknown): Partial<Record<ItemSortField, number>> {
+  if (value == null || typeof value !== "object") {
+    return {};
+  }
+  const allowed = new Set(COLUMN_DEFINITIONS_BY_TABLE[table].map((column) => column.key));
+  const result: Partial<Record<ItemSortField, number>> = {};
+  for (const [key, rawWidth] of Object.entries(value as Record<string, unknown>)) {
+    if (!allowed.has(key as ItemSortField)) {
+      continue;
+    }
+    if (typeof rawWidth !== "number" || !Number.isFinite(rawWidth) || rawWidth <= 0) {
+      continue;
+    }
+    result[key as ItemSortField] = Math.round(rawWidth);
+  }
+  return result;
+}
+
+function readColumnWidths(): ColumnWidthsByTable {
+  if (typeof window === "undefined") {
+    return emptyColumnWidths();
+  }
+  const raw = window.localStorage.getItem(RESULTS_COLUMN_WIDTHS_KEY);
+  if (!raw) {
+    return emptyColumnWidths();
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      curated: normalizeColumnWidthsForTable("curated", parsed?.curated),
+      raw: normalizeColumnWidthsForTable("raw", parsed?.raw),
+    };
+  } catch {
+    return emptyColumnWidths();
+  }
+}
+
+function writeColumnWidths(widths: ColumnWidthsByTable) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(RESULTS_COLUMN_WIDTHS_KEY, JSON.stringify(widths));
+}
+
+function getColumnMinWidth(column: ColumnDefinition) {
+  const width = column.width ?? 160;
+  if (width <= 90) return 72;
+  if (width <= 120) return 88;
+  if (width <= 160) return 120;
+  return 140;
+}
+
+function resolveColumnWidth(column: ColumnDefinition, storedWidth?: number) {
+  const minWidth = getColumnMinWidth(column);
+  const width = typeof storedWidth === "number" && Number.isFinite(storedWidth) ? storedWidth : column.width ?? minWidth;
+  return Math.max(minWidth, Math.round(width));
+}
+
 function renderSortButtons(
   field: ItemSortField,
   activeField: ItemSortField,
@@ -345,15 +423,28 @@ export function ResultsPage() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [allMatchingSelected, setAllMatchingSelected] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<ItemSortField[]>(() => readVisibleColumns("curated"));
+  const [columnWidthsByTable, setColumnWidthsByTable] = useState<ColumnWidthsByTable>(() => readColumnWidths());
   const [fieldMenuOpen, setFieldMenuOpen] = useState(false);
   const [sortBy, setSortBy] = useState<ItemSortField>("id");
   const [sortDir, setSortDir] = useState<SortDirection>("desc");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [isResizingColumn, setIsResizingColumn] = useState(false);
+  const [resizingColumnId, setResizingColumnId] = useState<string | null>(null);
+  const resizeStateRef = useRef<ColumnResizeState | null>(null);
 
   const columnDefinitions = COLUMN_DEFINITIONS_BY_TABLE[table];
   const visibleColumnDefinitions = columnDefinitions.filter((column) => visibleColumns.includes(column.key));
+  const currentColumnWidths = columnWidthsByTable[table];
+  const resolvedVisibleColumnDefinitions = useMemo(
+    () =>
+      visibleColumnDefinitions.map((column) => ({
+        ...column,
+        currentWidth: resolveColumnWidth(column, currentColumnWidths?.[column.key]),
+      })),
+    [currentColumnWidths, visibleColumnDefinitions],
+  );
   const sortFieldSet = useMemo(() => new Set(columnDefinitions.map((column) => column.key)), [columnDefinitions]);
   const pageSize = PAGE_SIZE;
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
@@ -361,7 +452,12 @@ export function ResultsPage() {
   const selectedCount = allMatchingSelected ? total : selectedIds.length;
   const allSelectedOnPage = items.length > 0 && selectedOnPage === items.length;
   const showSelectAllMatching = !allMatchingSelected && allSelectedOnPage && total > items.length;
-  const tableMinWidth = Math.max(960, visibleColumnDefinitions.length * 180 + 220);
+  const tableMinWidth = Math.max(
+    960,
+    RESULTS_SELECT_COLUMN_WIDTH +
+      RESULTS_OPERATION_COLUMN_WIDTH +
+      resolvedVisibleColumnDefinitions.reduce((sum, column) => sum + column.currentWidth, 0),
+  );
   const tableName = TABLE_NAMES[table];
   const dedupeConfirmText = `\u786e\u5b9a\u5bf9\u6574\u4e2a ${tableName} \u8868\u6267\u884c\u53bb\u91cd\u5417\uff1f\u6b64\u64cd\u4f5c\u4f1a\u5220\u9664\u91cd\u590d\u884c\u3002`;
   const fullTableHint = `\u201c\u5168\u8868\u53bb\u91cd\u201d\u4f5c\u7528\u4e8e\u6574\u5f20 ${tableName} \u8868`;
@@ -372,6 +468,68 @@ export function ResultsPage() {
   useEffect(() => {
     writeVisibleColumns(visibleColumns);
   }, [visibleColumns]);
+
+  useEffect(() => {
+    writeColumnWidths(columnWidthsByTable);
+  }, [columnWidthsByTable]);
+
+  useEffect(() => {
+    function updateResizedColumnWidth(clientX: number | undefined) {
+      const resizeState = resizeStateRef.current;
+      if (!resizeState || typeof clientX !== "number" || Number.isNaN(clientX)) {
+        return;
+      }
+      const nextWidth = Math.max(
+        resizeState.minWidth,
+        Math.round(resizeState.startWidth + (clientX - resizeState.startX)),
+      );
+      setColumnWidthsByTable((current) => {
+        const tableWidths = current[resizeState.table];
+        if (tableWidths?.[resizeState.key] === nextWidth) {
+          return current;
+        }
+        return {
+          ...current,
+          [resizeState.table]: {
+            ...tableWidths,
+            [resizeState.key]: nextWidth,
+          },
+        };
+      });
+    }
+
+    function handlePointerMove(event: PointerEvent) {
+      updateResizedColumnWidth(event.clientX);
+    }
+
+    function handleMouseMove(event: MouseEvent) {
+      updateResizedColumnWidth(event.clientX);
+    }
+
+    function stopResizingColumn() {
+      resizeStateRef.current = null;
+      setIsResizingColumn(false);
+      setResizingColumnId(null);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResizingColumn);
+    window.addEventListener("pointercancel", stopResizingColumn);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", stopResizingColumn);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResizingColumn);
+      window.removeEventListener("pointercancel", stopResizingColumn);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", stopResizingColumn);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, []);
 
   async function load(options?: {
     table?: ItemTable;
@@ -601,6 +759,23 @@ export function ResultsPage() {
     setVisibleColumns(DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table]);
   }
 
+  function startColumnResize(column: ColumnDefinition & { currentWidth: number }, clientX: number | undefined) {
+    if (typeof clientX !== "number" || Number.isNaN(clientX)) {
+      return;
+    }
+    resizeStateRef.current = {
+      table,
+      key: column.key,
+      startX: clientX,
+      startWidth: column.currentWidth,
+      minWidth: getColumnMinWidth(column),
+    };
+    setIsResizingColumn(true);
+    setResizingColumnId(`${table}:${column.key}`);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+  }
+
   return (
     <div className="card results-page" data-testid="results-page">
       <div className="results-header">
@@ -707,11 +882,18 @@ export function ResultsPage() {
         <span className="kv">{fullTableHint}</span>
       </div>
 
-      <div className="results-table-wrap">
-        <table className="table results-table" style={{ marginTop: 10, minWidth: tableMinWidth }}>
+      <div className={`results-table-wrap${isResizingColumn ? " dragging" : ""}`}>
+        <table className="table results-table" style={{ marginTop: 10, minWidth: tableMinWidth, tableLayout: "fixed" }}>
+          <colgroup>
+            <col style={{ width: RESULTS_SELECT_COLUMN_WIDTH }} />
+            {resolvedVisibleColumnDefinitions.map((column) => (
+              <col key={`results-col-${table}-${column.key}`} style={{ width: column.currentWidth }} />
+            ))}
+            <col style={{ width: RESULTS_OPERATION_COLUMN_WIDTH }} />
+          </colgroup>
           <thead>
             <tr>
-              <th>
+              <th className="results-th-cell" style={{ width: RESULTS_SELECT_COLUMN_WIDTH, minWidth: RESULTS_SELECT_COLUMN_WIDTH }}>
                 <label className="row">
                   <input
                     type="checkbox"
@@ -722,17 +904,37 @@ export function ResultsPage() {
                   <span>{TEXT.selectPage}</span>
                 </label>
               </th>
-              {visibleColumnDefinitions.map((column) => (
-                <th key={column.key} style={column.width ? { minWidth: column.width } : undefined}>
+              {resolvedVisibleColumnDefinitions.map((column) => (
+                <th
+                  key={column.key}
+                  className="results-th-cell"
+                  style={{ width: column.currentWidth, minWidth: column.currentWidth }}
+                >
                   <div className="results-th">
-                    <span>{column.label}</span>
+                    <span className="results-th-label">{column.label}</span>
                     {renderSortButtons(column.key, sortBy, sortDir, (field, direction) => {
                       void handleSort(field, direction);
                     })}
                   </div>
+                  <div
+                    className={`results-column-resizer${resizingColumnId === `${table}:${column.key}` ? " dragging" : ""}`}
+                    role="separator"
+                    aria-orientation="vertical"
+                    aria-label={`resize-column-${column.key}`}
+                    onPointerDown={(event) => {
+                      startColumnResize(column, event.clientX);
+                      event.preventDefault();
+                    }}
+                    onMouseDown={(event) => {
+                      startColumnResize(column, event.clientX);
+                      event.preventDefault();
+                    }}
+                  />
                 </th>
               ))}
-              <th>{TEXT.operation}</th>
+              <th className="results-th-cell" style={{ width: RESULTS_OPERATION_COLUMN_WIDTH, minWidth: RESULTS_OPERATION_COLUMN_WIDTH }}>
+                {TEXT.operation}
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -746,7 +948,7 @@ export function ResultsPage() {
                     onChange={() => toggleSelected(item.id)}
                   />
                 </td>
-                {visibleColumnDefinitions.map((column) => (
+                {resolvedVisibleColumnDefinitions.map((column) => (
                   <td key={`${item.id}-${column.key}`}>{column.render(item)}</td>
                 ))}
                 <td>

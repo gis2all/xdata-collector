@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { dedupeItems, deleteItem, deleteItems, listItems } from "../api";
@@ -12,6 +12,7 @@ vi.mock("../api", () => ({
 }));
 
 const RESULTS_VISIBLE_COLUMNS_KEY = "results.visibleColumns.v1";
+const RESULTS_COLUMN_WIDTHS_KEY = "results.columnWidths.v1";
 
 const listItemsMock = vi.mocked(listItems);
 const deleteItemMock = vi.mocked(deleteItem);
@@ -184,6 +185,113 @@ describe("ResultsPage", () => {
     expect(screen.queryByText("source_url")).not.toBeInTheDocument();
     expect(screen.queryByText("score")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "score asc" })).not.toBeInTheDocument();
+  });
+
+  it("uses default column widths before any resize override exists", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("title")).toBeInTheDocument();
+    });
+
+    const titleHeader = screen.getByText("title").closest("th");
+    expect(titleHeader).toHaveStyle({ width: "220px" });
+  });
+
+  it("resizes a visible column in real time and writes the new width to local storage", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("title")).toBeInTheDocument();
+    });
+
+    const titleHeader = screen.getByText("title").closest("th");
+    const titleResizer = screen.getByRole("separator", { name: "resize-column-title" });
+
+    fireEvent.mouseDown(titleResizer, { clientX: 220 });
+    fireEvent.mouseMove(window, { clientX: 300 });
+
+    expect(titleHeader).toHaveStyle({ width: "300px" });
+
+    fireEvent.mouseUp(window);
+
+    expect(window.localStorage.getItem(RESULTS_COLUMN_WIDTHS_KEY)).toContain("\"title\":300");
+  });
+
+  it("restores resized column widths from local storage on first render", async () => {
+    window.localStorage.setItem(
+      RESULTS_COLUMN_WIDTHS_KEY,
+      JSON.stringify({ curated: { title: 320 }, raw: {} }),
+    );
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("title")).toBeInTheDocument();
+    });
+
+    const titleHeader = screen.getByText("title").closest("th");
+    expect(titleHeader).toHaveStyle({ width: "320px" });
+  });
+
+  it("keeps curated and raw column widths separate", async () => {
+    window.localStorage.setItem(
+      RESULTS_COLUMN_WIDTHS_KEY,
+      JSON.stringify({
+        curated: { title: 310 },
+        raw: { text: 360 },
+      }),
+    );
+    listItemsMock
+      .mockResolvedValueOnce(makePage([makeItem(1)], 1))
+      .mockResolvedValueOnce(makePage([makeRawItem(2)], 1));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("title")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("title").closest("th")).toHaveStyle({ width: "310px" });
+
+    fireEvent.click(screen.getByRole("button", { name: "原始结果" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("text")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("text").closest("th")).toHaveStyle({ width: "360px" });
+  });
+
+  it("restores a hidden column with its previously saved width", async () => {
+    window.localStorage.setItem(
+      RESULTS_COLUMN_WIDTHS_KEY,
+      JSON.stringify({ curated: { summary_zh: 340 }, raw: {} }),
+    );
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("summary_zh")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: TEXT.fields }));
+    fireEvent.click(screen.getByLabelText("toggle-column-summary_zh"));
+
+    await waitFor(() => {
+      expect(within(screen.getByRole("table")).queryByText("summary_zh")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText("toggle-column-summary_zh"));
+
+    const summaryHeader = await within(screen.getByRole("table")).findByText("summary_zh");
+    expect(summaryHeader.closest("th")).toHaveStyle({ width: "340px" });
   });
 
   it("requests server-side sorting when a visible sort control is clicked", async () => {
