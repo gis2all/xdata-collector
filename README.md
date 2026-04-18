@@ -1,25 +1,19 @@
 # X数据采集器
 
-这是一个本地运行的 X 数据收集网页应用，主链路是：
-`X 搜索 -> 规则筛选 -> SQLite 落库 -> 结果浏览 / 自动任务调度`
+这是一个本地运行的 X 数据采集、规则筛选、结果入库与 UI 浏览工具。
 
-当前主仓只负责 X 采集、规则评估、本地 API、调度器和 SQLite 数据沉淀。
-Notion 能力已迁出主仓；后续如需同步，可由独立仓库 `D:\Code\xdata-to-notion` 直接读取 `data/app.db` 实现。
+当前主链路：
+`X 搜索 -> x_items_raw -> 规则评估 -> x_items_curated -> 结果浏览 / 自动任务`
 
-## 快速启动
+## 快速开始
 
 ### 1. 准备本机依赖
 
-先执行跨平台引导脚本：
-
 ```bash
-python ./run/bootstrap.py
+python run/bootstrap.py
 ```
 
-说明：
-- `run/bootstrap.py` 会准备本机运行依赖，包括 `pipx`、`twitter-cli` 和 `agent-browser`
-- 脚本不接受额外参数，直接运行即可
-- 前端依赖仍由 `web-ui/package.json` 管理
+`run/bootstrap.py` 是唯一推荐的跨平台本机依赖准备脚本，默认安装 `pipx`、`twitter-cli` 和 `agent-browser`。
 
 ### 2. 准备环境变量
 
@@ -27,131 +21,85 @@ python ./run/bootstrap.py
 cp .env.example .env
 ```
 
-当前 `.env` 只保留 X 认证相关配置：
+必填 X Cookie：
 - `TWITTER_AUTH_TOKEN`
 - `TWITTER_CT0`
+
+辅助字段：
 - `TWITTER_BROWSER`
 - `TWITTER_CHROME_PROFILE`
-
-运行采集前，必须先填写 `TWITTER_AUTH_TOKEN` 和 `TWITTER_CT0`。
-
-#### 如何获取 Cookie
-
-1. 在浏览器中登录 `https://x.com`
-2. 打开开发者工具
-3. 进入 `Application` / `Storage` / `Cookies`
-4. 选择 `https://x.com`
-5. 找到 `auth_token` 和 `ct0`
-6. 将 `auth_token` 填入 `.env` 的 `TWITTER_AUTH_TOKEN`
-7. 将 `ct0` 填入 `.env` 的 `TWITTER_CT0`
-
-安全提醒：
-- `auth_token` 和 `ct0` 等同于登录态
-- 不要提交到 git，也不要分享给他人
-- 如果失效，需要重新从浏览器获取
-
-补充说明：
-- `TWITTER_BROWSER` 和 `TWITTER_CHROME_PROFILE` 只用于本地工具辅助读取或排障
-- 它们不是默认必经配置，也不替代 `TWITTER_AUTH_TOKEN` / `TWITTER_CT0`
 
 ### 3. 安装前端依赖
 
 ```bash
-cd ./web-ui
+cd web-ui
 npm install
 cd ..
 ```
 
-### 4. 启动开发主链路
-
-推荐直接使用开发主链路服务总控脚本：
+### 启动开发主链路
 
 ```bash
-python ./run/services.py start
+python run/services.py start
 ```
 
-如需查看当前状态或关闭这些服务：
+常用命令：
 
 ```bash
-python ./run/services.py status
-python ./run/services.py stop
-python ./run/services.py restart
+python run/services.py status
+python run/services.py stop
+python run/services.py restart
 ```
-
-这会默认启动：
-- `run/api.py`
-- `run/scheduler.py`
-- `web-ui` dev server
-
-说明：
-- `run/services.py` 默认只管理开发主链路（API、Scheduler、Dev UI），不包含 `run/static_web_server.py`
-- 构建产物静态预览仍需单独运行 `python ./run/static_web_server.py --root dist`
 
 打开 `http://127.0.0.1:5177/`。
 
-## 服务说明
+## 当前边界
 
-当前仓库常见的运行项一共有 4 类：
+- `config/workspace.json` 是轻量工作区底座，只保存 `environment + jobs registry`
+- `config/packs/*.json` 保存任务包，每个 pack 同时包含 `search_spec + rule_set`
+- `runtime/history/search_runs.jsonl` 保存手动搜索和自动任务的运行记录
+- `runtime/state/runtime_health_snapshot.json` 保存最近一次 DB / X 健康快照
+- `runtime/state/sequences.json` 保存运行态序号
+- `data/app.db` 只保留结果表 `x_items_raw` 和 `x_items_curated`
+- `runtime/logs/` 保存 API、Scheduler、Web UI 的当前日志
 
-1. `run/api.py`
-   - 本地后端 API
-   - 默认监听 `127.0.0.1:8765`
-   - 前端页面和手动操作都依赖它
+## 主目录
 
-2. `web-ui` dev server
-   - 开发态前端
-   - 默认监听 `127.0.0.1:5177`
-   - 平时手动测试主要访问这个地址
+- `web-ui/`：前端单页工作台
+- `backend/`：采集、规则、存储、workspace/runtime 读写
+- `run/`：运行入口、bootstrap 与服务总控
+- `config/`：可版本化配置，包含轻量 `workspace.json` 与 `packs/`
+- `runtime/`：运行态文件、日志、PID、临时产物
+- `data/`：SQLite 数据库目录，正式保留 `app.db` 和 `README.md`
+- `tests/`：自动化测试
 
-3. `run/static_web_server.py`
-   - 构建后前端静态服务
-   - 默认监听 `127.0.0.1:5178`
-   - 用于本地预览构建产物，不是日常开发主入口
+## 数据与配置说明
 
-4. `run/scheduler.py`
-   - 后台轮询进程
-   - 不监听端口
-   - 默认每 30 秒执行一次 `tick()`
+- `workspace.json` 只保留环境配置和自动任务注册表
+- `config/packs/*.json` 承载手动搜索与自动任务复用的 `search_spec + rule_set`
+- 手动搜索页和自动任务页导入 pack 后，只替换当前表单；继续编辑不会自动回写原 pack
+- 运行日志页读取 `runtime/history/search_runs.jsonl` 和 `runtime/logs/*.current.*.log`
+- 运行总览读取 `runtime/state/runtime_health_snapshot.json`
+- 结果浏览页可以切换查看 `x_items_raw` 与 `x_items_curated`
+- 手动搜索的原始结果会进入 `x_items_raw`，只有命中规则的结果会进入 `x_items_curated`
 
-补充说明：
-- 三个有端口的服务是 `8765`、`5177`、`5178`
-- 日常开发最常用的三个进程通常是 API、Dev UI、Scheduler
-- scheduler 没有端口，因为它不是 HTTP 服务，而是后台定时执行任务的进程
+## Git 边界
 
-## 当前仓库结构
-
-- `web-ui/`：前端单页应用
-- `backend/`：核心业务、规则、SQLite 读写、X 搜索适配
-- `run/`：运行入口、本机依赖准备脚本和服务总控脚本
-- `data/`：数据库目录，正式保留 `app.db` 与说明文件 `README.md`
-- `runtime/`：运行日志与临时文件
-- `artifacts/`：流程图、辅助资料和非源码材料
-- `tests/`：当前自动化测试
-
-## Git 提交边界
-
-建议提交到 Git 的内容：
+建议提交：
 - `backend/`、`run/`、`tests/`、`web-ui/src/`
 - `config/`、`artifacts/`
-- `README.md`、`CLAUDE.md`、`data/README.md`、`.env.example`
-- `runtime/README.md`
-- `.learnings/`：作为项目级协作记忆保留提交，但不得写入真实 cookie、token 或一次性调试噪音
+- `README.md`、`CLAUDE.md`、`data/README.md`、`runtime/README.md`、`.env.example`、`.learnings/`
 
-不应提交的本地内容：
+不应提交：
 - `.env`
 - `data/*.db`
-- `runtime/logs/`、`runtime/pids/`、`runtime/tmp/`
+- `runtime/history/`、`runtime/state/`、`runtime/logs/`、`runtime/pids/`、`runtime/tmp/`
 - `web-ui/node_modules/`、`web-ui/dist/`、`web-ui/.tmp-esbuild/`
-- `__pycache__/`、`.pytest_cache/` 等缓存目录
-
-原则：
-- 提交源码、配置模板、文档和必要锁文件
-- 不提交依赖、日志、数据库、运行输出和本机私有配置
-- `data/README.md` 只是数据库说明文件，不代表 `data/` 重新变成通用工作目录
 
 ## 验证命令
 
 ```bash
 python -m pytest -c tests/pytest.ini tests
+cd web-ui && npm test
 cd web-ui && npm run build
 ```

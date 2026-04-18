@@ -14,6 +14,8 @@ web-ui/dist/
 web-ui/.tmp-esbuild/
 
 # Runtime state and local tooling output
+runtime/history/
+runtime/state/
 runtime/logs/
 runtime/pids/
 runtime/tmp/

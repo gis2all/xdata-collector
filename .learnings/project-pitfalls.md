@@ -161,3 +161,12 @@ Do not record by default:
 **Correct approach**: keep `data/` limited to the runtime database `app.db` and the official note `data/README.md`; put service logs in `runtime/logs/`, PID files in `runtime/pids/`, and test-only temporary files in `runtime/tmp/tests/`.
 **Impact**: repository structure, cleanup safety, documentation, test isolation.
 **Related paths**: `data/app.db`, `data/README.md`, `runtime/logs/`, `runtime/pids/`, `runtime/tmp/tests/`, `tests/test_collector_service.py`
+
+## PIT-016 workspace.json must stay lightweight and packs carry search/rule content
+
+**Context**: when changing manual search imports, rule sets, presets, job definitions, or import/export behavior.
+**Wrong approach**: stuffing `search_spec` and `rule_set` bodies back into `workspace.json`, localStorage, SQLite config tables, or scattered preset files.
+**Correct approach**: keep `config/workspace.json` limited to lightweight environment settings plus the jobs registry, keep reusable `search_spec + rule_set` content in `config/packs/*.json`, keep run-time state in `runtime/history/` and `runtime/state/`, and keep SQLite for `x_items_raw` and `x_items_curated` only.
+**Impact**: settings page, manual search page, jobs page, migration behavior, git hygiene, documentation.
+**Related paths**: `config/workspace.json`, `config/packs/`, `backend/workspace_store.py`, `runtime/history/search_runs.jsonl`, `runtime/state/runtime_health_snapshot.json`, `runtime/state/sequences.json`, `data/app.db`
+

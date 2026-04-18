@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import os
 from dataclasses import asdict
@@ -27,6 +28,7 @@ from backend.source_identity import (
     canonicalize_source_url,
 )
 from backend.twitter_cli import find_twitter_cli, normalize_search_payload, run_twitter_search
+from backend.workspace_store import RuntimeStateStore, WorkspaceStore, default_builtin_rule_set
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SQLITE_DEFAULT = Path("data") / "app.db"
@@ -207,87 +209,51 @@ def _dedupe_search_results(items: list[SearchResult]) -> list[SearchResult]:
 
 
 class DesktopService:
-    def __init__(self, db_path: str | Path = SQLITE_DEFAULT, env_file: str | Path = ".env") -> None:
+    def __init__(
+        self,
+        db_path: str | Path = SQLITE_DEFAULT,
+        env_file: str | Path = ".env",
+        workspace_path: str | Path | None = None,
+        runtime_dir: str | Path | None = None,
+    ) -> None:
         self.db_path = Path(db_path)
         self.env_file = str(env_file)
+        self.runtime_dir = Path(runtime_dir) if runtime_dir is not None else PROJECT_ROOT / "runtime"
+        resolved_workspace_path = Path(workspace_path) if workspace_path is not None else PROJECT_ROOT / "config" / "workspace.json"
+        self.workspace_store = WorkspaceStore(workspace_path=resolved_workspace_path, legacy_db_path=self.db_path)
+        self.task_pack_store = self.workspace_store.pack_store
+        self.runtime_store = RuntimeStateStore(
+            runs_path=self.runtime_dir / "history" / "search_runs.jsonl",
+            health_path=self.runtime_dir / "state" / "runtime_health_snapshot.json",
+            sequence_path=self.runtime_dir / "state" / "sequences.json",
+        )
         load_env_file(self.env_file)
         self._force_reload_x_env()
+        with connect(self.db_path):
+            pass
         self._ensure_builtin_rule_set()
 
-    def _job_row_to_dict(self, row: Any) -> dict[str, Any]:
-        payload = row_to_dict(row)
-        stats = payload.pop("last_run_stats_json", None)
-        if isinstance(stats, dict):
-            payload["last_run_stats"] = stats
-        elif isinstance(stats, str):
-            try:
-                payload["last_run_stats"] = json.loads(stats)
-            except json.JSONDecodeError:
-                payload["last_run_stats"] = {}
-        else:
-            payload["last_run_stats"] = {}
-        payload["search_spec_json"] = normalize_search_spec(payload.get("search_spec_json"))
-        payload["rule_set_summary"] = self._rule_set_summary_from_row(payload)
-        return payload
+    def get_workspace(self) -> dict[str, Any]:
+        return self._ensure_builtin_rule_set()
 
-    def _load_job_row(self, conn: Any, job_id: int) -> dict[str, Any] | None:
-        row = conn.execute(
-            """
-            SELECT
-                j.*,
-                rs.name AS rule_set_name,
-                rs.description AS rule_set_description,
-                rs.is_builtin AS rule_set_is_builtin,
-                rs.is_enabled AS rule_set_is_enabled,
-                rs.version AS rule_set_version,
-                r.id AS last_run_id,
-                r.status AS last_run_status,
-                r.started_at AS last_run_started_at,
-                r.ended_at AS last_run_ended_at,
-                r.error_text AS last_run_error_text,
-                r.stats_json AS last_run_stats_json
-            FROM search_jobs AS j
-            LEFT JOIN rule_sets AS rs ON rs.id = j.rule_set_id
-            LEFT JOIN search_runs AS r
-              ON r.id = (
-                SELECT sr.id
-                FROM search_runs AS sr
-                WHERE sr.job_id = j.id
-                ORDER BY sr.id DESC
-                LIMIT 1
-              )
-            WHERE j.id = ?
-            """,
-            (job_id,),
-        ).fetchone()
-        return self._job_row_to_dict(row) if row is not None else None
+    def update_workspace(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.workspace_store.update_workspace(payload)
+        return self._ensure_builtin_rule_set()
 
-    def _job_where_clause(self, query: str | None, status: str | None) -> tuple[str, list[Any]]:
-        where: list[str] = []
-        params: list[Any] = []
-        normalized_status = str(status or "active").strip().lower()
-        if normalized_status == "deleted":
-            where.append("j.deleted_at IS NOT NULL")
-        elif normalized_status == "all":
-            pass
-        elif normalized_status == "disabled":
-            where.append("j.deleted_at IS NULL AND j.enabled = 0")
-        else:
-            where.append("j.deleted_at IS NULL")
-            if normalized_status == "enabled":
-                where.append("j.enabled = 1")
+    def import_workspace(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.workspace_store.import_workspace(payload)
+        return self._ensure_builtin_rule_set()
 
-        if query:
-            token = f"%{query.strip()}%"
-            where.append("(j.name LIKE ? OR j.keywords_json LIKE ?)")
-            params.extend([token, token])
+    def export_workspace(self) -> dict[str, Any]:
+        return self.get_workspace()
 
-        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
-        return where_sql, params
+    def _workspace(self) -> dict[str, Any]:
+        return self.workspace_store.get_workspace()
+
+    def _save_workspace(self, workspace: dict[str, Any]) -> dict[str, Any]:
+        return self.workspace_store.update_workspace(workspace)
 
     def _force_reload_x_env(self) -> None:
-        # load_env_file uses setdefault, which won't overwrite stale inherited values.
-        # For X auth stability in long-running collector processes, force-refresh these keys.
         env_path = Path(self.env_file)
         if not env_path.exists():
             return
@@ -300,80 +266,79 @@ class DesktopService:
             if key in {"TWITTER_AUTH_TOKEN", "TWITTER_CT0", "TWITTER_BROWSER", "TWITTER_CHROME_PROFILE"}:
                 os.environ[key] = value.strip().strip('"').strip("'")
 
-    def _ensure_builtin_rule_set(self) -> None:
-        now = utc_now_iso()
-        definition = normalize_rule_set_definition(default_rule_set_definition())
-        with connect(self.db_path) as conn:
-            row = conn.execute("SELECT id FROM rule_sets WHERE is_builtin = 1 ORDER BY id ASC LIMIT 1").fetchone()
-            if row is None:
-                conn.execute(
-                    """
-                    INSERT INTO rule_sets (name, description, is_enabled, is_builtin, version, definition_json, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        "默认机会发现规则",
-                        "兼容旧版机会发现逻辑的内置规则模板，可在 UI 中复制后自由调整。",
-                        1,
-                        1,
-                        1,
-                        json.dumps(definition, ensure_ascii=False),
-                        now,
-                        now,
-                    ),
-                )
-                return
-            conn.execute(
-                """
-                UPDATE rule_sets
-                SET definition_json = ?, updated_at = ?, is_enabled = 1
-                WHERE id = ?
-                """,
-                (json.dumps(definition, ensure_ascii=False), now, int(row["id"])),
-            )
+    def _ensure_builtin_rule_set(self) -> dict[str, Any]:
+        return self.workspace_store.get_workspace()
 
-    def _rule_set_summary_from_row(self, payload: dict[str, Any]) -> dict[str, Any] | None:
-        rule_set_id = payload.get("rule_set_id")
-        if rule_set_id is None:
-            return None
+    def _sorted_rule_sets(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        sorted_items = [copy.deepcopy(item) for item in items]
+        sorted_items.sort(key=lambda item: int(item.get("id") or 0), reverse=True)
+        sorted_items.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+        sorted_items.sort(key=lambda item: 0 if bool(item.get("is_builtin")) else 1)
+        return sorted_items
+
+    def _pack_rule_set_to_row(self, payload: dict[str, Any], *, updated_at: str) -> dict[str, Any]:
         return {
-            "id": int(rule_set_id),
-            "name": payload.get("rule_set_name", ""),
-            "description": payload.get("rule_set_description", ""),
-            "is_builtin": bool(payload.get("rule_set_is_builtin")),
-            "is_enabled": bool(payload.get("rule_set_is_enabled", True)),
-            "version": int(payload.get("rule_set_version", 1) or 1),
+            "id": int(payload.get("id") or 0),
+            "name": str(payload.get("name") or "").strip(),
+            "description": str(payload.get("description") or "").strip(),
+            "is_enabled": 1,
+            "is_builtin": 1 if int(payload.get("id") or 0) == 1 else 0,
+            "version": int(payload.get("version", 1) or 1),
+            "definition_json": normalize_rule_set_definition(payload.get("definition") or payload.get("definition_json") or default_rule_set_definition()),
+            "created_at": updated_at,
+            "updated_at": updated_at,
         }
 
-    def _load_rule_set_row(self, conn: Any, rule_set_id: int) -> dict[str, Any] | None:
-        row = conn.execute("SELECT * FROM rule_sets WHERE id = ?", (rule_set_id,)).fetchone()
-        if row is None:
+    def _rule_set_catalog(self) -> list[dict[str, Any]]:
+        catalog: dict[int, dict[str, Any]] = {1: default_builtin_rule_set(rule_set_id=1)}
+        for summary in self.task_pack_store.list_packs():
+            try:
+                pack = self.task_pack_store.get_pack(summary["pack_name"])
+            except Exception:
+                continue
+            rule_set = pack.get("rule_set") or {}
+            rule_set_id = int(rule_set.get("id") or 0)
+            if rule_set_id <= 0 or rule_set_id == 1:
+                continue
+            catalog[rule_set_id] = self._pack_rule_set_to_row(rule_set, updated_at=str(pack.get("meta", {}).get("updated_at") or utc_now_iso()))
+        return self._sorted_rule_sets(list(catalog.values()))
+
+    def _find_rule_set(self, rule_set_id: int) -> dict[str, Any] | None:
+        for item in self._rule_set_catalog():
+            if int(item.get("id") or 0) == int(rule_set_id):
+                row = copy.deepcopy(item)
+                row["definition_json"] = normalize_rule_set_definition(row.get("definition_json"))
+                return row
+        return None
+
+    def _build_rule_set_summary(self, payload: dict[str, Any] | None) -> dict[str, Any] | None:
+        if payload is None:
             return None
-        payload = row_to_dict(row)
-        payload["definition_json"] = normalize_rule_set_definition(payload.get("definition_json"))
-        return payload
+        return {
+            "id": int(payload["id"]) if payload.get("id") is not None else None,
+            "name": str(payload.get("name") or ""),
+            "description": str(payload.get("description") or ""),
+            "is_builtin": bool(payload.get("is_builtin")),
+            "is_enabled": bool(payload.get("is_enabled", True)),
+            "version": int(payload.get("version", 1) or 1),
+        }
 
     def _get_default_rule_set_id(self) -> int:
-        with connect(self.db_path) as conn:
-            row = conn.execute("SELECT id FROM rule_sets WHERE is_builtin = 1 ORDER BY id ASC LIMIT 1").fetchone()
-            if row is None:
-                raise RuntimeError("default rule set missing")
-            return int(row["id"])
+        return 1
 
     def _resolve_rule_set(self, rule_set_id: int | None = None, inline_rule_set: dict[str, Any] | None = None) -> dict[str, Any]:
         if inline_rule_set:
             return {
-                "id": int(rule_set_id or 0),
-                "name": str(inline_rule_set.get("name") or "临时规则集"),
-                "description": str(inline_rule_set.get("description") or ""),
-                "is_enabled": True,
-                "is_builtin": False,
+                "id": int(inline_rule_set.get("id") or rule_set_id or 0) or None,
+                "name": str(inline_rule_set.get("name") or "Inline Rule Set").strip(),
+                "description": str(inline_rule_set.get("description") or "").strip(),
+                "is_enabled": 1,
+                "is_builtin": 0,
                 "version": int(inline_rule_set.get("version", 1) or 1),
-                "definition_json": normalize_rule_set_definition(inline_rule_set.get("definition") or inline_rule_set),
+                "definition_json": normalize_rule_set_definition(inline_rule_set.get("definition") or inline_rule_set.get("definition_json") or inline_rule_set),
             }
         resolved_id = int(rule_set_id or self._get_default_rule_set_id())
-        with connect(self.db_path) as conn:
-            row = self._load_rule_set_row(conn, resolved_id)
+        row = self._find_rule_set(resolved_id)
         if row is None:
             raise ValueError(f"rule_set {resolved_id} not found")
         return row
@@ -385,213 +350,236 @@ class DesktopService:
         preview.extend(search_spec.get("any_keywords", []))
         return preview[:12]
 
-    def _load_health_snapshots(self) -> dict[str, dict[str, Any]]:
-        snapshots: dict[str, dict[str, Any]] = {}
-        with connect(self.db_path) as conn:
-            rows = conn.execute("SELECT * FROM runtime_health_snapshot").fetchall()
-        for row in rows:
-            payload = row_to_dict(row)
-            detail = payload.get("detail_json", {})
-            snapshots[str(payload["target"])] = {
-                "configured": bool(payload.get("configured")),
-                "connected": bool(payload.get("connected")),
-                "detail": detail if isinstance(detail, dict) else {},
-                "last_checked_at": payload.get("last_checked_at") or "",
-                "last_error": payload.get("last_error") or "",
-            }
-        return snapshots
+    def _list_all_runs(self) -> list[dict[str, Any]]:
+        return [copy.deepcopy(item) for item in self.runtime_store._load_runs()]
 
-    def _save_health_snapshot(
-        self,
-        target: str,
-        configured: bool,
-        connected: bool,
-        detail: dict[str, Any],
-        last_checked_at: str,
-        last_error: str,
-    ) -> None:
-        with connect(self.db_path) as conn:
-            conn.execute(
-                """
-                INSERT INTO runtime_health_snapshot (target, configured, connected, detail_json, last_checked_at, last_error)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(target) DO UPDATE SET
-                    configured = excluded.configured,
-                    connected = excluded.connected,
-                    detail_json = excluded.detail_json,
-                    last_checked_at = excluded.last_checked_at,
-                    last_error = excluded.last_error
-                """,
-                (
-                    target,
-                    1 if configured else 0,
-                    1 if connected else 0,
-                    json.dumps(detail, ensure_ascii=False),
-                    last_checked_at,
-                    last_error or None,
-                ),
-            )
+    def _last_runs_by_job(self) -> dict[int, dict[str, Any]]:
+        runs_by_job: dict[int, dict[str, Any]] = {}
+        runs = sorted(self._list_all_runs(), key=lambda item: int(item.get("id") or 0), reverse=True)
+        for item in runs:
+            if item.get("job_id") is None:
+                continue
+            normalized_job_id = int(item["job_id"])
+            if normalized_job_id not in runs_by_job:
+                runs_by_job[normalized_job_id] = item
+        return runs_by_job
 
-    def _merge_health_snapshot(
-        self,
-        target: str,
-        previous: dict[str, Any] | None,
-        configured: bool,
-        connected: bool,
-        detail: dict[str, Any],
-        checked_at: str,
-        last_error: str,
-    ) -> dict[str, Any]:
-        previous = previous or {}
-        previous_detail = previous.get("detail", {}) if isinstance(previous.get("detail"), dict) else {}
-
-        if connected:
-            resolved_connected = True
-            resolved_detail = {**previous_detail, **detail}
-        else:
-            resolved_connected = bool(previous.get("connected")) and configured
-            resolved_detail = {**previous_detail, **detail}
-
-        snapshot = {
-            "configured": configured,
-            "connected": resolved_connected,
-            "detail": resolved_detail,
-            "last_checked_at": checked_at,
-            "last_error": last_error,
+    def _load_job_pack(self, job: dict[str, Any], *, allow_missing: bool = False) -> dict[str, Any]:
+        pack_ref = job.get("pack_path") or job.get("pack_name")
+        if pack_ref:
+            try:
+                return self.task_pack_store.get_pack(str(pack_ref))
+            except Exception:
+                if not allow_missing:
+                    raise
+        return {
+            "meta": {"name": job.get("name") or "", "description": "", "updated_at": job.get("updated_at") or utc_now_iso()},
+            "search_spec": normalize_search_spec(default_search_spec()),
+            "rule_set": {
+                "id": 1,
+                "name": "Default Rule Set",
+                "description": "Built-in opportunity discovery rules.",
+                "version": 1,
+                "definition": normalize_rule_set_definition(default_rule_set_definition()),
+            },
         }
-        self._save_health_snapshot(
-            target=target,
-            configured=configured,
-            connected=resolved_connected,
-            detail=resolved_detail,
-            last_checked_at=checked_at,
-            last_error=last_error,
-        )
-        return snapshot
 
-    def _probe_database_health(self) -> tuple[bool, bool, dict[str, Any], str]:
-        db_path = self.db_path.resolve()
-        detail: dict[str, Any] = {
-            "db_path": str(db_path),
-            "db_exists": db_path.exists(),
-            "job_count": 0,
-            "run_count": 0,
-        }
-        configured = True
-        try:
-            with connect(self.db_path) as conn:
-                conn.execute("SELECT 1").fetchone()
-                detail["job_count"] = int(conn.execute("SELECT COUNT(1) FROM search_jobs").fetchone()[0])
-                detail["run_count"] = int(conn.execute("SELECT COUNT(1) FROM search_runs").fetchone()[0])
-            return configured, True, detail, ""
-        except Exception as exc:  # noqa: BLE001
-            return configured, False, detail, str(exc)
+    def _job_search_spec(self, job: dict[str, Any], *, allow_missing: bool = False) -> dict[str, Any]:
+        return normalize_search_spec(self._load_job_pack(job, allow_missing=allow_missing).get("search_spec") or default_search_spec())
 
-    def _probe_x_health(self) -> tuple[bool, bool, dict[str, Any], str]:
-        browser_hint = os.getenv("TWITTER_BROWSER") or "default"
-        has_env_auth = bool(os.getenv("TWITTER_AUTH_TOKEN") and os.getenv("TWITTER_CT0"))
-        auth_source = "environment" if has_env_auth else "unknown"
-        configured = has_env_auth
-        try:
-            find_twitter_cli()
-            auth_source = "twitter-cli"
-            configured = True
-        except Exception:
-            pass
+    def _job_rule_set(self, job: dict[str, Any], *, allow_missing: bool = False) -> dict[str, Any]:
+        return self._resolve_rule_set(inline_rule_set=self._load_job_pack(job, allow_missing=allow_missing).get("rule_set"))
 
-        detail = {
-            "auth_source": auth_source,
-            "browser_hint": browser_hint if configured else "unknown",
-            "account_hint": "unknown",
-        }
-        if not configured:
-            return False, False, detail, "x_not_configured"
+    def _job_matches_status(self, job: dict[str, Any], status: str | None) -> bool:
+        normalized_status = str(status or "active").strip().lower()
+        deleted = bool(job.get("deleted_at"))
+        enabled = bool(job.get("enabled"))
+        if normalized_status == "deleted":
+            return deleted
+        if normalized_status == "all":
+            return True
+        if normalized_status == "disabled":
+            return (not deleted) and (not enabled)
+        if normalized_status == "enabled":
+            return (not deleted) and enabled
+        return not deleted
 
-        try:
-            run_twitter_search("from:Galxe", 1, timeout_seconds=15)
-            return True, True, detail, ""
-        except Exception as exc:  # noqa: BLE001
-            return True, False, detail, str(exc)
+    def _job_matches_query(self, job: dict[str, Any], query: str | None) -> bool:
+        token = str(query or "").strip().lower()
+        if not token:
+            return True
+        search_spec = self._job_search_spec(job, allow_missing=True)
+        rule_set = self._job_rule_set(job, allow_missing=True)
+        haystacks = [
+            str(job.get("name") or "").lower(),
+            json.dumps(self._job_keywords_preview(search_spec), ensure_ascii=False).lower(),
+            str(rule_set.get("name") or "").lower(),
+            str(rule_set.get("description") or "").lower(),
+        ]
+        return any(token in value for value in haystacks)
+
+    def _serialize_job(self, job: dict[str, Any], *, last_run: dict[str, Any] | None = None) -> dict[str, Any]:
+        pack = self._load_job_pack(job, allow_missing=True)
+        search_spec = normalize_search_spec(pack.get("search_spec") or default_search_spec())
+        rule_set = self._resolve_rule_set(inline_rule_set=pack.get("rule_set"))
+        payload = copy.deepcopy(job)
+        payload["keywords_json"] = self._job_keywords_preview(search_spec)
+        payload["days"] = int(search_spec.get("days", search_spec.get("days_filter", {}).get("max") or 20) or 20)
+        payload["thresholds_json"] = {**search_spec.get("min_metrics", {}), "mode": search_spec.get("metric_mode", "OR")}
+        payload["levels_json"] = [item.get("id") for item in rule_set.get("definition_json", {}).get("levels", [])]
+        payload["search_spec_json"] = search_spec
+        payload["rule_set_id"] = int(rule_set.get("id") or 0) if rule_set.get("id") is not None else None
+        payload["rule_set_summary"] = self._build_rule_set_summary(rule_set)
+        payload["pack_meta"] = copy.deepcopy(pack.get("meta") or {})
+        payload["last_run_id"] = int(last_run["id"]) if last_run is not None else None
+        payload["last_run_status"] = last_run.get("status") if last_run is not None else None
+        payload["last_run_started_at"] = last_run.get("started_at") if last_run is not None else None
+        payload["last_run_ended_at"] = last_run.get("ended_at") if last_run is not None else None
+        payload["last_run_error_text"] = last_run.get("error_text") if last_run is not None else None
+        payload["last_run_stats"] = copy.deepcopy(last_run.get("stats_json") or {}) if last_run is not None else {}
+        return payload
+
+    def _find_job_index(self, jobs: list[dict[str, Any]], job_id: int) -> int:
+        normalized_id = int(job_id)
+        for index, item in enumerate(jobs):
+            if int(item.get("id") or 0) == normalized_id:
+                return index
+        return -1
 
     def list_rule_sets(self) -> dict[str, Any]:
-        with connect(self.db_path) as conn:
-            rows = conn.execute("SELECT * FROM rule_sets ORDER BY is_builtin DESC, updated_at DESC, id DESC").fetchall()
-        items: list[dict[str, Any]] = []
-        for row in rows:
-            payload = row_to_dict(row)
-            payload["definition_json"] = normalize_rule_set_definition(payload.get("definition_json"))
-            items.append(payload)
-        return {"items": items}
+        return {"items": self._rule_set_catalog()}
 
     def get_rule_set(self, rule_set_id: int) -> dict[str, Any]:
-        with connect(self.db_path) as conn:
-            row = self._load_rule_set_row(conn, rule_set_id)
+        row = self._find_rule_set(rule_set_id)
         if row is None:
             raise ValueError(f"rule_set {rule_set_id} not found")
         return row
 
+    def _rule_set_pack_name(self, rule_set_id: int) -> str | None:
+        for summary in self.task_pack_store.list_packs():
+            try:
+                pack = self.task_pack_store.get_pack(summary["pack_name"])
+            except Exception:
+                continue
+            if int(pack.get("rule_set", {}).get("id") or 0) == int(rule_set_id) and summary["pack_name"].startswith("rule-set-"):
+                return summary["pack_name"]
+        return None
+
+    def _task_pack_payload(
+        self,
+        *,
+        name: str,
+        description: str,
+        search_spec: dict[str, Any],
+        rule_set: dict[str, Any],
+        updated_at: str,
+    ) -> dict[str, Any]:
+        return {
+            "meta": {"name": name, "description": description, "updated_at": updated_at},
+            "search_spec": normalize_search_spec(search_spec),
+            "rule_set": {
+                "id": int(rule_set.get("id") or 0) if rule_set.get("id") is not None else None,
+                "name": str(rule_set.get("name") or "Default Rule Set"),
+                "description": str(rule_set.get("description") or ""),
+                "version": int(rule_set.get("version", 1) or 1),
+                "definition": normalize_rule_set_definition(rule_set.get("definition_json") or rule_set.get("definition") or default_rule_set_definition()),
+            },
+        }
+
+    def _task_pack_response(self, pack_name: str, pack: dict[str, Any]) -> dict[str, Any]:
+        payload = copy.deepcopy(pack)
+        payload["pack_name"] = pack_name
+        payload["pack_path"] = self.task_pack_store.relative_pack_path(pack_name)
+        payload["rule_set_summary"] = self._build_rule_set_summary(self._resolve_rule_set(inline_rule_set=payload.get("rule_set")))
+        payload["query_preview"] = " || ".join(build_query_plan_from_search_spec(payload.get("search_spec") or {}))
+        return payload
+
+    def list_task_packs(self) -> dict[str, Any]:
+        items: list[dict[str, Any]] = []
+        for summary in self.task_pack_store.list_packs():
+            try:
+                pack = self.task_pack_store.get_pack(summary["pack_name"])
+            except Exception:
+                continue
+            item = copy.deepcopy(summary)
+            item["rule_set_summary"] = self._build_rule_set_summary(self._resolve_rule_set(inline_rule_set=pack.get("rule_set")))
+            item["query_preview"] = " || ".join(build_query_plan_from_search_spec(pack.get("search_spec") or {}))
+            items.append(item)
+        return {"items": items}
+
+    def get_task_pack(self, pack_name: str) -> dict[str, Any]:
+        return self._task_pack_response(pack_name, self.task_pack_store.get_pack(pack_name))
+
+    def create_task_pack(self, payload: dict[str, Any]) -> dict[str, Any]:
+        pack_name = str(payload.get("pack_name") or (payload.get("meta") or {}).get("name") or "task-pack").strip()
+        pack = self.task_pack_store.create_pack(pack_name, payload)
+        resolved_name = self.task_pack_store._resolve_pack_path(pack_name).stem
+        return self._task_pack_response(resolved_name, pack)
+
+    def update_task_pack(self, pack_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        pack = self.task_pack_store.update_pack(pack_name, payload)
+        resolved_name = self.task_pack_store._resolve_pack_path(pack_name).stem
+        return self._task_pack_response(resolved_name, pack)
+
     def create_rule_set(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = utc_now_iso()
-        definition = normalize_rule_set_definition(payload.get("definition") or payload.get("definition_json"))
-        with connect(self.db_path) as conn:
-            cur = conn.execute(
-                """
-                INSERT INTO rule_sets (name, description, is_enabled, is_builtin, version, definition_json, created_at, updated_at)
-                VALUES (?, ?, ?, 0, ?, ?, ?, ?)
-                """,
-                (
-                    str(payload.get("name") or "鏂拌鍒欓泦").strip(),
-                    str(payload.get("description") or "").strip(),
-                    1 if payload.get("is_enabled", True) else 0,
-                    int(payload.get("version", 1) or 1),
-                    json.dumps(definition, ensure_ascii=False),
-                    now,
-                    now,
-                ),
-            )
-            rule_set_id = int(cur.lastrowid)
-            row = self._load_rule_set_row(conn, rule_set_id)
-        return row or {}
+        next_rule_set_id = max((int(item.get("id") or 0) for item in self._rule_set_catalog()), default=0) + 1
+        pack_name = f"rule-set-{next_rule_set_id:03d}-{str(payload.get('name') or next_rule_set_id)}"
+        self.task_pack_store.create_pack(
+            pack_name,
+            self._task_pack_payload(
+                name=str(payload.get("name") or f"Rule Set {next_rule_set_id}").strip(),
+                description=str(payload.get("description") or "").strip(),
+                search_spec=default_search_spec(),
+                rule_set={
+                    "id": next_rule_set_id,
+                    "name": str(payload.get("name") or f"Rule Set {next_rule_set_id}").strip(),
+                    "description": str(payload.get("description") or "").strip(),
+                    "version": int(payload.get("version", 1) or 1),
+                    "definition_json": normalize_rule_set_definition(payload.get("definition") or payload.get("definition_json") or default_rule_set_definition()),
+                },
+                updated_at=now,
+            ),
+        )
+        return self.get_rule_set(next_rule_set_id)
 
     def update_rule_set(self, rule_set_id: int, payload: dict[str, Any]) -> dict[str, Any]:
-        now = utc_now_iso()
-        with connect(self.db_path) as conn:
-            current = self._load_rule_set_row(conn, rule_set_id)
-            if current is None:
-                raise ValueError(f"rule_set {rule_set_id} not found")
-            if current.get("is_builtin") and payload.get("delete_builtin"):
-                raise ValueError("cannot delete builtin rule set")
-            definition = normalize_rule_set_definition(payload.get("definition") or payload.get("definition_json") or current["definition_json"])
-            conn.execute(
-                """
-                UPDATE rule_sets
-                SET name = ?, description = ?, is_enabled = ?, version = ?, definition_json = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (
-                    str(payload.get("name") or current["name"]).strip(),
-                    str(payload.get("description") if "description" in payload else current["description"]).strip(),
-                    1 if payload.get("is_enabled", bool(current.get("is_enabled", True))) else 0,
-                    int(payload.get("version", int(current.get("version", 1) or 1)) or 1),
-                    json.dumps(definition, ensure_ascii=False),
-                    now,
-                    rule_set_id,
-                ),
-            )
-            row = self._load_rule_set_row(conn, rule_set_id)
-        return row or {}
+        if int(rule_set_id) == 1:
+            raise ValueError("builtin rule set cannot be updated")
+        pack_name = self._rule_set_pack_name(rule_set_id)
+        if pack_name is None:
+            raise ValueError(f"rule_set {rule_set_id} not found")
+        current = self.task_pack_store.get_pack(pack_name)
+        current_rule_set = self._resolve_rule_set(inline_rule_set=current.get("rule_set"))
+        self.task_pack_store.update_pack(
+            pack_name,
+            self._task_pack_payload(
+                name=str((current.get("meta") or {}).get("name") or current_rule_set.get("name") or f"Rule Set {rule_set_id}").strip(),
+                description=str((current.get("meta") or {}).get("description") or "").strip(),
+                search_spec=current.get("search_spec") or default_search_spec(),
+                rule_set={
+                    **current_rule_set,
+                    "name": str(payload.get("name") or current_rule_set.get("name") or "").strip(),
+                    "description": str(payload.get("description") or current_rule_set.get("description") or "").strip(),
+                    "version": int(payload.get("version", current_rule_set.get("version", 1)) or 1),
+                    "definition_json": normalize_rule_set_definition(payload.get("definition") or payload.get("definition_json") or current_rule_set.get("definition_json")),
+                },
+                updated_at=utc_now_iso(),
+            ),
+        )
+        return self.get_rule_set(rule_set_id)
 
     def delete_rule_set(self, rule_set_id: int) -> dict[str, Any]:
-        with connect(self.db_path) as conn:
-            row = self._load_rule_set_row(conn, rule_set_id)
-            if row is None:
-                raise ValueError(f"rule_set {rule_set_id} not found")
-            if row.get("is_builtin"):
-                raise ValueError("builtin rule set cannot be deleted")
-            in_use = conn.execute("SELECT COUNT(1) FROM search_jobs WHERE rule_set_id = ?", (rule_set_id,)).fetchone()[0]
-            if int(in_use) > 0:
-                raise ValueError("rule set is referenced by existing jobs")
-            conn.execute("DELETE FROM rule_sets WHERE id = ?", (rule_set_id,))
+        row = self.get_rule_set(rule_set_id)
+        if bool(row.get("is_builtin")):
+            raise ValueError("builtin rule set cannot be deleted")
+        in_use = any(int(self._job_rule_set(item, allow_missing=True).get("id") or 0) == int(rule_set_id) for item in self._ensure_builtin_rule_set().get("jobs", []))
+        if in_use:
+            raise ValueError("rule set is referenced by existing jobs")
+        pack_name = self._rule_set_pack_name(rule_set_id)
+        if pack_name is None:
+            raise ValueError(f"rule_set {rule_set_id} not found")
+        self.task_pack_store._resolve_pack_path(pack_name).unlink(missing_ok=False)
         return row
 
     def clone_rule_set(self, rule_set_id: int) -> dict[str, Any]:
@@ -600,16 +588,18 @@ class DesktopService:
             {
                 "name": f"{original['name']} - 副本",
                 "description": original.get("description", ""),
-                "is_enabled": True,
                 "version": int(original.get("version", 1) or 1) + 1,
                 "definition": original["definition_json"],
             }
         )
 
     def create_job(self, payload: dict[str, Any]) -> dict[str, Any]:
+        workspace = self._ensure_builtin_rule_set()
         now = utc_now_iso()
-        interval = int(payload["interval_minutes"])
-        next_run_at = (datetime.now(timezone.utc) + timedelta(minutes=interval)).isoformat()
+        job_id = int(workspace.get("meta", {}).get("next_job_id", 1) or 1)
+        interval = max(1, int(payload["interval_minutes"]))
+        enabled = bool(payload.get("enabled", True))
+        next_run_at = (datetime.now(timezone.utc) + timedelta(minutes=interval)).isoformat() if enabled else None
         search_spec = normalize_search_spec(
             payload.get("search_spec")
             or {
@@ -618,39 +608,39 @@ class DesktopService:
                 "thresholds": payload.get("thresholds", {}),
             }
         )
-        rule_set_id = int(payload.get("rule_set_id") or self._get_default_rule_set_id())
-        with connect(self.db_path) as conn:
-            cur = conn.execute(
-                """
-                INSERT INTO search_jobs
-                (name, keywords_json, interval_minutes, days, thresholds_json, levels_json, enabled, next_run_at, deleted_at, created_at, updated_at, search_spec_json, rule_set_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    payload["name"],
-                    json.dumps(self._job_keywords_preview(search_spec), ensure_ascii=False),
-                    interval,
-                    int(search_spec.get("days", 20)),
-                    json.dumps(
-                        {
-                            **search_spec.get("min_metrics", {}),
-                            "mode": search_spec.get("metric_mode", "OR"),
-                        },
-                        ensure_ascii=False,
-                    ),
-                    json.dumps(payload.get("levels", []), ensure_ascii=False),
-                    1 if payload.get("enabled", True) else 0,
-                    next_run_at if payload.get("enabled", True) else None,
-                    None,
-                    now,
-                    now,
-                    json.dumps(search_spec, ensure_ascii=False),
-                    rule_set_id,
-                ),
-            )
-            job_id = int(cur.lastrowid)
-            row = self._load_job_row(conn, job_id)
-        return row or {}
+        rule_set = self._resolve_rule_set(
+            rule_set_id=int(payload.get("rule_set_id") or 0) or None,
+            inline_rule_set=payload.get("rule_set"),
+        )
+        pack_name = self.task_pack_store._resolve_pack_path(f"job-{job_id:03d}-{str(payload.get('name') or job_id)}").stem
+        self.task_pack_store.upsert_pack(
+            pack_name,
+            self._task_pack_payload(
+                name=str(payload["name"]).strip(),
+                description=f"Automatic job #{job_id}",
+                search_spec=search_spec,
+                rule_set=rule_set,
+                updated_at=now,
+            ),
+        )
+        workspace["jobs"] = [
+            *workspace.get("jobs", []),
+            {
+                "id": job_id,
+                "name": str(payload["name"]).strip(),
+                "enabled": 1 if enabled else 0,
+                "interval_minutes": interval,
+                "pack_name": pack_name,
+                "pack_path": self.task_pack_store.relative_pack_path(pack_name),
+                "next_run_at": next_run_at,
+                "created_at": now,
+                "updated_at": now,
+                "deleted_at": None,
+            },
+        ]
+        workspace.setdefault("meta", {})["next_job_id"] = job_id + 1
+        self._save_workspace(workspace)
+        return self.get_job(job_id)
 
     def list_jobs(
         self,
@@ -659,198 +649,171 @@ class DesktopService:
         query: str | None = None,
         status: str | None = "active",
     ) -> dict[str, Any]:
+        page = max(1, int(page or 1))
+        page_size = max(1, int(page_size or 20))
         offset = max(0, (page - 1) * page_size)
-        where_sql, params = self._job_where_clause(query, status)
-        with connect(self.db_path) as conn:
-            total = conn.execute(f"SELECT COUNT(1) FROM search_jobs AS j {where_sql}", tuple(params)).fetchone()[0]
-            rows = conn.execute(
-                f"""
-                SELECT
-                    j.*,
-                    rs.name AS rule_set_name,
-                    rs.description AS rule_set_description,
-                    rs.is_builtin AS rule_set_is_builtin,
-                    rs.is_enabled AS rule_set_is_enabled,
-                    rs.version AS rule_set_version,
-                    r.id AS last_run_id,
-                    r.status AS last_run_status,
-                    r.started_at AS last_run_started_at,
-                    r.ended_at AS last_run_ended_at,
-                    r.error_text AS last_run_error_text,
-                    r.stats_json AS last_run_stats_json
-                FROM search_jobs AS j
-                LEFT JOIN rule_sets AS rs ON rs.id = j.rule_set_id
-                LEFT JOIN search_runs AS r
-                  ON r.id = (
-                    SELECT sr.id
-                    FROM search_runs AS sr
-                    WHERE sr.job_id = j.id
-                    ORDER BY sr.id DESC
-                    LIMIT 1
-                  )
-                {where_sql}
-                ORDER BY
-                    CASE WHEN j.deleted_at IS NULL THEN 0 ELSE 1 END,
-                    j.updated_at DESC,
-                    j.id DESC
-                LIMIT ? OFFSET ?
-                """,
-                tuple(params + [page_size, offset]),
-            ).fetchall()
+        jobs = [
+            copy.deepcopy(item)
+            for item in self._ensure_builtin_rule_set().get("jobs", [])
+            if self._job_matches_status(item, status) and self._job_matches_query(item, query)
+        ]
+        jobs.sort(key=lambda item: int(item.get("id") or 0), reverse=True)
+        jobs.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+        jobs.sort(key=lambda item: 0 if not item.get("deleted_at") else 1)
+        total = len(jobs)
+        last_runs = self._last_runs_by_job()
         return {
             "page": page,
             "page_size": page_size,
-            "total": int(total),
-            "items": [self._job_row_to_dict(row) for row in rows],
+            "total": total,
+            "items": [self._serialize_job(item, last_run=last_runs.get(int(item["id"]))) for item in jobs[offset : offset + page_size]],
         }
 
     def get_job(self, job_id: int) -> dict[str, Any]:
-        with connect(self.db_path) as conn:
-            row = self._load_job_row(conn, job_id)
-        if row is None:
-            raise ValueError(f"job {job_id} not found")
-        return row
+        last_runs = self._last_runs_by_job()
+        for item in self._ensure_builtin_rule_set().get("jobs", []):
+            if int(item.get("id") or 0) == int(job_id):
+                return self._serialize_job(item, last_run=last_runs.get(int(job_id)))
+        raise ValueError(f"job {job_id} not found")
 
     def update_job(self, job_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        workspace = self._ensure_builtin_rule_set()
         now = utc_now_iso()
-        with connect(self.db_path) as conn:
-            row = conn.execute("SELECT * FROM search_jobs WHERE id = ?", (job_id,)).fetchone()
-            if row is None:
-                raise ValueError(f"job {job_id} not found")
-            current = row_to_dict(row)
-            if current.get("deleted_at"):
-                raise ValueError(f"job {job_id} is deleted")
-
-            name = str(payload.get("name", current["name"])).strip()
-            interval = int(payload.get("interval_minutes", current["interval_minutes"]))
-            existing_search_spec = normalize_search_spec(current.get("search_spec_json"))
-            incoming_search_spec = payload.get("search_spec")
-            if incoming_search_spec is not None:
-                search_spec = normalize_search_spec(incoming_search_spec)
-            elif any(key in payload for key in ("keywords", "days", "thresholds")):
-                search_spec = normalize_search_spec(
-                    {
-                        "keywords": payload.get("keywords", existing_search_spec.get("all_keywords", [])),
-                        "days": payload.get("days", existing_search_spec.get("days", current["days"])),
-                        "thresholds": payload.get("thresholds", existing_search_spec.get("min_metrics", {})),
-                    }
-                )
-            else:
-                search_spec = normalize_search_spec(existing_search_spec)
-            levels = payload.get("levels", current.get("levels_json", []))
-            enabled = bool(payload.get("enabled", bool(current["enabled"])))
-            rule_set_id = int(payload.get("rule_set_id", current.get("rule_set_id") or self._get_default_rule_set_id()))
-
-            next_run_at = None
-            if enabled:
-                next_run_at = (datetime.now(timezone.utc) + timedelta(minutes=interval)).isoformat()
-
-            conn.execute(
-                """
-                UPDATE search_jobs
-                SET name = ?, keywords_json = ?, interval_minutes = ?, days = ?, thresholds_json = ?,
-                    levels_json = ?, enabled = ?, next_run_at = ?, updated_at = ?, search_spec_json = ?, rule_set_id = ?
-                WHERE id = ?
-                """,
-                (
-                    name,
-                    json.dumps(self._job_keywords_preview(search_spec), ensure_ascii=False),
-                    interval,
-                    int(search_spec.get("days", current["days"])),
-                    json.dumps(
-                        {
-                            **search_spec.get("min_metrics", {}),
-                            "mode": search_spec.get("metric_mode", "OR"),
-                        },
-                        ensure_ascii=False,
-                    ),
-                    json.dumps(levels, ensure_ascii=False) if not isinstance(levels, str) else levels,
-                    1 if enabled else 0,
-                    next_run_at,
-                    now,
-                    json.dumps(search_spec, ensure_ascii=False),
-                    rule_set_id,
-                    job_id,
-                ),
+        index = self._find_job_index(workspace.get("jobs", []), job_id)
+        if index < 0:
+            raise ValueError(f"job {job_id} not found")
+        current = copy.deepcopy(workspace["jobs"][index])
+        if current.get("deleted_at"):
+            raise ValueError(f"job {job_id} is deleted")
+        current_pack = self._load_job_pack(current)
+        current_rule_set = self._resolve_rule_set(inline_rule_set=current_pack.get("rule_set"))
+        name = str(payload.get("name", current["name"])).strip()
+        interval = max(1, int(payload.get("interval_minutes", current["interval_minutes"])))
+        if payload.get("search_spec") is not None:
+            search_spec = normalize_search_spec(payload.get("search_spec"))
+        elif any(key in payload for key in ("keywords", "days", "thresholds")):
+            search_spec = normalize_search_spec(
+                {
+                    "keywords": payload.get("keywords", self._job_keywords_preview(current_pack.get("search_spec") or {})),
+                    "days": payload.get("days", 20),
+                    "thresholds": payload.get("thresholds", {}),
+                }
             )
-            updated = self._load_job_row(conn, job_id)
-        return updated or {}
+        else:
+            search_spec = normalize_search_spec(current_pack.get("search_spec") or default_search_spec())
+        if payload.get("rule_set") is not None or payload.get("rule_set_id") is not None:
+            rule_set = self._resolve_rule_set(
+                rule_set_id=int(payload.get("rule_set_id") or 0) or None,
+                inline_rule_set=payload.get("rule_set"),
+            )
+        else:
+            rule_set = current_rule_set
+        enabled = bool(payload.get("enabled", bool(current["enabled"])))
+        next_run_at = (datetime.now(timezone.utc) + timedelta(minutes=interval)).isoformat() if enabled else None
+        self.task_pack_store.upsert_pack(
+            current["pack_name"],
+            self._task_pack_payload(
+                name=name,
+                description=str((current_pack.get("meta") or {}).get("description") or f"Automatic job #{job_id}"),
+                search_spec=search_spec,
+                rule_set=rule_set,
+                updated_at=now,
+            ),
+        )
+        current.update(
+            {
+                "name": name,
+                "interval_minutes": interval,
+                "enabled": 1 if enabled else 0,
+                "next_run_at": next_run_at,
+                "updated_at": now,
+            }
+        )
+        workspace["jobs"][index] = current
+        self._save_workspace(workspace)
+        return self.get_job(job_id)
 
     def delete_job(self, job_id: int) -> dict[str, Any]:
+        workspace = self._ensure_builtin_rule_set()
         now = utc_now_iso()
-        with connect(self.db_path) as conn:
-            row = conn.execute("SELECT * FROM search_jobs WHERE id = ?", (job_id,)).fetchone()
-            if row is None:
-                raise ValueError(f"job {job_id} not found")
-            conn.execute(
-                """
-                UPDATE search_jobs
-                SET enabled = 0, next_run_at = NULL, deleted_at = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (now, now, job_id),
-            )
-            updated = self._load_job_row(conn, job_id)
-        return updated or {}
+        index = self._find_job_index(workspace.get("jobs", []), job_id)
+        if index < 0:
+            raise ValueError(f"job {job_id} not found")
+        workspace["jobs"][index]["enabled"] = 0
+        workspace["jobs"][index]["next_run_at"] = None
+        workspace["jobs"][index]["deleted_at"] = now
+        workspace["jobs"][index]["updated_at"] = now
+        self._save_workspace(workspace)
+        return self.get_job(job_id)
 
     def restore_job(self, job_id: int) -> dict[str, Any]:
+        workspace = self._ensure_builtin_rule_set()
         now = utc_now_iso()
-        with connect(self.db_path) as conn:
-            row = conn.execute("SELECT * FROM search_jobs WHERE id = ?", (job_id,)).fetchone()
-            if row is None:
-                raise ValueError(f"job {job_id} not found")
-            conn.execute(
-                "UPDATE search_jobs SET deleted_at = NULL, enabled = 0, next_run_at = NULL, updated_at = ? WHERE id = ?",
-                (now, job_id),
-            )
-            updated = self._load_job_row(conn, job_id)
-        return updated or {}
+        index = self._find_job_index(workspace.get("jobs", []), job_id)
+        if index < 0:
+            raise ValueError(f"job {job_id} not found")
+        workspace["jobs"][index]["deleted_at"] = None
+        workspace["jobs"][index]["enabled"] = 0
+        workspace["jobs"][index]["next_run_at"] = None
+        workspace["jobs"][index]["updated_at"] = now
+        self._save_workspace(workspace)
+        return self.get_job(job_id)
 
     def purge_job(self, job_id: int) -> dict[str, Any]:
-        with connect(self.db_path) as conn:
-            row = self._load_job_row(conn, job_id)
-            if row is None:
-                raise ValueError(f"job {job_id} not found")
-            conn.execute("DELETE FROM search_runs WHERE job_id = ?", (job_id,))
-            conn.execute("DELETE FROM search_jobs WHERE id = ?", (job_id,))
+        workspace = self._ensure_builtin_rule_set()
+        row = self.get_job(job_id)
+        workspace["jobs"] = [item for item in workspace.get("jobs", []) if int(item.get("id") or 0) != int(job_id)]
+        self._save_workspace(workspace)
+        self.runtime_store.delete_runs_for_job(int(job_id))
         return row
 
     def toggle_job(self, job_id: int, enabled: bool) -> dict[str, Any]:
+        workspace = self._ensure_builtin_rule_set()
         now = utc_now_iso()
-        with connect(self.db_path) as conn:
-            row = conn.execute("SELECT * FROM search_jobs WHERE id = ?", (job_id,)).fetchone()
-            if row is None:
-                raise ValueError(f"job {job_id} not found")
-            if row["deleted_at"]:
-                raise ValueError(f"job {job_id} is deleted")
-            interval = int(row["interval_minutes"])
-            next_run_at = (datetime.now(timezone.utc) + timedelta(minutes=interval)).isoformat() if enabled else None
-            conn.execute(
-                "UPDATE search_jobs SET enabled = ?, next_run_at = ?, updated_at = ? WHERE id = ?",
-                (1 if enabled else 0, next_run_at, now, job_id),
-            )
-            updated = self._load_job_row(conn, job_id)
-        return updated or {}
+        index = self._find_job_index(workspace.get("jobs", []), job_id)
+        if index < 0:
+            raise ValueError(f"job {job_id} not found")
+        current = workspace["jobs"][index]
+        if current.get("deleted_at"):
+            raise ValueError(f"job {job_id} is deleted")
+        interval = int(current["interval_minutes"])
+        current["enabled"] = 1 if enabled else 0
+        current["next_run_at"] = (datetime.now(timezone.utc) + timedelta(minutes=interval)).isoformat() if enabled else None
+        current["updated_at"] = now
+        workspace["jobs"][index] = current
+        self._save_workspace(workspace)
+        return self.get_job(job_id)
 
     def run_job_now(self, job_id: int) -> dict[str, Any]:
-        with connect(self.db_path) as conn:
-            row = conn.execute("SELECT * FROM search_jobs WHERE id = ?", (job_id,)).fetchone()
-            if row is None:
-                raise ValueError(f"job {job_id} not found")
-            if row["deleted_at"]:
-                raise ValueError(f"job {job_id} is deleted")
-            job = row_to_dict(row)
+        workspace = self._ensure_builtin_rule_set()
+        index = self._find_job_index(workspace.get("jobs", []), job_id)
+        if index < 0:
+            raise ValueError(f"job {job_id} not found")
+        job = copy.deepcopy(workspace["jobs"][index])
+        if job.get("deleted_at"):
+            raise ValueError(f"job {job_id} is deleted")
+        pack = self._load_job_pack(job)
+        rule_set = self._resolve_rule_set(inline_rule_set=pack.get("rule_set"))
         report = self.run_manual(
             {
-                "search_spec": normalize_search_spec(job.get("search_spec_json")),
-                "rule_set_id": job.get("rule_set_id") or self._get_default_rule_set_id(),
+                "search_spec": normalize_search_spec(pack.get("search_spec") or default_search_spec()),
+                "rule_set": {
+                    "id": rule_set.get("id"),
+                    "name": rule_set.get("name"),
+                    "description": rule_set.get("description"),
+                    "version": rule_set.get("version"),
+                    "definition": rule_set.get("definition_json"),
+                },
             },
             trigger_type="auto",
             job_id=job_id,
         )
-        with connect(self.db_path) as conn:
-            next_run_at = (datetime.now(timezone.utc) + timedelta(minutes=int(job["interval_minutes"]))).isoformat()
-            conn.execute("UPDATE search_jobs SET next_run_at = ?, updated_at = ? WHERE id = ?", (next_run_at, utc_now_iso(), job_id))
+        workspace = self._ensure_builtin_rule_set()
+        index = self._find_job_index(workspace.get("jobs", []), job_id)
+        if index >= 0:
+            workspace["jobs"][index]["next_run_at"] = (datetime.now(timezone.utc) + timedelta(minutes=int(job["interval_minutes"]))).isoformat()
+            workspace["jobs"][index]["updated_at"] = utc_now_iso()
+            self._save_workspace(workspace)
         return report
 
     def run_manual(self, payload: dict[str, Any], trigger_type: str = "manual", job_id: int | None = None) -> dict[str, Any]:
@@ -932,7 +895,6 @@ class DesktopService:
                 "version": int(rule_set.get("version", 1) or 1),
                 "is_builtin": bool(rule_set.get("is_builtin")),
             }
-
             report = {
                 "run_id": run_id,
                 "status": "success",
@@ -956,35 +918,19 @@ class DesktopService:
                 },
                 "errors": run_errors,
             }
-            self._finish_run(run_id, "success", report["stats"], "")
+            self._finish_run(run_id, "success", report["stats"], "\n".join(run_errors))
             return report
         except Exception as exc:  # noqa: BLE001
             self._finish_run(run_id, "failed", {}, str(exc))
             raise
 
     def get_run(self, run_id: int) -> dict[str, Any]:
-        with connect(self.db_path) as conn:
-            row = conn.execute("SELECT * FROM search_runs WHERE id = ?", (run_id,)).fetchone()
-            if row is None:
-                raise ValueError(f"run {run_id} not found")
-            return row_to_dict(row)
+        return self.runtime_store.get_run(int(run_id))
 
     def list_runs(self, page: int = 1, page_size: int = 50) -> dict[str, Any]:
         page = max(1, int(page or 1))
         page_size = max(1, min(200, int(page_size or 50)))
-        offset = (page - 1) * page_size
-        with connect(self.db_path) as conn:
-            total = int(conn.execute("SELECT COUNT(1) FROM search_runs").fetchone()[0])
-            rows = conn.execute(
-                """
-                SELECT id, job_id, trigger_type, status, started_at, ended_at, error_text, stats_json
-                FROM search_runs
-                ORDER BY id DESC
-                LIMIT ? OFFSET ?
-                """,
-                (page_size, offset),
-            ).fetchall()
-        return {"page": page, "page_size": page_size, "total": total, "items": [row_to_dict(row) for row in rows]}
+        return self.runtime_store.list_runs(page=page, page_size=page_size)
 
     def get_runtime_logs(self) -> dict[str, Any]:
         items: list[dict[str, Any]] = []
@@ -1005,7 +951,6 @@ class DesktopService:
                     payload["error"] = str(exc)
             items.append(payload)
         return {"items": items}
-
     def _normalize_item_table(self, table: str | None) -> str:
         return "raw" if str(table or "").strip().lower() == "raw" else "curated"
 
@@ -1297,6 +1242,75 @@ class DesktopService:
             "rows_after": rows_after,
         }
 
+    def _load_health_snapshots(self) -> dict[str, dict[str, Any]]:
+        payload = self.runtime_store.load_health_snapshots()
+        return payload if isinstance(payload, dict) else {}
+
+    def _save_health_snapshots(self, payload: dict[str, Any]) -> None:
+        self.runtime_store.save_health_snapshots(payload)
+
+    def _merge_health_snapshot(
+        self,
+        target: str,
+        previous: dict[str, Any] | None,
+        configured: bool,
+        connected: bool,
+        detail: dict[str, Any],
+        checked_at: str,
+        last_error: str,
+    ) -> dict[str, Any]:
+        previous = previous or {}
+        previous_detail = previous.get("detail", {}) if isinstance(previous.get("detail"), dict) else {}
+        resolved_connected = True if connected else bool(previous.get("connected")) and configured
+        resolved_detail = {**previous_detail, **detail}
+        snapshot = {
+            "configured": configured,
+            "connected": resolved_connected,
+            "detail": resolved_detail,
+            "last_checked_at": checked_at,
+            "last_error": last_error,
+        }
+        return snapshot
+
+    def _probe_database_health(self) -> tuple[bool, bool, dict[str, Any], str]:
+        db_path = self.db_path.resolve()
+        detail: dict[str, Any] = {
+            "db_path": str(db_path),
+            "db_exists": db_path.exists(),
+            "job_count": len(self._ensure_builtin_rule_set().get("jobs", [])),
+            "run_count": len(self._list_all_runs()),
+        }
+        try:
+            with connect(self.db_path) as conn:
+                conn.execute("SELECT 1").fetchone()
+            return True, True, detail, ""
+        except Exception as exc:  # noqa: BLE001
+            return True, False, detail, str(exc)
+
+    def _probe_x_health(self) -> tuple[bool, bool, dict[str, Any], str]:
+        browser_hint = os.getenv("TWITTER_BROWSER") or "default"
+        has_env_auth = bool(os.getenv("TWITTER_AUTH_TOKEN") and os.getenv("TWITTER_CT0"))
+        auth_source = "environment" if has_env_auth else "unknown"
+        configured = has_env_auth
+        try:
+            find_twitter_cli()
+            auth_source = "twitter-cli"
+            configured = True
+        except Exception:
+            pass
+        detail = {
+            "auth_source": auth_source,
+            "browser_hint": browser_hint if configured else "unknown",
+            "account_hint": "unknown",
+        }
+        if not configured:
+            return False, False, detail, "x_not_configured"
+        try:
+            run_twitter_search("from:Galxe", 1, timeout_seconds=15)
+            return True, True, detail, ""
+        except Exception as exc:  # noqa: BLE001
+            return True, False, detail, str(exc)
+
     def health(self) -> dict[str, Any]:
         previous = self._load_health_snapshots()
         checked_at = utc_now_iso()
@@ -1321,6 +1335,8 @@ class DesktopService:
             checked_at,
             x_error,
         )
+
+        self._save_health_snapshots({"db": db_snapshot, "x": x_snapshot})
 
         return {
             "summary": {
@@ -1352,18 +1368,15 @@ class DesktopService:
         now = datetime.now(timezone.utc)
         triggered = 0
         failed = 0
-        with connect(self.db_path) as conn:
-            rows = conn.execute(
-                """
-                SELECT * FROM search_jobs
-                WHERE enabled = 1
-                  AND next_run_at IS NOT NULL
-                  AND next_run_at <= ?
-                ORDER BY id ASC
-                """,
-                (now.isoformat(),),
-            ).fetchall()
-            jobs = [row_to_dict(row) for row in rows]
+        jobs = [
+            copy.deepcopy(item)
+            for item in self._ensure_builtin_rule_set().get("jobs", [])
+            if bool(item.get("enabled"))
+            and not bool(item.get("deleted_at"))
+            and item.get("next_run_at")
+            and (_parse_item_created_at(item.get("next_run_at")) or datetime.max.replace(tzinfo=timezone.utc)) <= now
+        ]
+        jobs.sort(key=lambda item: int(item.get("id") or 0))
         for job in jobs:
             try:
                 self.run_job_now(int(job["id"]))
@@ -1373,27 +1386,16 @@ class DesktopService:
         return {"triggered": triggered, "failed": failed}
 
     def _create_run(self, job_id: int | None, trigger_type: str) -> int:
-        with connect(self.db_path) as conn:
-            cur = conn.execute(
-                """
-                INSERT INTO search_runs (job_id, trigger_type, status, stats_json, started_at)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (job_id, trigger_type, "running", "{}", utc_now_iso()),
-            )
-            return int(cur.lastrowid)
+        return self.runtime_store.create_run(job_id=job_id, trigger_type=trigger_type, started_at=utc_now_iso())
 
     def _finish_run(self, run_id: int, status: str, stats: dict[str, Any], error_text: str) -> None:
-        with connect(self.db_path) as conn:
-            conn.execute(
-                """
-                UPDATE search_runs
-                SET status = ?, stats_json = ?, ended_at = ?, error_text = ?
-                WHERE id = ?
-                """,
-                (status, json.dumps(stats, ensure_ascii=False), utc_now_iso(), error_text or None, run_id),
-            )
-
+        self.runtime_store.finish_run(
+            int(run_id),
+            status=status,
+            stats=copy.deepcopy(stats),
+            error_text=error_text or "",
+            ended_at=utc_now_iso(),
+        )
     def _store_raw(self, run_id: int, items: list[SearchResult]) -> None:
         now = utc_now_iso()
         with connect(self.db_path) as conn:

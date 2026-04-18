@@ -137,6 +137,71 @@ export type RuleSetSummary = {
   is_builtin: boolean;
 };
 
+export type WorkspaceMeta = {
+  updated_at: string;
+  next_job_id: number;
+};
+
+export type WorkspaceEnvironment = {
+  db_path: string;
+  runtime_dir: string;
+  env_file: string;
+  twitter_browser: string;
+  twitter_chrome_profile: string;
+};
+
+export type JobRegistryRecord = {
+  id: number;
+  name: string;
+  enabled: number;
+  interval_minutes: number;
+  pack_name: string;
+  pack_path: string;
+  next_run_at: string | null;
+  created_at: string;
+  updated_at: string;
+  deleted_at?: string | null;
+};
+
+export type WorkspaceConfig = {
+  version: number;
+  meta: WorkspaceMeta;
+  environment: WorkspaceEnvironment;
+  jobs: JobRegistryRecord[];
+};
+
+export type TaskPackSummary = {
+  pack_name: string;
+  pack_path: string;
+  name: string;
+  description: string;
+  updated_at: string;
+  rule_set_summary?: RuleSetSummary | null;
+  query_preview?: string;
+};
+
+export type TaskPackFile = {
+  version: number;
+  kind: "task_pack";
+  pack_name: string;
+  pack_path: string;
+  meta: {
+    name: string;
+    description: string;
+    updated_at: string;
+  };
+  search_spec: SearchSpec;
+  rule_set: {
+    id?: number | null;
+    name: string;
+    description: string;
+    version: number;
+    definition: RuleSetDefinition;
+  };
+  rule_set_summary?: RuleSetSummary | null;
+  query_preview?: string;
+};
+
 export type CollectorResultItem = {
   query_name: string;
   query: string;
@@ -197,6 +262,13 @@ export type JobRecord = {
   search_spec_json: SearchSpec;
   rule_set_id?: number | null;
   rule_set_summary?: RuleSetSummary | null;
+  pack_name: string;
+  pack_path: string;
+  pack_meta?: {
+    name?: string;
+    description?: string;
+    updated_at?: string;
+  };
   enabled: number;
   next_run_at: string | null;
   created_at: string;
@@ -343,6 +415,63 @@ export function health() {
   return req<HealthSnapshot>("/health");
 }
 
+
+export function getWorkspace() {
+  return req<WorkspaceConfig>("/workspace");
+}
+
+export function updateWorkspace(payload: WorkspaceConfig) {
+  return req<WorkspaceConfig>("/workspace", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function importWorkspace(payload: WorkspaceConfig) {
+  return req<WorkspaceConfig>("/workspace/import", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function exportWorkspace() {
+  return req<WorkspaceConfig>("/workspace/export");
+}
+
+export function listTaskPacks() {
+  return req<{ items: TaskPackSummary[] }>("/task-packs");
+}
+
+export function getTaskPack(packName: string) {
+  return req<TaskPackFile>(`/task-packs/${encodeURIComponent(packName)}`);
+}
+
+export function createTaskPack(payload: {
+  pack_name?: string;
+  meta: { name: string; description?: string; updated_at?: string };
+  search_spec: SearchSpec;
+  rule_set: { id?: number | null; name: string; description?: string; version?: number; definition: RuleSetDefinition };
+}) {
+  return req<TaskPackFile>("/task-packs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateTaskPack(
+  packName: string,
+  payload: {
+    meta: { name: string; description?: string; updated_at?: string };
+    search_spec: SearchSpec;
+    rule_set: { id?: number | null; name: string; description?: string; version?: number; definition: RuleSetDefinition };
+  },
+) {
+  return req<TaskPackFile>(`/task-packs/${encodeURIComponent(packName)}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function listJobs(params: { page?: number; page_size?: number; query?: string; status?: string }) {
   const q = new URLSearchParams();
   if (params.page) q.set("page", String(params.page));
@@ -414,7 +543,8 @@ export function createJob(payload: {
   interval_minutes: number;
   enabled: boolean;
   search_spec: SearchSpec;
-  rule_set_id: number;
+  rule_set?: { id?: number | null; name: string; description?: string; version?: number; definition: RuleSetDefinition };
+  rule_set_id?: number | null;
 }) {
   return req<JobRecord>("/jobs/create", { method: "POST", body: JSON.stringify(payload) });
 }
@@ -426,7 +556,8 @@ export function updateJob(
     interval_minutes: number;
     enabled: boolean;
     search_spec: SearchSpec;
-    rule_set_id: number;
+    rule_set?: { id?: number | null; name: string; description?: string; version?: number; definition: RuleSetDefinition };
+    rule_set_id: number | null;
   }>,
 ) {
   return req<JobRecord>(`/jobs/${id}/update`, { method: "POST", body: JSON.stringify(payload) });

@@ -18,7 +18,14 @@ class DesktopServiceTests(unittest.TestCase):
             shutil.rmtree(self.test_dir)
         self.test_dir.mkdir(parents=True, exist_ok=True)
         self.db_path = self.test_dir / "collector.db"
-        self.service = DesktopService(db_path=self.db_path, env_file=".env")
+        self.workspace_path = self.test_dir / "config" / "workspace.json"
+        self.runtime_dir = self.test_dir / "runtime"
+        self.service = DesktopService(
+            db_path=self.db_path,
+            env_file=".env",
+            workspace_path=self.workspace_path,
+            runtime_dir=self.runtime_dir,
+        )
 
     def tearDown(self) -> None:
         if self.test_dir.exists():
@@ -148,6 +155,64 @@ class DesktopServiceTests(unittest.TestCase):
         cloned = self.service.clone_rule_set(int(builtin["id"]))
         self.assertFalse(cloned["is_builtin"])
         self.assertIn("\u526f\u672c", cloned["name"])
+
+    def test_list_task_packs_bootstraps_legacy_workspace(self) -> None:
+        legacy_root = self.test_dir / "legacy_task_pack_bootstrap"
+        workspace_path = legacy_root / "config" / "workspace.json"
+        workspace_path.parent.mkdir(parents=True, exist_ok=True)
+        db_path = legacy_root / "collector.db"
+        runtime_dir = legacy_root / "runtime"
+        legacy_workspace = {
+            "version": 1,
+            "meta": {"updated_at": "2026-04-14T00:00:00+00:00", "next_job_id": 12},
+            "manual": {
+                "draft": {"all_keywords": ["alpha"]},
+                "presets": [],
+                "selected_rule_set_id": 2,
+            },
+            "rule_sets": [
+                {
+                    "id": 2,
+                    "name": "Legacy Rule Set",
+                    "description": "from workspace",
+                    "is_enabled": True,
+                    "is_builtin": False,
+                    "version": 1,
+                    "definition_json": {"levels": [{"level": "A", "min_score": 80}], "rules": []},
+                }
+            ],
+            "jobs": [
+                {
+                    "id": 11,
+                    "name": "legacy-watch",
+                    "enabled": True,
+                    "interval_minutes": 60,
+                    "next_run_at": None,
+                    "created_at": "2026-04-14T00:00:00+00:00",
+                    "updated_at": "2026-04-14T00:00:00+00:00",
+                    "deleted_at": None,
+                    "rule_set_id": 2,
+                    "search_spec_json": {
+                        "all_keywords": ["alpha"],
+                        "language_mode": "en",
+                        "days_filter": {"mode": "lte", "max": 10},
+                    },
+                }
+            ],
+        }
+        workspace_path.write_text(json.dumps(legacy_workspace, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+        service = DesktopService(db_path=db_path, env_file=".env", workspace_path=workspace_path, runtime_dir=runtime_dir)
+
+        payload = service.list_task_packs()
+
+        self.assertEqual(payload["items"][0]["pack_name"], "job-011-legacy-watch")
+        self.assertEqual(payload["items"][0]["query_preview"], "alpha lang:en -is:retweet")
+        self.assertTrue((legacy_root / "config" / "packs" / "job-011-legacy-watch.json").exists())
+
+        saved = json.loads(workspace_path.read_text(encoding="utf-8"))
+        self.assertEqual(set(saved.keys()), {"version", "meta", "environment", "jobs"})
+        self.assertTrue(saved["jobs"][0]["pack_path"].endswith("config/packs/job-011-legacy-watch.json"))
 
     def test_create_and_toggle_job_with_new_search_spec(self) -> None:
         default_rule_set_id = self.service.list_rule_sets()["items"][0]["id"]

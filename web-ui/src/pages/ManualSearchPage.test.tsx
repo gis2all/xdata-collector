@@ -4,93 +4,137 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ManualSearchPage } from "./ManualSearchPage";
 
 vi.mock("../api", () => ({
-  listRuleSets: vi.fn(),
+  listTaskPacks: vi.fn(),
+  getTaskPack: vi.fn(),
+  createTaskPack: vi.fn(),
+  updateTaskPack: vi.fn(),
   runManual: vi.fn(),
-  createRuleSet: vi.fn(),
-  updateRuleSet: vi.fn(),
-  deleteRuleSet: vi.fn(),
-  cloneRuleSet: vi.fn(),
 }));
 
 vi.mock("../components/RuleSetEditor", () => ({
   RuleSetEditor: () => <div data-testid="rule-set-editor" />,
 }));
 
-import { listRuleSets, runManual } from "../api";
+import { createTaskPack, getTaskPack, listTaskPacks, runManual } from "../api";
 
-const listRuleSetsMock = vi.mocked(listRuleSets);
+const listTaskPacksMock = vi.mocked(listTaskPacks);
+const getTaskPackMock = vi.mocked(getTaskPack);
+const createTaskPackMock = vi.mocked(createTaskPack);
 const runManualMock = vi.mocked(runManual);
+
+const taskPackSummary = {
+  pack_name: "alpha-watch",
+  pack_path: "config/packs/alpha-watch.json",
+  name: "Alpha Watch",
+  description: "watch alpha",
+  updated_at: "2026-04-14T00:00:00+00:00",
+};
+
+const taskPackFile = {
+  version: 1,
+  kind: "task_pack",
+  pack_name: "alpha-watch",
+  pack_path: "config/packs/alpha-watch.json",
+  meta: {
+    name: "Alpha Watch",
+    description: "watch alpha",
+    updated_at: "2026-04-14T00:00:00+00:00",
+  },
+  search_spec: {
+    all_keywords: ["alpha"],
+    exact_phrases: [],
+    any_keywords: [],
+    exclude_keywords: [],
+    authors_include: [],
+    authors_exclude: [],
+    language_mode: "zh_en",
+    days_filter: { mode: "lte", max: 20, min: null },
+    metric_filters: {
+      views: { mode: "any", min: null, max: null },
+      likes: { mode: "any", min: null, max: null },
+      replies: { mode: "any", min: null, max: null },
+      retweets: { mode: "any", min: null, max: null },
+    },
+    metric_filters_explicit: true,
+    max_results: 40,
+    include_retweets: false,
+    include_replies: true,
+    require_media: false,
+    require_links: false,
+    raw_query: "",
+  },
+  rule_set: {
+    id: 1,
+    name: "Default Rule Set",
+    description: "builtin",
+    version: 1,
+    definition: { levels: [], rules: [] },
+  },
+};
 
 describe("ManualSearchPage", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    window.localStorage.clear();
-    listRuleSetsMock.mockResolvedValue({
-      items: [
-        {
-          id: 1,
-          name: "\u9ed8\u8ba4\u89c4\u5219\u96c6",
-          description: "",
-          is_enabled: true,
-          is_builtin: true,
-          version: 1,
-          definition_json: { levels: [], rules: [] },
-        },
-      ],
-    });
+    listTaskPacksMock.mockResolvedValue({ items: [taskPackSummary] } as any);
+    getTaskPackMock.mockResolvedValue(taskPackFile as any);
+    createTaskPackMock.mockResolvedValue(taskPackFile as any);
   });
 
-  it("renders multiple final queries after a zh_en manual run", async () => {
+  it("renders multiple final queries after a manual run", async () => {
     runManualMock.mockResolvedValue({
       run_id: 1,
       status: "success",
-      search_spec: {
-        all_keywords: ["BTC"],
-        exact_phrases: [],
-        any_keywords: [],
-        exclude_keywords: [],
-        authors_include: [],
-        authors_exclude: [],
-        language_mode: "zh_en",
-        days_filter: { mode: "lte", max: 20, min: null },
-        metric_filters: {
-          views: { mode: "gte", min: 200, max: null },
-          likes: { mode: "any", min: null, max: null },
-          replies: { mode: "gte", min: 1, max: null },
-          retweets: { mode: "any", min: null, max: null },
-        },
-        metric_filters_explicit: true,
-        max_results: 40,
-        include_retweets: false,
-        include_replies: true,
-        require_media: false,
-        require_links: false,
-        raw_query: "",
-      },
-      final_query: "BTC lang:zh || BTC lang:en",
-      final_queries: ["BTC lang:zh -is:retweet", "BTC lang:en -is:retweet"],
-      rule_set_summary: { id: 1, name: "\u9ed8\u8ba4\u89c4\u5219\u96c6", description: "", version: 1, is_builtin: true },
+      search_spec: taskPackFile.search_spec,
+      final_query: "alpha lang:zh || alpha lang:en",
+      final_queries: ["alpha lang:zh -is:retweet", "alpha lang:en -is:retweet"],
+      rule_set_summary: { id: 1, name: "Default Rule Set", description: "", version: 1, is_builtin: true },
       raw_total: 1,
       matched_total: 0,
       raw_items: [],
       matched_items: [],
       stats: {},
       errors: [],
-    });
+    } as any);
 
     render(<ManualSearchPage />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("manual-search-page")).toBeInTheDocument();
+      expect(listTaskPacksMock).toHaveBeenCalled();
     });
 
     fireEvent.click(screen.getByTestId("manual-run-button"));
 
     await waitFor(() => {
-      expect(screen.getByText("BTC lang:zh -is:retweet")).toBeInTheDocument();
+      expect(screen.getByText("alpha lang:zh -is:retweet")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("BTC lang:en -is:retweet")).toBeInTheDocument();
-    expect(screen.getByText("\u5b9e\u9645\u67e5\u8be2")).toBeInTheDocument();
+    expect(runManualMock).toHaveBeenCalled();
+    expect(screen.getByText("alpha lang:en -is:retweet")).toBeInTheDocument();
+  });
+
+  it("imports a task pack and exports the current editor state", async () => {
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("manual-alpha");
+
+    render(<ManualSearchPage />);
+
+    const select = await screen.findByLabelText("manual-pack-select");
+    fireEvent.change(select, { target: { value: "alpha-watch" } });
+    fireEvent.click(screen.getByLabelText("import-manual-pack"));
+
+    await waitFor(() => {
+      expect(getTaskPackMock).toHaveBeenCalledWith("alpha-watch");
+    });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("alpha")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText("export-manual-pack"));
+
+    await waitFor(() => {
+      expect(createTaskPackMock).toHaveBeenCalled();
+    });
+
+    promptSpy.mockRestore();
   });
 });

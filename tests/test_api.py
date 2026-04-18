@@ -12,6 +12,48 @@ class FakeService:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
 
+    def get_workspace(self) -> dict:
+        self.calls.append(("get_workspace", None))
+        return {
+            "version": 2,
+            "meta": {"updated_at": "2026-04-14T00:00:00+00:00", "next_job_id": 2},
+            "environment": {"db_path": "data/app.db", "runtime_dir": "runtime", "env_file": ".env", "twitter_browser": "", "twitter_chrome_profile": ""},
+            "jobs": [],
+        }
+
+    def update_workspace(self, payload: dict) -> dict:
+        self.calls.append(("update_workspace", payload))
+        return payload
+
+    def import_workspace(self, payload: dict) -> dict:
+        self.calls.append(("import_workspace", payload))
+        return payload
+
+    def export_workspace(self) -> dict:
+        self.calls.append(("export_workspace", None))
+        return {
+            "version": 2,
+            "meta": {"updated_at": "2026-04-14T00:00:00+00:00", "next_job_id": 2},
+            "environment": {"db_path": "data/app.db", "runtime_dir": "runtime", "env_file": ".env", "twitter_browser": "", "twitter_chrome_profile": ""},
+            "jobs": [],
+        }
+
+    def list_task_packs(self) -> dict:
+        self.calls.append(("list_task_packs", None))
+        return {"items": [{"pack_name": "alpha-watch", "pack_path": "config/packs/alpha-watch.json", "name": "Alpha Watch", "description": "watch alpha", "updated_at": "2026-04-14T00:00:00+00:00"}]}
+
+    def get_task_pack(self, pack_name: str) -> dict:
+        self.calls.append(("get_task_pack", pack_name))
+        return {"pack_name": pack_name, "pack_path": f"config/packs/{pack_name}.json", "version": 1, "kind": "task_pack", "meta": {"name": "Alpha Watch", "description": "watch alpha", "updated_at": "2026-04-14T00:00:00+00:00"}, "search_spec": {"all_keywords": ["alpha"]}, "rule_set": {"id": 1, "name": "Default Rule Set", "description": "", "version": 1, "definition": {"levels": [], "rules": []}}}
+
+    def create_task_pack(self, payload: dict) -> dict:
+        self.calls.append(("create_task_pack", payload))
+        return {"pack_name": "alpha-watch", **payload}
+
+    def update_task_pack(self, pack_name: str, payload: dict) -> dict:
+        self.calls.append(("update_task_pack", {"pack_name": pack_name, "payload": payload}))
+        return {"pack_name": pack_name, **payload}
+
     def list_runs(self, **kwargs) -> dict:
         self.calls.append(("list_runs", kwargs))
         return {"page": kwargs["page"], "page_size": kwargs["page_size"], "total": 1, "items": [{"id": 8, "status": "failed", "trigger_type": "manual", "job_id": None, "started_at": "2026-04-13T00:00:00+00:00", "ended_at": "2026-04-13T00:01:00+00:00", "error_text": "boom", "stats_json": {}}]}
@@ -154,6 +196,15 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(json.loads(body.decode("utf-8"))["summary"]["source"], "backend_snapshot")
         self.assertEqual(service.calls[0][0], "health")
 
+    def test_options_allows_put_for_workspace_save(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, headers, _ = self.request(server, "OPTIONS", "/workspace")
+
+        self.assertEqual(status, 204)
+        self.assertEqual(headers["Access-Control-Allow-Origin"], "*")
+        self.assertIn("PUT", headers["Access-Control-Allow-Methods"])
+
     def test_get_jobs_passes_query_params_to_service(self) -> None:
         service = FakeService()
         with serve(service) as server:
@@ -256,6 +307,98 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(status, 404)
         self.assertEqual(json.loads(body.decode("utf-8"))["error"], "not found")
 
+
+    def test_get_workspace_returns_workspace_payload(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(server, "GET", "/workspace")
+
+        self.assertEqual(status, 200)
+        payload = json.loads(body.decode("utf-8"))
+        self.assertEqual(payload["environment"]["db_path"], "data/app.db")
+        self.assertEqual(service.calls[0], ("get_workspace", None))
+
+    def test_put_workspace_updates_workspace_payload(self) -> None:
+        service = FakeService()
+        payload = {"version": 2, "meta": {"updated_at": "2026-04-14T00:00:00+00:00", "next_job_id": 2}, "environment": {"db_path": "data/app.db", "runtime_dir": "runtime", "env_file": ".env", "twitter_browser": "", "twitter_chrome_profile": ""}, "jobs": []}
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "PUT",
+                "/workspace",
+                body=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8"))["environment"]["runtime_dir"], "runtime")
+        self.assertEqual(service.calls[0], ("update_workspace", payload))
+
+    def test_post_workspace_import_dispatches_payload(self) -> None:
+        service = FakeService()
+        payload = {"version": 2, "meta": {"updated_at": "2026-04-14T00:00:00+00:00", "next_job_id": 3}, "environment": {"db_path": "data/alt.db", "runtime_dir": "runtime", "env_file": ".env", "twitter_browser": "", "twitter_chrome_profile": ""}, "jobs": []}
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "POST",
+                "/workspace/import",
+                body=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8"))["environment"]["db_path"], "data/alt.db")
+        self.assertEqual(service.calls[0], ("import_workspace", payload))
+
+    def test_get_workspace_export_dispatches_to_service(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(server, "GET", "/workspace/export")
+
+        self.assertEqual(status, 200)
+        payload = json.loads(body.decode("utf-8"))
+        self.assertEqual(payload["version"], 2)
+        self.assertEqual(service.calls[0], ("export_workspace", None))
+
+    def test_get_task_packs_dispatches_to_service(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(server, "GET", "/task-packs")
+
+        self.assertEqual(status, 200)
+        payload = json.loads(body.decode("utf-8"))
+        self.assertEqual(payload["items"][0]["pack_name"], "alpha-watch")
+        self.assertEqual(service.calls[0], ("list_task_packs", None))
+
+    def test_get_task_pack_dispatches_to_service(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(server, "GET", "/task-packs/alpha-watch")
+
+        self.assertEqual(status, 200)
+        payload = json.loads(body.decode("utf-8"))
+        self.assertEqual(payload["pack_name"], "alpha-watch")
+        self.assertEqual(service.calls[0], ("get_task_pack", "alpha-watch"))
+
+    def test_post_task_pack_dispatches_payload(self) -> None:
+        service = FakeService()
+        payload = {"meta": {"name": "Alpha Watch"}, "search_spec": {"all_keywords": ["alpha"]}, "rule_set": {"name": "Default Rule Set", "definition": {"levels": [], "rules": []}}}
+        with serve(service) as server:
+            status, _, body = self.request(server, "POST", "/task-packs", body=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8"))["pack_name"], "alpha-watch")
+        self.assertEqual(service.calls[0], ("create_task_pack", payload))
+
+    def test_put_task_pack_dispatches_payload(self) -> None:
+        service = FakeService()
+        payload = {"meta": {"name": "Alpha Watch v2"}, "search_spec": {"all_keywords": ["alpha", "beta"]}, "rule_set": {"name": "Default Rule Set", "definition": {"levels": [], "rules": []}}}
+        with serve(service) as server:
+            status, _, body = self.request(server, "PUT", "/task-packs/alpha-watch", body=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8"))["pack_name"], "alpha-watch")
+        self.assertEqual(service.calls[0], ("update_task_pack", {"pack_name": "alpha-watch", "payload": payload}))
 
     def test_get_items_supports_sorting_query_params(self) -> None:
         service = FakeService()

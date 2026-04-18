@@ -1,0 +1,146 @@
+{
+  "version": 1,
+  "kind": "task_pack",
+  "meta": {
+    "name": "新规则集 2",
+    "description": "从当前页面创建的新规则集",
+    "updated_at": "2026-04-12T13:41:51.365185+00:00"
+  },
+  "search_spec": {
+    "all_keywords": [
+      "BTC"
+    ],
+    "exact_phrases": [],
+    "any_keywords": [],
+    "exclude_keywords": [],
+    "authors_include": [],
+    "authors_exclude": [],
+    "language_mode": "zh_en",
+    "days_filter": {
+      "mode": "lte",
+      "min": null,
+      "max": 20
+    },
+    "metric_filters": {
+      "views": {
+        "mode": "gte",
+        "min": 200,
+        "max": null
+      },
+      "likes": {
+        "mode": "any",
+        "min": null,
+        "max": null
+      },
+      "replies": {
+        "mode": "gte",
+        "min": 1,
+        "max": null
+      },
+      "retweets": {
+        "mode": "any",
+        "min": null,
+        "max": null
+      }
+    },
+    "metric_filters_explicit": true,
+    "language": "",
+    "days": 20,
+    "max_results": 40,
+    "metric_mode": "OR",
+    "min_metrics": {
+      "views": 200,
+      "likes": 0,
+      "replies": 1,
+      "retweets": 0
+    },
+    "include_retweets": false,
+    "include_replies": true,
+    "require_media": false,
+    "require_links": false,
+    "raw_query": ""
+  },
+  "rule_set": {
+    "id": 2,
+    "name": "新规则集 2",
+    "description": "从当前页面创建的新规则集",
+    "version": 1,
+    "definition": {
+      "levels": [
+        {
+          "id": "S",
+          "label": "强信号",
+          "min_score": 90,
+          "color": "#dc2626"
+        },
+        {
+          "id": "A",
+          "label": "高优先级",
+          "min_score": 60,
+          "color": "#ea580c"
+        },
+        {
+          "id": "B",
+          "label": "观察",
+          "min_score": 30,
+          "color": "#2563eb"
+        }
+      ],
+      "rules": [
+        {
+          "id": "exclude-trade-gated",
+          "name": "排除交易门槛",
+          "enabled": true,
+          "operator": "AND",
+          "conditions": [
+            {
+              "type": "text_contains_any",
+              "values": [
+                "trade",
+                "stake",
+                "充值",
+                "交易"
+              ]
+            }
+          ],
+          "effect": {
+            "action": "exclude",
+            "score": 0,
+            "level": ""
+          }
+        },
+        {
+          "id": "trusted-author-action",
+          "name": "官方账号 + 行动词",
+          "enabled": true,
+          "operator": "AND",
+          "conditions": [
+            {
+              "type": "author_in",
+              "values": [
+                "galxe",
+                "layer3xyz",
+                "kaitoai"
+              ]
+            },
+            {
+              "type": "text_contains_any",
+              "values": [
+                "claim",
+                "quest",
+                "airdrop",
+                "积分",
+                "空投"
+              ]
+            }
+          ],
+          "effect": {
+            "action": "score",
+            "score": 65,
+            "level": "A"
+          }
+        }
+      ]
+    }
+  }
+}

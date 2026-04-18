@@ -35,6 +35,19 @@ class ApiHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         try:
             parsed = urlparse(self.path)
+            if parsed.path == "/workspace":
+                self._json(HTTPStatus.OK, self.service.get_workspace())
+                return
+            if parsed.path == "/workspace/export":
+                self._json(HTTPStatus.OK, self.service.export_workspace())
+                return
+            if parsed.path == "/task-packs":
+                self._json(HTTPStatus.OK, self.service.list_task_packs())
+                return
+            if parsed.path.startswith("/task-packs/"):
+                pack_name = parsed.path.split("/")[-1]
+                self._json(HTTPStatus.OK, self.service.get_task_pack(pack_name))
+                return
             if parsed.path == "/health":
                 self._json(HTTPStatus.OK, self.service.health())
                 return
@@ -99,11 +112,32 @@ class ApiHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001
             self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
+    def do_PUT(self) -> None:  # noqa: N802
+        try:
+            payload = self._read_json()
+            parsed = urlparse(self.path)
+            if parsed.path == "/workspace":
+                self._json(HTTPStatus.OK, self.service.update_workspace(payload))
+                return
+            if parsed.path.startswith("/task-packs/"):
+                pack_name = parsed.path.split("/")[-1]
+                self._json(HTTPStatus.OK, self.service.update_task_pack(pack_name, payload))
+                return
+            self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+        except Exception as exc:  # noqa: BLE001
+            self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
     def do_POST(self) -> None:  # noqa: N802
         try:
             payload = self._read_json()
             parsed = urlparse(self.path)
             path = parsed.path
+            if path == "/workspace/import":
+                self._json(HTTPStatus.OK, self.service.import_workspace(payload))
+                return
+            if path == "/task-packs":
+                self._json(HTTPStatus.OK, self.service.create_task_pack(payload))
+                return
             if path == "/manual/run":
                 self._json(HTTPStatus.OK, self.service.run_manual(payload))
                 return
@@ -198,7 +232,7 @@ class ApiHandler(BaseHTTPRequestHandler):
 
     def _set_cors_headers(self) -> None:
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
 

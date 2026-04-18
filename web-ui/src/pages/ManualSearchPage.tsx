@@ -1,247 +1,239 @@
-﻿import { useEffect, useMemo, useState } from "react";
-import { CollectorRunResult, RuleSet, RuleSetDefinition, SearchSpec, createRuleSet, deleteRuleSet, listRuleSets, runManual, updateRuleSet, cloneRuleSet as cloneRuleSetApi } from "../api";
+import { useEffect, useMemo, useState } from "react";
+import {
+  CollectorRunResult,
+  RuleSet,
+  RuleSetDefinition,
+  TaskPackSummary,
+  createTaskPack,
+  getTaskPack,
+  listTaskPacks,
+  runManual,
+  updateTaskPack,
+} from "../api";
 import { DEFAULT_RULE_SET_DEFINITION, DEFAULT_SEARCH_SPEC, buildQueryPreview, cloneRuleDefinition, cloneSearchSpec } from "../collector";
 import { SearchSpecEditor } from "../components/SearchSpecEditor";
 import { RuleSetEditor } from "../components/RuleSetEditor";
 import { formatUtcPlus8Time } from "../time";
 
-const STORAGE_KEY = "x-collector-workbench-settings-v2";
-
-type StoredState = {
-  searchSpec: SearchSpec;
-  selectedRuleSetId: number | null;
-};
-
-function readStoredState(): StoredState {
-  if (typeof window === "undefined") {
-    return { searchSpec: cloneSearchSpec(DEFAULT_SEARCH_SPEC), selectedRuleSetId: null };
-  }
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { searchSpec: cloneSearchSpec(DEFAULT_SEARCH_SPEC), selectedRuleSetId: null };
-    const parsed = JSON.parse(raw) as Partial<StoredState>;
-    return {
-      searchSpec: cloneSearchSpec(parsed.searchSpec),
-      selectedRuleSetId: typeof parsed.selectedRuleSetId === "number" ? parsed.selectedRuleSetId : null,
-    };
-  } catch {
-    return { searchSpec: cloneSearchSpec(DEFAULT_SEARCH_SPEC), selectedRuleSetId: null };
-  }
-}
-
 function metricValue(item: any, key: string) {
   return Number(item?.metrics?.[key] || 0);
 }
 
+function buildPackPayload(
+  name: string,
+  description: string,
+  searchSpec: ReturnType<typeof cloneSearchSpec>,
+  ruleName: string,
+  ruleDescription: string,
+  draftDefinition: RuleSetDefinition,
+) {
+  return {
+    meta: {
+      name,
+      description,
+    },
+    search_spec: cloneSearchSpec(searchSpec),
+    rule_set: {
+      name: ruleName.trim() || name,
+      description: ruleDescription.trim(),
+      version: 1,
+      definition: cloneRuleDefinition(draftDefinition),
+    },
+  };
+}
+
 export function ManualSearchPage() {
-  const [searchSpec, setSearchSpec] = useState<SearchSpec>(() => readStoredState().searchSpec);
+  const [searchSpec, setSearchSpec] = useState(() => cloneSearchSpec(DEFAULT_SEARCH_SPEC));
   const [result, setResult] = useState<CollectorRunResult | null>(null);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const [ruleSets, setRuleSets] = useState<RuleSet[]>([]);
-  const [selectedRuleSetId, setSelectedRuleSetId] = useState<number | null>(() => readStoredState().selectedRuleSetId);
-  const [draftRuleName, setDraftRuleName] = useState("自定义规则集");
-  const [draftRuleDescription, setDraftRuleDescription] = useState("在 UI 中自由配置机会发现规则。");
+  const [savingPack, setSavingPack] = useState(false);
+  const [taskPacks, setTaskPacks] = useState<TaskPackSummary[]>([]);
+  const [selectedPackName, setSelectedPackName] = useState("");
+  const [currentPackName, setCurrentPackName] = useState<string | null>(null);
+  const [draftRuleName, setDraftRuleName] = useState("Default Rule Set");
+  const [draftRuleDescription, setDraftRuleDescription] = useState("Built-in opportunity discovery rules.");
   const [draftDefinition, setDraftDefinition] = useState<RuleSetDefinition>(cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION));
-  const [savingRuleSet, setSavingRuleSet] = useState(false);
-  const [deletingRuleSet, setDeletingRuleSet] = useState(false);
 
-  const selectedRuleSet = useMemo(() => ruleSets.find((item) => item.id === selectedRuleSetId) || null, [ruleSets, selectedRuleSetId]);
+  const ruleSetPreview = useMemo<RuleSet | null>(
+    () => ({
+      id: 1,
+      name: draftRuleName,
+      description: draftRuleDescription,
+      is_enabled: true,
+      is_builtin: currentPackName ? false : true,
+      version: 1,
+      definition_json: cloneRuleDefinition(draftDefinition),
+    }),
+    [currentPackName, draftDefinition, draftRuleDescription, draftRuleName],
+  );
 
-  useEffect(() => {
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        searchSpec,
-        selectedRuleSetId,
-      }),
-    );
-  }, [searchSpec, selectedRuleSetId]);
-
-  async function loadRuleSets() {
-    const data = await listRuleSets();
-    const items = data.items || [];
-    setRuleSets(items);
-    const nextSelected = selectedRuleSetId && items.some((item) => item.id === selectedRuleSetId) ? selectedRuleSetId : items[0]?.id ?? null;
-    setSelectedRuleSetId(nextSelected);
-    const active = items.find((item) => item.id === nextSelected) || items[0] || null;
-    if (active) {
-      setDraftRuleName(active.name);
-      setDraftRuleDescription(active.description);
-      setDraftDefinition(cloneRuleDefinition(active.definition_json));
-    }
+  async function refreshTaskPacks() {
+    const payload = await listTaskPacks();
+    const items = payload.items || [];
+    setTaskPacks(items);
+    setSelectedPackName((prev) => prev || items[0]?.pack_name || "");
   }
 
   useEffect(() => {
-    loadRuleSets().catch((err) => setError(err instanceof Error ? err.message : "加载规则集失败"));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    refreshTaskPacks().catch((err) => setError(err instanceof Error ? err.message : "加载任务包失败"));
   }, []);
 
-  useEffect(() => {
-    if (!selectedRuleSet) return;
-    setDraftRuleName(selectedRuleSet.name);
-    setDraftRuleDescription(selectedRuleSet.description);
-    setDraftDefinition(cloneRuleDefinition(selectedRuleSet.definition_json));
-  }, [selectedRuleSet]);
+  async function importSelectedPack() {
+    if (!selectedPackName) return;
+    setError("");
+    setMessage("");
+    try {
+      const pack = await getTaskPack(selectedPackName);
+      setSearchSpec(cloneSearchSpec(pack.search_spec));
+      setDraftRuleName(pack.rule_set.name || pack.meta.name);
+      setDraftRuleDescription(pack.rule_set.description || pack.meta.description || "");
+      setDraftDefinition(cloneRuleDefinition(pack.rule_set.definition));
+      setCurrentPackName(pack.pack_name);
+      setSelectedPackName(pack.pack_name);
+      setMessage(`已导入任务包 ${pack.meta.name}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "导入任务包失败");
+    }
+  }
+
+  async function savePack(mode: "create" | "overwrite") {
+    const suggestedName = currentPackName || draftRuleName || "task-pack";
+    const targetName =
+      mode === "overwrite" && currentPackName
+        ? currentPackName
+        : window.prompt("请输入任务包名称", suggestedName)?.trim();
+    if (!targetName) return;
+
+    setSavingPack(true);
+    setError("");
+    setMessage("");
+    try {
+      const payload = buildPackPayload(targetName, draftRuleDescription, searchSpec, draftRuleName, draftRuleDescription, draftDefinition);
+      const saved =
+        mode === "overwrite" && currentPackName
+          ? await updateTaskPack(currentPackName, payload)
+          : await createTaskPack({ pack_name: targetName, ...payload });
+      setCurrentPackName(saved.pack_name);
+      setSelectedPackName(saved.pack_name);
+      setDraftRuleName(saved.rule_set.name || targetName);
+      setDraftRuleDescription(saved.rule_set.description || "");
+      setDraftDefinition(cloneRuleDefinition(saved.rule_set.definition));
+      setMessage(mode === "overwrite" ? "已覆盖当前任务包" : `已导出任务包 ${saved.pack_name}`);
+      await refreshTaskPacks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "保存任务包失败");
+    } finally {
+      setSavingPack(false);
+    }
+  }
 
   async function onRun() {
     setError("");
+    setMessage("");
     setLoading(true);
     try {
       const data = await runManual({
         search_spec: searchSpec,
-        rule_set_id: selectedRuleSetId,
+        rule_set: {
+          name: draftRuleName,
+          description: draftRuleDescription,
+          version: 1,
+          definition: cloneRuleDefinition(draftDefinition),
+        },
       });
       setResult(data);
-    } catch (e: any) {
-      setError(e?.message || "搜索失败");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "采集失败");
     } finally {
       setLoading(false);
     }
-  }
-
-  async function saveRuleSet() {
-    setSavingRuleSet(true);
-    setError("");
-    try {
-      if (selectedRuleSet) {
-        const updated = await updateRuleSet(selectedRuleSet.id, {
-          name: draftRuleName,
-          description: draftRuleDescription,
-          definition: draftDefinition,
-        });
-        await loadRuleSets();
-        setSelectedRuleSetId(updated.id);
-      } else {
-        const created = await createRuleSet({
-          name: draftRuleName,
-          description: draftRuleDescription,
-          definition: draftDefinition,
-        });
-        await loadRuleSets();
-        setSelectedRuleSetId(created.id);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "保存规则集失败");
-    } finally {
-      setSavingRuleSet(false);
-    }
-  }
-
-  async function cloneCurrentRuleSet() {
-    if (!selectedRuleSet) return;
-    setError("");
-    try {
-      const cloned = await cloneRuleSetApi(selectedRuleSet.id);
-      await loadRuleSets();
-      setSelectedRuleSetId(cloned.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "复制规则集失败");
-    }
-  }
-
-  async function deleteCurrentRuleSet() {
-    if (!selectedRuleSet || selectedRuleSet.is_builtin) return;
-    if (!window.confirm(`确定删除规则集「${selectedRuleSet.name}」吗？`)) return;
-    setDeletingRuleSet(true);
-    setError("");
-    try {
-      await deleteRuleSet(selectedRuleSet.id);
-      await loadRuleSets();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "删除规则集失败");
-    } finally {
-      setDeletingRuleSet(false);
-    }
-  }
-
-  function startNewRuleSet() {
-    setSelectedRuleSetId(null);
-    setDraftRuleName("新规则集");
-    setDraftRuleDescription("从当前页面创建的新规则集");
-    setDraftDefinition(cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION));
   }
 
   return (
     <div className="collector-workbench" data-testid="manual-search-page">
       <div className="card collector-hero">
         <div>
-          <h3>X 采集器工作台</h3>
-          <p className="kv">高级搜索、规则可视化编排、原始结果与命中结果双列表都在这里完成。</p>
+          <h3>{"\u624b\u52a8\u641c\u7d22"}</h3>
+          <p className="kv">{"\u4efb\u52a1\u5305\u5f15\u5165\u53ea\u66ff\u6362\u5f53\u524d\u641c\u7d22\u6761\u4ef6\u548c\u89c4\u5219\uff0c\u7ee7\u7eed\u7f16\u8f91\u4e0d\u4f1a\u81ea\u52a8\u56de\u5199\u539f pack \u6587\u4ef6\u3002"}</p>
         </div>
         <div className="collector-toolbar">
           <button type="button" onClick={onRun} data-testid="manual-run-button" disabled={loading}>
-            {loading ? "采集中..." : "开始采集"}
+            {loading ? "\u91c7\u96c6\u4e2d..." : "\u5f00\u59cb\u91c7\u96c6"}
           </button>
           <button type="button" className="ghost" onClick={() => setSearchSpec(cloneSearchSpec(DEFAULT_SEARCH_SPEC))}>
-            重置搜索配置
+            {"\u91cd\u7f6e\u641c\u7d22\u914d\u7f6e"}
+          </button>
+          <button type="button" className="ghost" onClick={() => refreshTaskPacks().catch(() => undefined)}>
+            {"\u5237\u65b0\u4efb\u52a1\u5305"}
           </button>
         </div>
       </div>
 
-      {error && (
-        <div className="alert error" data-testid="manual-error">
-          {error}
-        </div>
-      )}
+      {error && <div className="alert error" data-testid="manual-error">{error}</div>}
+      {message && <div className="alert success">{message}</div>}
 
       <div className="collector-layout">
         <section className="card">
           <div className="collector-toolbar between">
             <div>
-              <h4>高级搜索配置</h4>
-              <div className="kv">最终查询会直接展示在下方，方便你确认系统到底在怎么搜。</div>
+              <h4>{"\u641c\u7d22\u914d\u7f6e"}</h4>
+              <div className="kv">{buildQueryPreview(searchSpec) || "--"}</div>
             </div>
-            <div className="collector-query-chip">{buildQueryPreview(searchSpec) || "--"}</div>
+            <div className="collector-toolbar">
+              <select aria-label="manual-pack-select" value={selectedPackName} onChange={(e) => setSelectedPackName(e.target.value)}>
+                <option value="">{"\u9009\u62e9\u4efb\u52a1\u5305"}</option>
+                {taskPacks.map((item) => (
+                  <option key={item.pack_name} value={item.pack_name}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="ghost" aria-label="import-manual-pack" onClick={() => importSelectedPack().catch(() => undefined)}>
+                {"\u5bfc\u5165\u4efb\u52a1\u5305"}
+              </button>
+              <button type="button" className="ghost" aria-label="export-manual-pack" onClick={() => savePack("create").catch(() => undefined)} disabled={savingPack}>
+                {"\u5bfc\u51fa\u4e3a\u4efb\u52a1\u5305"}
+              </button>
+              <button type="button" aria-label="overwrite-manual-pack" onClick={() => savePack("overwrite").catch(() => undefined)} disabled={savingPack || !currentPackName}>
+                {"\u8986\u76d6\u5f53\u524d\u4efb\u52a1\u5305"}
+              </button>
+            </div>
           </div>
           <SearchSpecEditor value={searchSpec} onChange={setSearchSpec} disabled={loading} />
         </section>
 
         <section className="card">
-          <div className="collector-toolbar between">
-            <div>
-              <h4>规则集</h4>
-              <div className="kv">规则不再写死在代码里，你可以直接在这里调整条件、权重和等级。</div>
-            </div>
-            <div className="collector-toolbar">
-              <select value={selectedRuleSetId ?? ""} onChange={(e) => setSelectedRuleSetId(e.target.value ? Number(e.target.value) : null)}>
-                {ruleSets.map((ruleSet) => (
-                  <option key={ruleSet.id} value={ruleSet.id}>
-                    {ruleSet.name}
-                  </option>
-                ))}
-              </select>
-              <button type="button" className="ghost" onClick={startNewRuleSet}>新建规则集</button>
-            </div>
-          </div>
-
-          <div className="collector-grid collector-grid-2" style={{ marginTop: 12 }}>
+          <div className="collector-grid collector-grid-2" style={{ marginBottom: 12 }}>
             <label className="field">
-              <span>规则集名称</span>
+              <span>{"\u89c4\u5219\u540d\u79f0"}</span>
               <input value={draftRuleName} onChange={(e) => setDraftRuleName(e.target.value)} />
             </label>
             <label className="field">
-              <span>说明</span>
+              <span>{"\u89c4\u5219\u8bf4\u660e"}</span>
               <input value={draftRuleDescription} onChange={(e) => setDraftRuleDescription(e.target.value)} />
             </label>
           </div>
-
           <RuleSetEditor
-            ruleSet={selectedRuleSet}
+            ruleSet={ruleSetPreview}
             draft={draftDefinition}
             onDraftChange={setDraftDefinition}
-            onSave={saveRuleSet}
-            onClone={cloneCurrentRuleSet}
-            onDelete={deleteCurrentRuleSet}
-            saving={savingRuleSet}
-            deleting={deletingRuleSet}
+            onSave={() => savePack(currentPackName ? "overwrite" : "create").catch(() => undefined)}
+            onClone={() => savePack("create").catch(() => undefined)}
+            onDelete={() => {
+              setCurrentPackName(null);
+              setMessage("已取消当前任务包绑定");
+            }}
+            saving={savingPack}
+            deleting={false}
           />
         </section>
       </div>
 
       {loading && (
         <div className="searching" data-testid="manual-searching">
-          <span className="spinner" /> 正在搜索、评估规则并整理结果...
+          <span className="spinner" /> {"\u6b63\u5728\u641c\u7d22\u5e76\u8bc4\u4f30\u7ed3\u679c..."}
         </div>
       )}
 
@@ -259,14 +251,14 @@ export function ManualSearchPage() {
             </div>
             <div className="dashboard-detail-item">
               <span>{"\u89c4\u5219\u96c6"}</span>
-              <strong>{result.rule_set_summary?.name || "\u4e34\u65f6\u89c4\u5219"}</strong>
+              <strong>{result.rule_set_summary?.name || "--"}</strong>
             </div>
             <div className="dashboard-detail-item">
-              <span>{"\u7b5b\u9009\u540e\u539f\u59cb\u7ed3\u679c\u6570"}</span>
+              <span>{"\u539f\u59cb\u7ed3\u679c"}</span>
               <strong>{result.raw_total}</strong>
             </div>
             <div className="dashboard-detail-item">
-              <span>{"\u547d\u4e2d\u7ed3\u679c\u6570"}</span>
+              <span>{"\u547d\u4e2d\u7ed3\u679c"}</span>
               <strong>{result.matched_total}</strong>
             </div>
           </div>
@@ -274,16 +266,16 @@ export function ManualSearchPage() {
           <div className="collector-result-grid">
             <section className="card">
               <div className="collector-toolbar between">
-                <h4>原始采集结果</h4>
-                <span className="kv">共 {result.raw_items.length} 条展示</span>
+                <h4>{"\u539f\u59cb\u91c7\u96c6\u7ed3\u679c"}</h4>
+                <span className="kv">{`total=${result.raw_items.length}`}</span>
               </div>
               <table className="table collector-table">
                 <thead>
                   <tr>
-                    <th>作者 / 时间</th>
-                    <th>内容</th>
-                    <th>互动</th>
-                    <th>标记</th>
+                    <th>{"\u4f5c\u8005 / \u65f6\u95f4"}</th>
+                    <th>{"\u5185\u5bb9"}</th>
+                    <th>{"\u4e92\u52a8"}</th>
+                    <th>{"\u6807\u8bb0"}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -295,7 +287,7 @@ export function ManualSearchPage() {
                       </td>
                       <td>
                         <div className="collector-text-snippet">{item.text || "--"}</div>
-                        <a href={item.url} target="_blank" rel="noreferrer">查看原文</a>
+                        <a href={item.url} target="_blank" rel="noreferrer">{"\u67e5\u770b\u539f\u6587"}</a>
                       </td>
                       <td>
                         <div>views {metricValue(item, "views")}</div>
@@ -305,10 +297,10 @@ export function ManualSearchPage() {
                       </td>
                       <td>
                         <div className="collector-flag-list">
-                          {item.flags.has_link && <span className="badge">链接</span>}
-                          {item.flags.has_media && <span className="badge">媒体</span>}
-                          {item.flags.is_reply && <span className="badge">回复</span>}
-                          {item.flags.is_retweet && <span className="badge">转推</span>}
+                          {item.flags.has_link && <span className="badge">link</span>}
+                          {item.flags.has_media && <span className="badge">media</span>}
+                          {item.flags.is_reply && <span className="badge">reply</span>}
+                          {item.flags.is_retweet && <span className="badge">retweet</span>}
                         </div>
                       </td>
                     </tr>
@@ -319,16 +311,16 @@ export function ManualSearchPage() {
 
             <section className="card">
               <div className="collector-toolbar between">
-                <h4>命中结果</h4>
-                <span className="kv">共 {result.matched_items.length} 条展示</span>
+                <h4>{"\u547d\u4e2d\u7ed3\u679c"}</h4>
+                <span className="kv">{`total=${result.matched_items.length}`}</span>
               </div>
               <table className="table collector-table">
                 <thead>
                   <tr>
-                    <th>标题</th>
-                    <th>等级 / 分数</th>
-                    <th>命中原因</th>
-                    <th>作者 / 时间</th>
+                    <th>{"\u6807\u9898"}</th>
+                    <th>{"\u7b49\u7ea7 / \u5206\u6570"}</th>
+                    <th>{"\u547d\u4e2d\u539f\u56e0"}</th>
+                    <th>{"\u4f5c\u8005 / \u65f6\u95f4"}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -337,7 +329,7 @@ export function ManualSearchPage() {
                       <td>
                         <div className="job-name">{item.title || item.text}</div>
                         <div className="collector-text-snippet">{item.summary || item.text}</div>
-                        <a href={item.url} target="_blank" rel="noreferrer">查看原文</a>
+                        <a href={item.url} target="_blank" rel="noreferrer">{"\u67e5\u770b\u539f\u6587"}</a>
                       </td>
                       <td>
                         <span className={`badge ${String(item.level || "").toLowerCase()}`}>{item.level}</span>
@@ -348,7 +340,7 @@ export function ManualSearchPage() {
                           {item.reasons?.map((reason) => (
                             <div key={`${item.tweet_id}-${reason.rule_id}`} className="collector-reason-item">
                               <strong>{reason.rule_name}</strong>
-                              <div className="kv">{reason.matched_conditions.join(" · ")}</div>
+                              <div className="kv">{reason.matched_conditions.join(" / ")}</div>
                             </div>
                           ))}
                         </div>
@@ -362,7 +354,7 @@ export function ManualSearchPage() {
                   {!result.matched_items.length && (
                     <tr>
                       <td colSpan={4} style={{ textAlign: "center", color: "#64748b" }}>
-                        这次采集拿到了原始结果，但当前规则集没有命中任何机会线索。
+                        {"\u672c\u6b21\u91c7\u96c6\u6709\u539f\u59cb\u7ed3\u679c\uff0c\u4f46\u5f53\u524d\u89c4\u5219\u672a\u547d\u4e2d\u4efb\u4f55\u7ebf\u7d22\u3002"}
                       </td>
                     </tr>
                   )}
@@ -375,4 +367,3 @@ export function ManualSearchPage() {
     </div>
   );
 }
-

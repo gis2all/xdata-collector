@@ -3,69 +3,51 @@
 `data/` 目录用于承载本地 SQLite 运行数据库，当前主文件是 `app.db`。
 
 目录约束：
-- `data/` 正式保留 `app.db` 和本说明文件 `README.md`
-- `data/` 不再作为测试、导出、日志或临时目录使用
-- 测试临时产物应放到 `runtime/tmp/tests/`
-- 服务日志应放到 `runtime/logs/`
+- `data/` 正式保留 `app.db` 和 `README.md`
+- `data/` 不再作为测试、导出、日志或临时目录
+- 测试临时产物放 `runtime/tmp/tests/`
+- 服务日志放 `runtime/logs/`
 
 ## 当前业务表
 
-当前主库里有 6 张业务表：
+`app.db` 当前只保留 2 张业务表：
 
-1. `search_jobs`
-   - 自动任务配置表
-   - 保存任务名、搜索条件、规则集、执行间隔、启停状态和下次运行时间
-
-2. `search_runs`
-   - 每次手动搜索或自动任务执行记录
-   - 保存触发方式、执行状态、开始结束时间、错误信息和统计摘要
-
-3. `x_items_raw`
+1. `x_items_raw`
    - 原始抓取结果表
-   - 保存某次 run 抓回来的原始 X 数据和基础指标
+   - 保存某次 run 抓回来的原始 X 数据、时间、作者、指标和查询来源
 
-4. `x_items_curated`
-   - 规则筛选后的结果库
-   - 保存 level、score、标题、摘要、去重键和来源链接等结果信息
-   - “结果浏览”页读取的是这张表
-
-5. `rule_sets`
-   - 规则集定义表
-   - 保存规则名称、描述、版本和具体规则定义
-
-6. `runtime_health_snapshot`
-   - 运行健康快照表
-   - 保存 DB / X 等目标的最近健康检查状态
+2. `x_items_curated`
+   - 规则筛选后的结果表
+   - 保存 level、score、title、summary_zh、dedupe_key、rule_set_id 等字段
+   - 「结果浏览」页可以切换查看 `x_items_raw` 和 `x_items_curated`
 
 补充说明：
 - `sqlite_sequence` 是 SQLite 系统表，不算业务表
-- 手动搜索并不是所有抓取结果都会进入结果库，只有命中的 curated 结果会进入 `x_items_curated`
+- 手动搜索和自动任务抓到的原始结果都会进入 `x_items_raw`
+- 只有命中规则的结果会进入 `x_items_curated`
 
-## 表关系
+## 文件化后的边界
 
 ```text
-rule_sets
-   ^
-   | rule_set_id
-   |
-search_jobs -----------+
-   |                   |
-   | job_id            | 手动搜索没有 job_id
-   v                   |
-search_runs <----------+
-   |
-   | run_id
-   +------------------> x_items_raw
-   |
-   +------------------> x_items_curated
+config/workspace.json
+  |- environment
+  `- jobs[] -> pack_path -> config/packs/*.json
 
-runtime_health_snapshot
-   |
-   +--> 独立保存 DB / X 健康状态
+config/packs/*.json
+  |- search_spec
+  `- rule_set
+
+runtime/history/search_runs.jsonl
+runtime/state/runtime_health_snapshot.json
+runtime/state/sequences.json
+
+data/app.db
+  |- x_items_raw
+  `- x_items_curated
 ```
 
-关系说明：
-- 自动任务链路：`search_jobs -> search_runs -> x_items_raw -> x_items_curated`
-- 手动搜索链路：`search_runs -> x_items_raw -> x_items_curated`
-- `rule_sets` 会被自动任务配置和 curated 结果引用
-- `runtime_health_snapshot` 独立保存健康状态，不参与结果入库主链路
+也就是说：
+- `workspace.json` 只保留轻量环境配置和自动任务注册表
+- 搜索条件与规则正文放在 `config/packs/*.json`
+- 运行记录和健康快照不再存 SQLite
+- SQLite 只用来保存原始结果与筛选结果
