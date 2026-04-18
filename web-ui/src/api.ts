@@ -445,6 +445,20 @@ export function health() {
   return req<HealthSnapshot>("/health");
 }
 
+export async function healthSnapshot() {
+  const res = await fetch(`${API_BASE}/health/snapshot`, {
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "request failed" }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json() as Promise<HealthSnapshot>;
+}
+
 
 export function getWorkspace() {
   return req<WorkspaceConfig>("/workspace");

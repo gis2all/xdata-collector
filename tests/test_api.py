@@ -74,6 +74,14 @@ class FakeService:
             "x": {"configured": True, "connected": True, "auth_source": "twitter-cli", "browser_hint": "default", "account_hint": "unknown", "last_checked_at": "", "last_error": ""},
         }
 
+    def health_snapshot(self) -> dict:
+        self.calls.append(("health_snapshot", None))
+        return {
+            "summary": {"updated_at": "2026-04-12T00:00:00+00:00", "source": "runtime_snapshot"},
+            "db": {"configured": True, "connected": True, "db_path": "data/app.db", "db_exists": True, "job_count": 1, "run_count": 2, "last_checked_at": "", "last_error": ""},
+            "x": {"configured": True, "connected": True, "auth_source": "twitter-cli", "browser_hint": "default", "account_hint": "unknown", "last_checked_at": "", "last_error": ""},
+        }
+
     def list_jobs(self, **kwargs) -> dict:
         self.calls.append(("list_jobs", kwargs))
         return {"page": kwargs["page"], "page_size": kwargs["page_size"], "total": 0, "items": []}
@@ -212,6 +220,17 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(headers["Access-Control-Allow-Origin"], "*")
         self.assertEqual(json.loads(body.decode("utf-8"))["summary"]["source"], "backend_snapshot")
         self.assertEqual(service.calls[0][0], "health")
+
+    def test_get_health_snapshot_returns_json_and_cors_headers(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, headers, body = self.request(server, "GET", "/health/snapshot")
+
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Content-Type"], "application/json; charset=utf-8")
+        self.assertEqual(headers["Access-Control-Allow-Origin"], "*")
+        self.assertEqual(json.loads(body.decode("utf-8"))["summary"]["source"], "runtime_snapshot")
+        self.assertEqual(service.calls[0][0], "health_snapshot")
 
     def test_options_allows_put_for_workspace_save(self) -> None:
         service = FakeService()

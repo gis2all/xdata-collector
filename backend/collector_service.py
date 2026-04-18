@@ -1362,6 +1362,40 @@ class DesktopService:
     def _save_health_snapshots(self, payload: dict[str, Any]) -> None:
         self.runtime_store.save_health_snapshots(payload)
 
+    def _health_response_from_snapshots(
+        self,
+        db_snapshot: dict[str, Any],
+        x_snapshot: dict[str, Any],
+        *,
+        source: str,
+        updated_at: str,
+    ) -> dict[str, Any]:
+        return {
+            "summary": {
+                "updated_at": updated_at,
+                "source": source,
+            },
+            "db": {
+                "configured": db_snapshot["configured"],
+                "connected": db_snapshot["connected"],
+                "db_path": db_snapshot["detail"].get("db_path", ""),
+                "db_exists": bool(db_snapshot["detail"].get("db_exists")),
+                "job_count": int(db_snapshot["detail"].get("job_count", 0) or 0),
+                "run_count": int(db_snapshot["detail"].get("run_count", 0) or 0),
+                "last_checked_at": db_snapshot["last_checked_at"],
+                "last_error": db_snapshot["last_error"],
+            },
+            "x": {
+                "configured": x_snapshot["configured"],
+                "connected": x_snapshot["connected"],
+                "auth_source": x_snapshot["detail"].get("auth_source", "unknown"),
+                "browser_hint": x_snapshot["detail"].get("browser_hint", "unknown"),
+                "account_hint": x_snapshot["detail"].get("account_hint", "unknown"),
+                "last_checked_at": x_snapshot["last_checked_at"],
+                "last_error": x_snapshot["last_error"],
+            },
+        }
+
     def _merge_health_snapshot(
         self,
         target: str,
@@ -1450,32 +1484,29 @@ class DesktopService:
         )
 
         self._save_health_snapshots({"db": db_snapshot, "x": x_snapshot})
+        return self._health_response_from_snapshots(
+            db_snapshot,
+            x_snapshot,
+            source="backend_snapshot",
+            updated_at=checked_at,
+        )
 
-        return {
-            "summary": {
-                "updated_at": checked_at,
-                "source": "backend_snapshot",
-            },
-            "db": {
-                "configured": db_snapshot["configured"],
-                "connected": db_snapshot["connected"],
-                "db_path": db_snapshot["detail"].get("db_path", ""),
-                "db_exists": bool(db_snapshot["detail"].get("db_exists")),
-                "job_count": int(db_snapshot["detail"].get("job_count", 0) or 0),
-                "run_count": int(db_snapshot["detail"].get("run_count", 0) or 0),
-                "last_checked_at": db_snapshot["last_checked_at"],
-                "last_error": db_snapshot["last_error"],
-            },
-            "x": {
-                "configured": x_snapshot["configured"],
-                "connected": x_snapshot["connected"],
-                "auth_source": x_snapshot["detail"].get("auth_source", "unknown"),
-                "browser_hint": x_snapshot["detail"].get("browser_hint", "unknown"),
-                "account_hint": x_snapshot["detail"].get("account_hint", "unknown"),
-                "last_checked_at": x_snapshot["last_checked_at"],
-                "last_error": x_snapshot["last_error"],
-            },
-        }
+    def health_snapshot(self) -> dict[str, Any]:
+        payload = self._load_health_snapshots()
+        db_snapshot = payload.get("db")
+        x_snapshot = payload.get("x")
+        if not isinstance(db_snapshot, dict) or not isinstance(x_snapshot, dict):
+            raise FileNotFoundError("health snapshot not found")
+        updated_at = max(
+            str(db_snapshot.get("last_checked_at", "") or ""),
+            str(x_snapshot.get("last_checked_at", "") or ""),
+        )
+        return self._health_response_from_snapshots(
+            db_snapshot,
+            x_snapshot,
+            source="runtime_snapshot",
+            updated_at=updated_at,
+        )
 
     def tick(self) -> dict[str, Any]:
         now = datetime.now(timezone.utc)

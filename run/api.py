@@ -51,6 +51,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             if parsed.path == "/health":
                 self._json(HTTPStatus.OK, self.service.health())
                 return
+            if parsed.path == "/health/snapshot":
+                self._json(HTTPStatus.OK, self.service.health_snapshot())
+                return
             if parsed.path == "/jobs":
                 q = parse_qs(parsed.query)
                 page = int(q.get("page", ["1"])[0])
@@ -109,6 +112,8 @@ class ApiHandler(BaseHTTPRequestHandler):
                 )
                 return
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+        except FileNotFoundError as exc:
+            self._json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
         except Exception as exc:  # noqa: BLE001
             self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 

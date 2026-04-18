@@ -509,6 +509,30 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(second["x"]["last_error"], "x probe failed")
         self.assertIn("last_checked_at", second["x"])
 
+    @patch("backend.collector_service.find_twitter_cli")
+    @patch("backend.collector_service.run_twitter_search")
+    def test_health_snapshot_reads_saved_snapshot_without_reprobing(self, mock_search, mock_find_cli) -> None:
+        mock_find_cli.return_value = "twitter"
+        mock_search.return_value = []
+
+        first = self.service.health()
+        self.assertEqual(first["summary"]["source"], "backend_snapshot")
+
+        mock_search.side_effect = RuntimeError("should not re-probe")
+
+        snapshot = self.service.health_snapshot()
+
+        self.assertEqual(snapshot["summary"]["source"], "runtime_snapshot")
+        self.assertEqual(snapshot["summary"]["updated_at"], first["summary"]["updated_at"])
+        self.assertTrue(snapshot["x"]["connected"])
+        self.assertEqual(snapshot["x"]["last_error"], "")
+
+    def test_health_snapshot_raises_when_snapshot_file_missing(self) -> None:
+        self.service.runtime_store.health_path.unlink(missing_ok=True)
+
+        with self.assertRaises(FileNotFoundError):
+            self.service.health_snapshot()
+
     @patch("backend.collector_service.run_twitter_search")
     def test_manual_run_uses_multi_language_queries_dedupes_and_filters_results(self, mock_search) -> None:
         recent_created_at = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
