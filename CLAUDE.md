@@ -19,7 +19,7 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
   - 本地 API
   - Scheduler
   - Web UI
-- Notion 同步已经迁出主仓，不要再把 Notion 链路写回这个项目
+- 这个仓库只负责 X 搜索、本地 API、任务调度、SQLite 结果存储和 Web UI，不要把下游投递链路写回主仓
 
 ### 2. 主目录
 
@@ -225,7 +225,6 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 - `web-ui/src/`
 - `config/README.md`
 - `config/packs/default-rule-set.json`
-- `artifacts/legacy/README.md`
 - `.env.example`
 - `.learnings/`
 

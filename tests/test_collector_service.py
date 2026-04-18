@@ -488,7 +488,7 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(health["x"]["auth_source"], "twitter-cli")
         self.assertEqual(health["x"]["account_hint"], "unknown")
         self.assertEqual(health["x"]["last_error"], "")
-        self.assertNotIn("notion", health)
+        self.assertEqual(set(health.keys()), {"summary", "db", "x"})
 
     @patch("backend.collector_service.find_twitter_cli")
     @patch("backend.collector_service.run_twitter_search")

@@ -85,7 +85,7 @@
 ## PIT-007 主仓的边界只是 X 采集
 
 **场景**：描述产品范围、健康检查或 Dashboard 语义时。
-**错误做法**：又把 Notion 或其他下游同步逻辑写回主仓叙事。
+**错误做法**：又把下游同步、投递或外部集成逻辑写回主仓叙事。
 **正确做法**：这个仓库只负责 X 搜索、规则筛选、SQLite 存储、本地 API、Scheduler 和结果浏览；健康检查主要看 `summary`、`db` 和 `x`。
 **影响**：README、CLAUDE、Dashboard、backend API 和排障。
 **相关路径**：`backend/collector_service.py`、`web-ui/src/pages/DashboardPage.tsx`、`README.md`、`CLAUDE.md`
@@ -174,6 +174,6 @@
 
 **场景**：设计仓库默认配置、整理 `.gitignore` 或清理 `config/` 边界时。
 **错误做法**：把 `config/workspace.json`、`config/packs/job-*.json`、`config/packs/manual-preset-*.json` 这类本地动态或具体业务配置继续作为 Git 基线长期跟踪。
-**正确做法**：仓库里的 `config/` 只保留通用基线，例如 `config/README.md` 和 `config/packs/default-rule-set.json`；具体 job pack、manual preset pack 和本地 workspace 应作为本地动态配置忽略；`artifacts/legacy/` 只保留说明文件，不再提交具体 `search_presets*.json`，也不再进入 bootstrap 主链路。
+**正确做法**：仓库里的 `config/` 只保留通用基线，例如 `config/README.md` 和 `config/packs/default-rule-set.json`；具体 job pack、manual preset pack 和本地 workspace 应作为本地动态配置忽略；旧的 `search_presets*.json` 不再作为仓库默认配置，也不再进入 bootstrap 主链路。
 **影响**：Git 噪音、clone 后默认状态、配置通用性、文档和 bootstrap 行为。
-**相关路径**：`.gitignore`、`config/README.md`、`config/workspace.json`、`config/packs/`、`artifacts/legacy/`、`backend/workspace_store.py`
+**相关路径**：`.gitignore`、`config/README.md`、`config/workspace.json`、`config/packs/`、`backend/workspace_store.py`

@@ -74,11 +74,10 @@
 - 页面继续编辑不会自动回写原 pack
 - 只有显式保存类操作才会落盘
 
-## legacy 资料
+## 历史配置兼容
 
 旧的 `search_presets*.json` 已退出仓库基线：
 
-- `artifacts/legacy/` 只保留说明文件
 - 具体历史预设 JSON 不再提交到 Git
 - `WorkspaceStore` 也不会再主动从这类文件自动迁移 task pack
 
