@@ -1558,7 +1558,7 @@ textarea { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; min
 .results-detail-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .results-detail-empty {
@@ -1590,10 +1590,39 @@ textarea { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; min
   overflow-wrap: anywhere;
 }
 
+.results-detail-lede {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #475569;
+}
+
+.results-detail-hero-pills {
+  margin-top: 2px;
+}
+
 .results-detail-empty p {
   margin: 0;
   line-height: 1.6;
   color: #475569;
+}
+
+.results-detail-context {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid #dbe4f0;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.results-detail-context-header {
+  align-items: flex-start;
+}
+
+.results-detail-context-grid {
+  margin-top: 0;
 }
 
 .results-detail-guide {
@@ -1610,6 +1639,16 @@ textarea { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; min
   font-size: 13px;
   font-weight: 700;
   color: #334155;
+}
+
+.results-detail-guide-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #475569;
+  line-height: 1.6;
 }
 
 .results-detail-guide-pills {

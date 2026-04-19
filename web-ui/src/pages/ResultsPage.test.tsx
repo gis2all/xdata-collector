@@ -155,6 +155,24 @@ describe("ResultsPage", () => {
     expect(within(screen.getByTestId("results-table-pane")).getByText("Item 2").closest("tr")).toHaveAttribute("data-row-active", "true");
   });
 
+  it("shows a contextual empty-state rail when the current table has no rows", async () => {
+    listItemsMock.mockResolvedValue(makePage([], 0));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("results-table-pane")).getByText("\u6682\u65e0\u7ed3\u679c\u8bb0\u5f55")).toBeInTheDocument();
+    });
+
+    const detailRail = screen.getByTestId("results-detail-rail");
+
+    expect(within(detailRail).getByText("\u5f53\u524d\u8868\u6682\u65e0\u8bb0\u5f55")).toBeInTheDocument();
+    expect(within(detailRail).getByTestId("results-detail-context-grid")).toHaveClass("workbench-summary-grid");
+    expect(within(detailRail).getByText("\u5f53\u524d\u8868")).toBeInTheDocument();
+    expect(within(detailRail).getByText("\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
+    expect(within(detailRail).getByText("\u4e0b\u4e00\u6b65\u5efa\u8bae")).toBeInTheDocument();
+  });
+
   it("renders detail content after selecting a row checkbox", async () => {
     listItemsMock.mockResolvedValue(makePage([makeItem(1), makeItem(2)]));
 
@@ -171,6 +189,25 @@ describe("ResultsPage", () => {
       expect(within(detailRail).getByText("Summary 2")).toBeInTheDocument();
     });
     expect(within(detailRail).getByText("author-2")).toBeInTheDocument();
+  });
+
+  it("keeps an always-readable context summary in the detail rail for the active row", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    const detailRail = screen.getByTestId("results-detail-rail");
+
+    await waitFor(() => {
+      expect(within(detailRail).getByText("Summary 1")).toBeInTheDocument();
+    });
+
+    expect(within(detailRail).getByTestId("results-detail-hero-pills")).toHaveClass("workbench-pill-row");
+    expect(within(detailRail).getByTestId("results-detail-context-grid")).toHaveClass("workbench-summary-grid");
+    expect(within(detailRail).getByText("\u5f53\u524d\u8868")).toBeInTheDocument();
+    expect(within(detailRail).getByText("\u9009\u4e2d\u8bb0\u5f55")).toBeInTheDocument();
+    expect(within(detailRail).getByText("\u5f53\u524d\u5173\u952e\u8bcd")).toBeInTheDocument();
+    expect(within(detailRail).getByText("\u5168\u90e8")).toBeInTheDocument();
   });
 
   it("keeps table browsing controls in the filter layer and table actions in the manager layer", async () => {

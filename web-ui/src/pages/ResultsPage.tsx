@@ -1041,7 +1041,14 @@ export function ResultsPage() {
         </div>
 
         <aside className="results-detail-rail workbench-layer" data-testid="results-detail-rail">
-          <ResultsDetailRail item={activeItem} table={table} />
+          <ResultsDetailRail
+            item={activeItem}
+            table={table}
+            tableLabel={tableLabel}
+            total={total}
+            selectedCount={selectedCount}
+            keywordLabel={activeKeywordLabel}
+          />
         </aside>
       </section>
     </div>
