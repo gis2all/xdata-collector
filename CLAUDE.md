@@ -209,11 +209,13 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 
 - 当前端设计、样式调整、页面布局重构或组件视觉变更发生时，优先遵循根目录 `DESIGN.md`；如果规范与现有实现冲突，先保证信息清晰、操作顺手和工作台效率。
 - 文档、路径、启动命令默认以 `run/` 下主入口为准
+- 临时 spec / plan / design 文档统一落在 `artifacts/design/{specs,plans}`；根目录 `docs/` 不再作为方案文档入口
 - 不要把 `workspace.json` 重新做成“搜索草稿 + presets + rule sets + jobs 全内联快照”
 - 不要把 `config/` 默认绑定到具体业务任务；仓库基线只保留通用配置
 - 不要让 `data/` 回流日志、导出、测试临时文件
 - 不要让 `run/services.py` 默认管到 `run/static_web_server.py`
 - 改 X 采集链路时，先检查 `.env` 和 `/health`
+- 默认只在当前主工作区工作，不使用 `git worktree`；若未来需要恢复，必须由用户明确放开
 - 写中文 Markdown / TSX / JSON 时，注意 Windows PowerShell 的乱码和 BOM 风险
 
 ## Git 与提交边界
@@ -244,6 +246,7 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 - `config/packs/job-*.json`
 - `config/packs/manual-preset-*.json`
 - `config/packs/manual-rule-set-*.json`
+- `artifacts/design/`
 - `artifacts/legacy/*.json`
 
 `.learnings/` 应提交，但不能写入真实 cookie、token 或一次性调试噪音。
