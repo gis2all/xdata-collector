@@ -21,6 +21,7 @@ runtime/pids/
 runtime/tmp/
 runtime/tmp/tests/
 .superpowers/
+.worktrees/
 
 # Local dynamic config
 config/workspace.json
