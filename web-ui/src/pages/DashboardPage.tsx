@@ -12,6 +12,13 @@ function healthStatus(target: { configured: boolean; connected: boolean; last_er
   return "已配置";
 }
 
+function healthTone(target: { configured: boolean; connected: boolean; last_error: string }) {
+  if (!target.configured) return "neutral";
+  if (target.connected) return "success";
+  if (target.last_error) return "danger";
+  return "neutral";
+}
+
 function renderDatabaseInfo(info: DatabaseHealth) {
   return (
     <div className="dashboard-detail-grid">
@@ -112,57 +119,79 @@ export function DashboardPage() {
     }
   }
 
+  const summaryTitle = state ? "运行总览快照" : "尚未校验";
+  const summaryDescription = state
+    ? "当前页面保持上一次主动“重新加载”后的展示状态，页面刷新不会自动重新校验。"
+    : "页面刷新不会自动重新校验，只有点击“重新加载”后才会更新当前展示状态。";
   const updatedAtLabel = state?.summary.source === "runtime_snapshot"
-    ? "运行快照更新时间"
-    : "后端快照更新时间";
+    ? "运行快照更新"
+    : "当前展示更新";
+  const updatedAtValue = state
+    ? `${updatedAtLabel}：${formatUtcPlus8Time(state.summary.updated_at, "尚未校验")}`
+    : "页面刷新不会自动重新校验";
+  const dbStatusLabel = state ? healthStatus(state.db) : "尚未校验";
+  const xStatusLabel = state ? healthStatus(state.x) : "尚未校验";
+  const dbStatusTone = state ? healthTone(state.db) : "neutral";
+  const xStatusTone = state ? healthTone(state.x) : "neutral";
 
   return (
-    <>
-      <div className="card" data-testid="dashboard-health">
-        <h3>{"运行总览"}</h3>
-        <div className="grid-3">
-          <div className="kv">
-            <b>{state ? healthStatus(state.db) : loading ? "加载中" : "尚未校验"}</b>
-            {"本地数据库"}
-          </div>
-          <div className="kv">
-            <b>{state ? healthStatus(state.x) : loading ? "加载中" : "尚未校验"}</b>
-            {"X 会话"}
-          </div>
+    <div className="dashboard-page" data-testid="dashboard-page">
+      <section className="card dashboard-page-header" data-testid="dashboard-page-header">
+        <div className="dashboard-page-header-copy">
+          <h3>{"运行总览"}</h3>
+          <p className="kv">{"快速查看本地数据库与 X 会话的上次已知状态，只有点击“重新加载”才会主动重新校验。"}</p>
         </div>
-        <div className="kv" style={{ marginTop: 8 }}>
-          {error
-            ? `错误: ${error}`
-            : state
-              ? `${updatedAtLabel}: ${formatUtcPlus8Time(state.summary.updated_at, "尚未校验")}`
-              : loading
-                ? "正在读取后端快照..."
-                : "尚未刷新"}
-        </div>
-      </div>
-
-      {state && (
-        <>
-          <div className="card" data-testid="dashboard-db-info">
-            <h3>{"数据库基本信息"}</h3>
-            {renderDatabaseInfo(state.db)}
-          </div>
-
-          <div className="card" data-testid="dashboard-x-info">
-            <h3>{"X 基本信息"}</h3>
-            {renderXInfo(state.x)}
-          </div>
-        </>
-      )}
-
-      <div className="card" data-testid="dashboard-actions">
-        <h3>{"快速操作"}</h3>
-        <div className="row">
+        <div className="dashboard-page-header-actions">
           <button type="button" onClick={loadHealth} disabled={loading}>
-            {loading ? "刷新中..." : "重新加载"}
+            {loading ? "重新加载中..." : "重新加载"}
           </button>
         </div>
-      </div>
-    </>
+      </section>
+
+      {error && <div className="alert error">{`错误: ${error}`}</div>}
+
+      <section className="card dashboard-summary" data-testid="dashboard-summary">
+        <div className="dashboard-summary-hero">
+          <div className="dashboard-summary-copy">
+            <div className="dashboard-summary-eyebrow">{"当前状态"}</div>
+            <h4 className="dashboard-summary-title">{summaryTitle}</h4>
+            <p className="kv">{summaryDescription}</p>
+          </div>
+          <div className="dashboard-summary-pills">
+            <span className={`dashboard-summary-pill ${dbStatusTone}`}>{`本地数据库：${dbStatusLabel}`}</span>
+            <span className={`dashboard-summary-pill ${xStatusTone}`}>{`X 会话：${xStatusLabel}`}</span>
+            <span className="dashboard-summary-pill neutral">{updatedAtValue}</span>
+          </div>
+        </div>
+      </section>
+
+      {state && (
+        <section className="dashboard-panels" data-testid="dashboard-panels">
+          <section className="card dashboard-status-card" data-testid="dashboard-db-info">
+            <div className="dashboard-status-card-hero">
+              <div className="dashboard-status-card-copy">
+                <div className="dashboard-status-eyebrow">{"本地数据库"}</div>
+                <h4>{"DB 连接与运行数据"}</h4>
+                <p className="kv">{"聚合路径、文件存在、任务数、运行数和最近校验结果。"}</p>
+              </div>
+              <span className={`dashboard-summary-pill ${dbStatusTone}`}>{dbStatusLabel}</span>
+            </div>
+            {renderDatabaseInfo(state.db)}
+          </section>
+
+          <section className="card dashboard-status-card" data-testid="dashboard-x-info">
+            <div className="dashboard-status-card-hero">
+              <div className="dashboard-status-card-copy">
+                <div className="dashboard-status-eyebrow">{"X 会话"}</div>
+                <h4>{"认证与会话状态"}</h4>
+                <p className="kv">{"聚合认证来源、账号摘要、浏览器提示与最近校验结果。"}</p>
+              </div>
+              <span className={`dashboard-summary-pill ${xStatusTone}`}>{xStatusLabel}</span>
+            </div>
+            {renderXInfo(state.x)}
+          </section>
+        </section>
+      )}
+    </div>
   );
 }

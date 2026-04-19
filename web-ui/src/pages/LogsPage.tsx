@@ -9,28 +9,39 @@ const SERVICE_GROUPS = [
 ] as const;
 
 const UI_TEXT = {
-  title: "\u8fd0\u884c\u65e5\u5fd7",
-  subtitle: "\u67e5\u770b\u6700\u8fd1\u91c7\u96c6\u8fd0\u884c\u8bb0\u5f55\uff0c\u4ee5\u53ca\u5f53\u524d API\u3001Scheduler \u548c Web UI \u7684\u65e5\u5fd7\u5feb\u7167\u3002",
-  refresh: "\u5237\u65b0",
-  loading: "\u6b63\u5728\u52a0\u8f7d\u65e5\u5fd7...",
-  loadError: "\u65e5\u5fd7\u52a0\u8f7d\u5931\u8d25",
-  runsTitle: "\u91c7\u96c6\u8fd0\u884c\u65e5\u5fd7",
-  runsHint: "\u6765\u81ea runtime/history/search_runs.jsonl\uff0c\u5c55\u793a\u6700\u8fd1\u6267\u884c\u8bb0\u5f55\u548c\u57fa\u7840\u8fd0\u884c\u7ed3\u679c\u3002",
-  noRuns: "\u6682\u65e0\u91c7\u96c6\u8fd0\u884c\u8bb0\u5f55",
-  runDetail: "\u8fd0\u884c\u8be6\u60c5",
-  triggerType: "\u89e6\u53d1\u65b9\u5f0f",
-  status: "\u72b6\u6001",
-  job: "\u4efb\u52a1",
-  startedAt: "\u5f00\u59cb\u65f6\u95f4",
-  endedAt: "\u7ed3\u675f\u65f6\u95f4",
-  statsSummary: "\u7edf\u8ba1\u6458\u8981",
-  errorInfo: "\u9519\u8bef\u4fe1\u606f",
-  noError: "\u65e0\u9519\u8bef",
-  selectRun: "\u8bf7\u9009\u62e9\u4e00\u6761\u8fd0\u884c\u8bb0\u5f55",
-  runtimeTitle: "\u670d\u52a1\u8fdb\u7a0b\u65e5\u5fd7",
-  runtimeHint: "\u6765\u81ea runtime/logs \u4e0b\u7684 current \u6587\u4ef6\uff0c\u6309 API\u3001Scheduler \u548c Web UI \u5206\u7ec4\u5c55\u793a\u3002",
-  readError: "\u8bfb\u53d6\u5931\u8d25\uff1a",
-  noLogContent: "\u5f53\u524d\u65e0\u65e5\u5fd7\u5185\u5bb9",
+  title: "运行日志",
+  subtitle: "先看当前服务进程日志快照，再集中查看最近采集运行记录和错误详情。",
+  refresh: "刷新",
+  refreshing: "刷新中...",
+  loading: "正在加载日志...",
+  loadError: "日志加载失败",
+  runtimeSnapshot: "服务快照",
+  runtimeTitle: "服务进程日志",
+  runtimeHint: "来自 runtime/logs 下的 current 文件，按 API、Scheduler 和 Web UI 分组展示。",
+  runtimeNoSnapshot: "当前暂无可用日志快照",
+  runsWorkbench: "运行工作台",
+  runsTitle: "采集运行日志",
+  runsHint: "来自 runtime/history/search_runs.jsonl，左侧浏览最近记录，右侧集中判读当前选中运行。",
+  noRuns: "暂无采集运行记录",
+  runWorkbench: "运行判读区",
+  runWorkbenchHint: "集中查看当前选中运行的触发方式、统计摘要和错误内容。",
+  runDetail: "运行详情",
+  triggerType: "触发方式",
+  status: "状态",
+  job: "任务",
+  startedAt: "开始时间",
+  endedAt: "结束时间",
+  statsSummary: "统计摘要",
+  errorInfo: "错误信息",
+  noError: "无错误",
+  selectRun: "请选择一条运行记录",
+  readError: "读取失败：",
+  noLogContent: "当前无日志内容",
+  groups: "服务分组",
+  contentReady: "已有内容",
+  readErrors: "读取异常",
+  runRecords: "运行记录",
+  selectedRun: "当前选中",
 } as const;
 
 function statusClass(status: string) {
@@ -51,6 +62,29 @@ function summarizeStats(stats: Record<string, number> | undefined) {
 
 function logKind(name: string) {
   return name.includes(".err.") ? "stderr" : "stdout";
+}
+
+function serviceGroupFiles(allLogs: RuntimeLogFile[], key: string) {
+  return allLogs.filter((item) => item.name.startsWith(key));
+}
+
+function serviceGroupTone(files: RuntimeLogFile[]) {
+  if (files.some((file) => file.error)) return "danger";
+  if (files.some((file) => file.content)) return "success";
+  return "neutral";
+}
+
+function serviceGroupStatus(files: RuntimeLogFile[]) {
+  const errorCount = files.filter((file) => file.error).length;
+  if (errorCount) return `读取异常 ${errorCount}`;
+  if (files.some((file) => file.content)) return "已有内容";
+  if (files.length) return "暂无内容";
+  return "尚未采集";
+}
+
+function latestUpdatedAt(files: RuntimeLogFile[]) {
+  const values = files.map((file) => file.updated_at).filter(Boolean).sort();
+  return values.length ? values[values.length - 1] : "";
 }
 
 export function LogsPage() {
@@ -90,18 +124,22 @@ export function LogsPage() {
   }, []);
 
   const selectedRun = useMemo(() => runs.find((item) => item.id === selectedRunId) ?? null, [runs, selectedRunId]);
+  const runtimeErrorCount = runtimeLogs.filter((file) => file.error).length;
+  const runtimeGroupsWithContent = SERVICE_GROUPS.filter((group) => serviceGroupFiles(runtimeLogs, group.key).some((file) => file.content)).length;
 
   return (
     <div className="logs-page" data-testid="logs-page">
-      <div className="card logs-header">
-        <div>
+      <section className="card logs-page-header" data-testid="logs-page-header">
+        <div className="logs-header-copy">
           <h3>{UI_TEXT.title}</h3>
           <p className="kv">{UI_TEXT.subtitle}</p>
         </div>
-        <button type="button" onClick={() => load()}>
-          {UI_TEXT.refresh}
-        </button>
-      </div>
+        <div className="logs-header-actions">
+          <button type="button" onClick={() => load()}>
+            {loading ? UI_TEXT.refreshing : UI_TEXT.refresh}
+          </button>
+        </div>
+      </section>
 
       {error && <div className="alert error">{error}</div>}
       {loading && (
@@ -110,20 +148,35 @@ export function LogsPage() {
         </div>
       )}
 
-      <section className="card logs-section">
-        <div className="logs-section-header">
-          <div>
+      <section className="card logs-section logs-runtime-section" data-testid="logs-runtime-section">
+        <div className="logs-section-header logs-section-header-workbench">
+          <div className="logs-section-copy">
+            <div className="logs-section-eyebrow">{UI_TEXT.runtimeSnapshot}</div>
             <h4>{UI_TEXT.runtimeTitle}</h4>
             <p className="kv">{UI_TEXT.runtimeHint}</p>
+          </div>
+          <div className="logs-summary-pills">
+            <span className="dashboard-summary-pill neutral">{`${UI_TEXT.groups}：${SERVICE_GROUPS.length}`}</span>
+            <span className={`dashboard-summary-pill ${runtimeGroupsWithContent ? "success" : "neutral"}`}>{`${UI_TEXT.contentReady}：${runtimeGroupsWithContent}`}</span>
+            <span className={`dashboard-summary-pill ${runtimeErrorCount ? "danger" : "neutral"}`}>{`${UI_TEXT.readErrors}：${runtimeErrorCount}`}</span>
           </div>
         </div>
 
         <div className="logs-service-grid">
           {SERVICE_GROUPS.map((group) => {
-            const files = runtimeLogs.filter((item) => item.name.startsWith(group.key));
+            const files = serviceGroupFiles(runtimeLogs, group.key);
+            const tone = serviceGroupTone(files);
+            const latest = latestUpdatedAt(files);
             return (
-              <div key={group.key} className="drawer-section logs-service-group">
-                <h5>{group.label}</h5>
+              <section key={group.key} className="drawer-section logs-service-group">
+                <div className="logs-service-group-hero">
+                  <div className="logs-service-group-copy">
+                    <h5>{group.label}</h5>
+                    <p className="kv">{latest ? `最近更新：${formatUtcPlus8Time(latest)}` : UI_TEXT.runtimeNoSnapshot}</p>
+                  </div>
+                  <span className={`dashboard-summary-pill ${tone}`}>{serviceGroupStatus(files)}</span>
+                </div>
+
                 <div className="logs-service-stack">
                   {files.map((file) => (
                     <div key={file.name} className="logs-file-card">
@@ -146,17 +199,24 @@ export function LogsPage() {
                   ))}
                   {!files.length && <div className="drawer-empty">{UI_TEXT.noLogContent}</div>}
                 </div>
-              </div>
+              </section>
             );
           })}
         </div>
       </section>
 
-      <section className="card logs-section">
-        <div className="logs-section-header">
-          <div>
+      <section className="card logs-section logs-runs-section" data-testid="logs-runs-section">
+        <div className="logs-section-header logs-section-header-workbench">
+          <div className="logs-section-copy">
+            <div className="logs-section-eyebrow">{UI_TEXT.runsWorkbench}</div>
             <h4>{UI_TEXT.runsTitle}</h4>
             <p className="kv">{UI_TEXT.runsHint}</p>
+          </div>
+          <div className="logs-summary-pills">
+            <span className="dashboard-summary-pill neutral">{`${UI_TEXT.runRecords}：${runs.length}`}</span>
+            <span className={`dashboard-summary-pill ${selectedRun ? statusClass(selectedRun.status) : "neutral"}`}>
+              {selectedRun ? `${UI_TEXT.selectedRun}：#${selectedRun.id}` : `${UI_TEXT.selectedRun}：--`}
+            </span>
           </div>
         </div>
 
@@ -164,86 +224,103 @@ export function LogsPage() {
           <div className="drawer-empty">{UI_TEXT.noRuns}</div>
         ) : (
           <div className="logs-runs-layout">
-            <div className="logs-table-wrap">
-              <table className="table logs-table">
-                <thead>
-                  <tr>
-                    <th>Run ID</th>
-                    <th>{UI_TEXT.triggerType}</th>
-                    <th>{UI_TEXT.status}</th>
-                    <th>{UI_TEXT.job}</th>
-                    <th>{UI_TEXT.startedAt}</th>
-                    <th>{UI_TEXT.endedAt}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {runs.map((run) => (
-                    <tr
-                      key={run.id}
-                      className={selectedRunId === run.id ? "logs-row active" : "logs-row"}
-                      onClick={() => setSelectedRunId(run.id)}
-                    >
-                      <td>#{run.id}</td>
-                      <td>{run.trigger_type}</td>
-                      <td>
-                        <span className={`badge ${statusClass(run.status)}`}>{run.status}</span>
-                      </td>
-                      <td>{run.job_id ? `#${run.job_id}` : "--"}</td>
-                      <td>{formatUtcPlus8Time(run.started_at)}</td>
-                      <td>{formatUtcPlus8Time(run.ended_at)}</td>
+            <div className="logs-runs-list">
+              <div className="logs-runs-manager">
+                <span className="dashboard-summary-pill neutral">{`${UI_TEXT.triggerType}：${selectedRun?.trigger_type || "--"}`}</span>
+                <span className={`dashboard-summary-pill ${selectedRun ? statusClass(selectedRun.status) : "neutral"}`}>{`${UI_TEXT.status}：${selectedRun?.status || "--"}`}</span>
+                <span className="dashboard-summary-pill neutral">{`${UI_TEXT.statsSummary}：${selectedRun ? summarizeStats(selectedRun.stats_json) : "--"}`}</span>
+              </div>
+
+              <div className="logs-table-wrap">
+                <table className="table logs-table">
+                  <thead>
+                    <tr>
+                      <th>Run ID</th>
+                      <th>{UI_TEXT.triggerType}</th>
+                      <th>{UI_TEXT.status}</th>
+                      <th>{UI_TEXT.job}</th>
+                      <th>{UI_TEXT.startedAt}</th>
+                      <th>{UI_TEXT.endedAt}</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {runs.map((run) => (
+                      <tr
+                        key={run.id}
+                        className={selectedRunId === run.id ? "logs-row active" : "logs-row"}
+                        onClick={() => setSelectedRunId(run.id)}
+                      >
+                        <td>#{run.id}</td>
+                        <td>{run.trigger_type}</td>
+                        <td>
+                          <span className={`badge ${statusClass(run.status)}`}>{run.status}</span>
+                        </td>
+                        <td>{run.job_id ? `#${run.job_id}` : "--"}</td>
+                        <td>{formatUtcPlus8Time(run.started_at)}</td>
+                        <td>{formatUtcPlus8Time(run.ended_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            <div className="drawer-section logs-run-detail">
-              {selectedRun ? (
-                <>
-                  <h5>{UI_TEXT.runDetail}</h5>
-                  <div className="logs-detail-grid">
-                    <div className="dashboard-detail-item">
-                      <span>Run ID</span>
-                      <strong>#{selectedRun.id}</strong>
-                    </div>
-                    <div className="dashboard-detail-item">
-                      <span>{UI_TEXT.triggerType}</span>
-                      <strong>{selectedRun.trigger_type}</strong>
-                    </div>
-                    <div className="dashboard-detail-item">
-                      <span>{UI_TEXT.status}</span>
-                      <strong>{selectedRun.status}</strong>
-                    </div>
-                    <div className="dashboard-detail-item">
-                      <span>{UI_TEXT.job}</span>
-                      <strong>{selectedRun.job_id ? `#${selectedRun.job_id}` : "--"}</strong>
-                    </div>
-                    <div className="dashboard-detail-item">
-                      <span>{UI_TEXT.startedAt}</span>
-                      <strong>{formatUtcPlus8Time(selectedRun.started_at)}</strong>
-                    </div>
-                    <div className="dashboard-detail-item">
-                      <span>{UI_TEXT.endedAt}</span>
-                      <strong>{formatUtcPlus8Time(selectedRun.ended_at)}</strong>
-                    </div>
-                    <div className="dashboard-detail-item dashboard-detail-item-wide">
-                      <span>{UI_TEXT.statsSummary}</span>
-                      <strong>{summarizeStats(selectedRun.stats_json)}</strong>
-                    </div>
+            {selectedRun ? (
+              <aside className="drawer-section logs-run-detail" data-testid="logs-run-rail">
+                <div className="logs-run-hero">
+                  <div className="logs-section-eyebrow">{UI_TEXT.runWorkbench}</div>
+                  <h5 className="logs-run-title">{selectedRun.job_id ? `任务 #${selectedRun.job_id}` : `运行 #${selectedRun.id}`}</h5>
+                  <p className="kv">{UI_TEXT.runWorkbenchHint}</p>
+                  <div className="logs-run-pills">
+                    <span className={`dashboard-summary-pill ${statusClass(selectedRun.status)}`}>{selectedRun.status}</span>
+                    <span className="dashboard-summary-pill neutral">{selectedRun.trigger_type}</span>
+                    <span className="dashboard-summary-pill neutral">{summarizeStats(selectedRun.stats_json)}</span>
                   </div>
-                  <div className="logs-detail-block">
-                    <div className="collector-subtitle">{UI_TEXT.errorInfo}</div>
-                    <pre className="logs-pre">{selectedRun.error_text || UI_TEXT.noError}</pre>
+                </div>
+
+                <div className="logs-run-section-title">{UI_TEXT.runDetail}</div>
+                <div className="logs-detail-grid">
+                  <div className="dashboard-detail-item">
+                    <span>Run ID</span>
+                    <strong>#{selectedRun.id}</strong>
                   </div>
-                  <div className="logs-detail-block">
-                    <div className="collector-subtitle">stats_json</div>
-                    <pre className="logs-pre">{JSON.stringify(selectedRun.stats_json || {}, null, 2)}</pre>
+                  <div className="dashboard-detail-item">
+                    <span>{UI_TEXT.triggerType}</span>
+                    <strong>{selectedRun.trigger_type}</strong>
                   </div>
-                </>
-              ) : (
-                <div className="drawer-empty">{UI_TEXT.selectRun}</div>
-              )}
-            </div>
+                  <div className="dashboard-detail-item">
+                    <span>{UI_TEXT.status}</span>
+                    <strong>{selectedRun.status}</strong>
+                  </div>
+                  <div className="dashboard-detail-item">
+                    <span>{UI_TEXT.job}</span>
+                    <strong>{selectedRun.job_id ? `#${selectedRun.job_id}` : "--"}</strong>
+                  </div>
+                  <div className="dashboard-detail-item">
+                    <span>{UI_TEXT.startedAt}</span>
+                    <strong>{formatUtcPlus8Time(selectedRun.started_at)}</strong>
+                  </div>
+                  <div className="dashboard-detail-item">
+                    <span>{UI_TEXT.endedAt}</span>
+                    <strong>{formatUtcPlus8Time(selectedRun.ended_at)}</strong>
+                  </div>
+                  <div className="dashboard-detail-item dashboard-detail-item-wide">
+                    <span>{UI_TEXT.statsSummary}</span>
+                    <strong>{summarizeStats(selectedRun.stats_json)}</strong>
+                  </div>
+                </div>
+                <div className="logs-detail-block">
+                  <div className="logs-run-section-title">{UI_TEXT.errorInfo}</div>
+                  <pre className="logs-pre">{selectedRun.error_text || UI_TEXT.noError}</pre>
+                </div>
+                <div className="logs-detail-block">
+                  <div className="logs-run-section-title">stats_json</div>
+                  <pre className="logs-pre">{JSON.stringify(selectedRun.stats_json || {}, null, 2)}</pre>
+                </div>
+              </aside>
+            ) : (
+              <div className="drawer-section logs-run-detail">{UI_TEXT.selectRun}</div>
+            )}
           </div>
         )}
       </section>
