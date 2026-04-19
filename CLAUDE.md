@@ -207,7 +207,8 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 
 ## 编辑时的约束
 
-- 当前端设计、样式调整、页面布局重构或组件视觉变更发生时，优先遵循根目录 `DESIGN.md`；如果规范与现有实现冲突，先保证信息清晰、操作顺手和工作台效率。
+- 当前端设计、样式调整、页面布局重构或组件视觉变更发生时，优先遵循根目录 `DESIGN.md`；如果当前实现已经改变了页面真相，应在同一轮同步更新 `DESIGN.md`，避免规范继续落后。
+- 如果 `DESIGN.md` 与现有实现临时冲突，先保证信息清晰、操作顺手和工作台效率，再把规范补齐到当前真相。
 - 文档、路径、启动命令默认以 `run/` 下主入口为准
 - 临时 spec / plan / design 文档统一落在 `artifacts/design/{specs,plans}`；根目录 `docs/` 不再作为方案文档入口
 - 不要把 `workspace.json` 重新做成“搜索草稿 + presets + rule sets + jobs 全内联快照”
