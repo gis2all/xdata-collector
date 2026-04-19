@@ -205,6 +205,15 @@ describe("JobsPage", () => {
     expect(screen.queryByTestId("jobs-resizer")).not.toBeInTheDocument();
   });
 
+  it("renders pagination above the jobs table", async () => {
+    render(<JobsPage />);
+
+    const pagination = await screen.findByTestId("jobs-pagination");
+    const tableWrap = screen.getByTestId("jobs-table-wrap");
+
+    expect(pagination.compareDocumentPosition(tableWrap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("does not persist a dragged width after remount", async () => {
     Object.defineProperty(window, "innerWidth", { value: 1440, writable: true });
 
@@ -242,6 +251,7 @@ describe("JobsPage", () => {
     expect(within(emptyWorkspace).getByText("这个工作区会承接的操作")).toBeInTheDocument();
     expect(within(emptyWorkspace).getByRole("button", { name: "新建任务" })).toBeInTheDocument();
     expect(within(emptyWorkspace).getByRole("button", { name: "刷新列表" })).toBeInTheDocument();
+    expect(within(emptyWorkspace).getByTestId("jobs-refresh-empty")).toHaveClass("workbench-secondary-action");
     expect(within(emptyWorkspace).getByText("1. 打开或新建任务")).toBeInTheDocument();
     expect(within(emptyWorkspace).getByText("2. 绑定任务包")).toBeInTheDocument();
     expect(within(emptyWorkspace).getByText("3. 完成编辑并保存")).toBeInTheDocument();
@@ -300,6 +310,11 @@ describe("JobsPage", () => {
     expect(screen.getByLabelText("job-load-pack")).toBeInTheDocument();
     expect(screen.getByLabelText("job-save-as-pack")).toBeInTheDocument();
     expect(screen.getByLabelText("job-save-current-pack")).toBeInTheDocument();
+    expect(screen.getByTestId("jobs-close-workspace")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByLabelText("job-load-pack")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByLabelText("job-import-file-pack")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByLabelText("job-import-and-save-pack")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByLabelText("job-save-as-pack")).toHaveClass("workbench-secondary-action");
     expect(screen.getByText(/只替换当前草稿/)).toBeInTheDocument();
     expect(screen.getByText(/会先导入文件，再立刻保存成新的本地任务包并绑定/)).toBeInTheDocument();
 
@@ -333,6 +348,9 @@ describe("JobsPage", () => {
     const manageBar = screen.getByTestId("jobs-manage-bar");
     expect(manageBar).toBeInTheDocument();
     expect(manageBar).not.toHaveClass("workbench-subsurface");
+    expect(screen.getByTestId("jobs-search-button")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByRole("button", { name: "批量启用" })).toHaveClass("workbench-secondary-action");
+    expect(screen.getByRole("button", { name: "批量删除" })).toHaveClass("workbench-danger-action");
     expect(within(listToolsSummary).getByText("\u5171 0 \u9879\u4efb\u52a1")).toBeInTheDocument();
     expect(within(listToolsSummary).getByText("\u5f53\u524d\u8303\u56f4\uff1a\u542f\u7528\u4e2d")).toBeInTheDocument();
     expect(within(manageBar).getByText("\u5148\u5728\u8868\u683c\u4e2d\u52fe\u9009\u4efb\u52a1\uff0c\u518d\u9009\u62e9\u5168\u90e8\u5339\u914d\u7ed3\u679c\u6216\u6267\u884c\u6279\u91cf\u64cd\u4f5c\u3002")).toBeInTheDocument();
@@ -462,6 +480,7 @@ describe("JobsPage", () => {
     expect(screen.queryByRole("button", { name: "\u67e5\u770b" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "\u7f16\u8f91" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "\u6253\u5f00" })).toBeInTheDocument();
+    expect(screen.getByTestId("job-row-open-7")).toHaveClass("workbench-secondary-action");
 
     fireEvent.click(screen.getByRole("button", { name: "\u5173\u95ed" }));
     fireEvent.click(screen.getByRole("button", { name: "\u6253\u5f00" }));

@@ -87,6 +87,30 @@ function latestUpdatedAt(files: RuntimeLogFile[]) {
   return values.length ? values[values.length - 1] : "";
 }
 
+function renderLogFileState(error: string | undefined, content: string | undefined) {
+  if (error) {
+    return (
+      <div className="logs-file-state logs-file-state-error">
+        <div className="logs-file-state-eyebrow">读取反馈</div>
+        <strong>{`${UI_TEXT.readError}${error}`}</strong>
+        <p>当前文件未能正常读取，可先查看同组其他日志或直接刷新重试。</p>
+      </div>
+    );
+  }
+
+  if (content) {
+    return <pre className="logs-pre logs-pre-compact">{content}</pre>;
+  }
+
+  return (
+    <div className="logs-file-state logs-file-state-empty">
+      <div className="logs-file-state-eyebrow">当前状态</div>
+      <strong>{UI_TEXT.noLogContent}</strong>
+      <p>该文件已接入当前卡片，但此刻还没有可展示的新内容。</p>
+    </div>
+  );
+}
+
 export function LogsPage() {
   const [runs, setRuns] = useState<RunRecord[]>([]);
   const [runtimeLogs, setRuntimeLogs] = useState<RuntimeLogFile[]>([]);
@@ -135,7 +159,7 @@ export function LogsPage() {
           <p className="kv">{UI_TEXT.subtitle}</p>
         </div>
         <div className="logs-header-actions workbench-page-header-actions">
-          <button type="button" onClick={() => load()}>
+          <button type="button" className="workbench-primary-action" onClick={() => load()}>
             {loading ? UI_TEXT.refreshing : UI_TEXT.refresh}
           </button>
         </div>
@@ -202,16 +226,10 @@ export function LogsPage() {
                           </div>
                         </div>
                       </div>
-                      {file.error ? (
-                        <div className="alert error">{`${UI_TEXT.readError}${file.error}`}</div>
-                      ) : file.content ? (
-                        <pre className="logs-pre logs-pre-compact">{file.content}</pre>
-                      ) : (
-                        <div className="drawer-empty">{UI_TEXT.noLogContent}</div>
-                      )}
+                      {renderLogFileState(file.error, file.content)}
                     </div>
                   ))}
-                  {!files.length && <div className="drawer-empty">{UI_TEXT.noLogContent}</div>}
+                  {!files.length && renderLogFileState(undefined, undefined)}
                 </div>
               </section>
             );
@@ -239,7 +257,7 @@ export function LogsPage() {
         ) : (
           <div className="logs-runs-layout">
             <div className="logs-runs-list">
-              <div className="logs-runs-manager workbench-pill-row workbench-subsurface workbench-subsurface-muted">
+              <div className="logs-runs-manager workbench-summary-panel" data-testid="logs-runs-manager">
                 <span className="dashboard-summary-pill workbench-pill neutral">{`${UI_TEXT.triggerType}：${selectedRun?.trigger_type || "--"}`}</span>
                 <span className={`dashboard-summary-pill workbench-pill ${selectedRun ? statusClass(selectedRun.status) : "neutral"}`}>{`${UI_TEXT.status}：${selectedRun?.status || "--"}`}</span>
                 <span className="dashboard-summary-pill workbench-pill neutral">{`${UI_TEXT.statsSummary}：${selectedRun ? summarizeStats(selectedRun.stats_json) : "--"}`}</span>
@@ -267,7 +285,7 @@ export function LogsPage() {
                         <td>#{run.id}</td>
                         <td>{run.trigger_type}</td>
                         <td>
-                          <span className={`badge ${statusClass(run.status)}`}>{run.status}</span>
+                          <span className={`badge workbench-badge ${statusClass(run.status)}`}>{run.status}</span>
                         </td>
                         <td>{run.job_id ? `#${run.job_id}` : "--"}</td>
                         <td>{formatUtcPlus8Time(run.started_at)}</td>

@@ -116,7 +116,13 @@ export function SettingsPage() {
           <p className="kv">{"\u8fd9\u91cc\u53ea\u7ef4\u62a4\u8f7b\u91cf config/workspace.json\uff1aenvironment \u53c2\u6570\u3001\u8fd0\u884c\u8def\u5f84\u548c\u81ea\u52a8\u4efb\u52a1 registry\u3002\u4efb\u52a1\u6b63\u6587\u4ecd\u7136\u5728 config/packs/*.json \u4e2d\u7ba1\u7406\u3002"}</p>
         </div>
         <div className="settings-page-header-actions workbench-page-header-actions">
-          <button type="button" aria-label="save-workspace" onClick={handleSave} disabled={loading || saving}>
+          <button
+            type="button"
+            className="workbench-primary-action"
+            aria-label="save-workspace"
+            onClick={handleSave}
+            disabled={loading || saving}
+          >
             {saving ? "\u4fdd\u5b58\u4e2d..." : "\u4fdd\u5b58 workspace.json"}
           </button>
         </div>
@@ -196,10 +202,22 @@ export function SettingsPage() {
           <div className="collector-card settings-action-card workbench-subsurface">
             <div className="settings-card-title">{"\u5237\u65b0\u4e0e\u5bf9\u9f50"}</div>
             <div className="collector-toolbar settings-card-actions">
-              <button type="button" className="ghost" aria-label="reload-workspace" onClick={() => loadWorkspace().catch(() => undefined)} disabled={loading}>
+              <button
+                type="button"
+                className="ghost workbench-secondary-action"
+                aria-label="reload-workspace"
+                onClick={() => loadWorkspace().catch(() => undefined)}
+                disabled={loading}
+              >
                 {"\u91cd\u65b0\u52a0\u8f7d"}
               </button>
-              <button type="button" className="ghost" aria-label="export-workspace" onClick={handleExportRefresh} disabled={loading}>
+              <button
+                type="button"
+                className="ghost workbench-secondary-action"
+                aria-label="export-workspace"
+                onClick={handleExportRefresh}
+                disabled={loading}
+              >
                 {"\u5bfc\u51fa\u5237\u65b0"}
               </button>
             </div>

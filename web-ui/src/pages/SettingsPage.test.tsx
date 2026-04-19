@@ -59,7 +59,9 @@ describe("SettingsPage", () => {
     expect(screen.getByText(".env")).toBeInTheDocument();
     expect(screen.getByText("0")).toBeInTheDocument();
     expect(screen.getByDisplayValue(TEXT.note)).toBeInTheDocument();
-    expect(screen.getByLabelText("save-workspace")).toBeInTheDocument();
+    expect(screen.getByLabelText("save-workspace")).toHaveClass("workbench-primary-action");
+    expect(screen.getByLabelText("reload-workspace")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByLabelText("export-workspace")).toHaveClass("workbench-secondary-action");
   });
 
   it("loads workspace json and saves edited content", async () => {

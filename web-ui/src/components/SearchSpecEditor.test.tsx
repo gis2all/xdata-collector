@@ -5,6 +5,19 @@ import { SearchSpecEditor } from "./SearchSpecEditor";
 import { DEFAULT_SEARCH_SPEC, cloneSearchSpec } from "../collector";
 
 describe("SearchSpecEditor", () => {
+  it("renders grouped workbench sections for keywords, scope, metrics, behavior, and query summary", () => {
+    render(<SearchSpecEditor value={cloneSearchSpec(DEFAULT_SEARCH_SPEC)} onChange={vi.fn()} />);
+
+    expect(screen.getByTestId("search-spec-editor")).toHaveClass("collector-editor-shell");
+    expect(screen.getByTestId("search-spec-section-keywords")).toHaveClass("collector-editor-section");
+    expect(screen.getByTestId("search-spec-section-scope")).toHaveClass("collector-editor-section");
+    expect(screen.getByTestId("search-spec-section-metrics")).toHaveClass("collector-editor-section");
+    expect(screen.getByTestId("search-spec-section-behavior")).toHaveClass("collector-editor-section");
+    expect(screen.getByTestId("search-spec-query-summary")).toHaveClass("workbench-summary-panel");
+    expect(screen.getByText("QUERY SETUP")).toBeInTheDocument();
+    expect(screen.getByText("PREVIEW")).toBeInTheDocument();
+  });
+
   it("defaults language to zh_en and writes back range filters", () => {
     const onChange = vi.fn();
     render(<SearchSpecEditor value={cloneSearchSpec(DEFAULT_SEARCH_SPEC)} onChange={onChange} />);

@@ -421,6 +421,22 @@ function renderSortButtons(
   );
 }
 
+function getCellContentClass(field: ItemSortField) {
+  if (["title", "summary_zh", "excerpt", "text"].includes(field)) {
+    return "results-cell-content results-cell-content-text";
+  }
+  if (["source_url", "canonical_url"].includes(field)) {
+    return "results-cell-content results-cell-content-link";
+  }
+  if (["id", "run_id", "score", "views", "likes", "replies", "retweets", "rule_set_id"].includes(field)) {
+    return "results-cell-content results-cell-content-compact";
+  }
+  if (field === "level") {
+    return "results-cell-content results-cell-content-badge";
+  }
+  return "results-cell-content results-cell-content-meta";
+}
+
 export function ResultsPage() {
   const [table, setTable] = useState<ItemTable>("curated");
   const [items, setItems] = useState<ResultItemRecord[]>([]);
@@ -869,6 +885,30 @@ export function ResultsPage() {
         clearSelectionLabel={TEXT.clearSelection}
         loading={loading}
         fieldMenuOpen={fieldMenuOpen}
+        fieldMenu={fieldMenuOpen ? (
+          <div className="results-field-menu" data-testid="results-field-menu">
+            <div className="results-field-menu-header">
+              <div className="results-field-menu-copy">
+                <div className="results-field-menu-title">列显示</div>
+                <div className="kv">隐藏列会保留宽度设置，重新显示时会恢复。</div>
+              </div>
+              <span className="results-summary-pill workbench-pill">{`已选 ${visibleColumnDefinitions.length} 列`}</span>
+            </div>
+            <div className="results-field-list">
+              {columnDefinitions.map((column) => (
+                <label key={column.key} className="results-field-option">
+                  <input
+                    type="checkbox"
+                    aria-label={`toggle-column-${column.key}`}
+                    checked={visibleColumns.includes(column.key)}
+                    onChange={() => toggleColumnVisibility(column.key)}
+                  />
+                  <span>{column.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : null}
         onSelectAllMatching={handleSelectAllMatching}
         onClearSelection={handleClearSelection}
         onToggleFields={() => setFieldMenuOpen((current) => !current)}
@@ -879,23 +919,6 @@ export function ResultsPage() {
 
       <section className="results-main-workspace" data-testid="results-main-workspace">
         <div className="results-table-pane" data-testid="results-table-pane">
-          {fieldMenuOpen && (
-            <div className="results-field-menu">
-              <div className="results-field-list">
-                {columnDefinitions.map((column) => (
-                  <label key={column.key} className="results-field-option">
-                    <input
-                      type="checkbox"
-                      aria-label={`toggle-column-${column.key}`}
-                      checked={visibleColumns.includes(column.key)}
-                      onChange={() => toggleColumnVisibility(column.key)}
-                    />
-                    <span>{column.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
           <div className="results-table-headband workbench-summary-panel" data-testid="results-table-headband">
             <div className="results-table-headband-copy">
               <div className="workbench-section-eyebrow">{"数据表格"}</div>
@@ -932,8 +955,35 @@ export function ResultsPage() {
             <span className="results-summary-pill workbench-pill">{`\u6bcf\u9875 ${pageSize} \u6761`}</span>
           </div>
 
-          <div className={`results-table-wrap${isResizingColumn ? " dragging" : ""}`}>
-            <table className="table results-table" style={{ marginTop: 10, minWidth: tableMinWidth, tableLayout: "fixed" }}>
+          {total > 0 && (
+            <div className="results-pagination workbench-subsurface" data-testid="results-pagination">
+              <span className="kv">{`\u5171 ${total} \u6761`}</span>
+              <div className="row">
+                <button
+                  type="button"
+                  className="ghost workbench-secondary-action"
+                  aria-label="results-prev-page"
+                  disabled={loading || page <= 1}
+                  onClick={() => void load({ table, page: page - 1 })}
+                >
+                  {TEXT.prevPage}
+                </button>
+                <span className="kv">{`\u7b2c ${page} / ${totalPages} \u9875`}</span>
+                <button
+                  type="button"
+                  className="ghost workbench-secondary-action"
+                  aria-label="results-next-page"
+                  disabled={loading || page >= totalPages}
+                  onClick={() => void load({ table, page: page + 1 })}
+                >
+                  {TEXT.nextPage}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className={`results-table-wrap${isResizingColumn ? " dragging" : ""}`} data-testid="results-table-wrap">
+            <table className="table results-table" style={{ minWidth: tableMinWidth, tableLayout: "fixed" }}>
               <colgroup>
                 <col style={{ width: RESULTS_SELECT_COLUMN_WIDTH }} />
                 {resolvedVisibleColumnDefinitions.map((column) => (
@@ -1007,13 +1057,15 @@ export function ResultsPage() {
                       />
                     </td>
                     {resolvedVisibleColumnDefinitions.map((column) => (
-                      <td key={`${item.id}-${column.key}`}>{column.render(item)}</td>
+                      <td key={`${item.id}-${column.key}`}>
+                        <div className={getCellContentClass(column.key)}>{column.render(item)}</div>
+                      </td>
                     ))}
                     <td onClick={(event) => event.stopPropagation()}>
                       <div className="table-actions">
                         <button
                           type="button"
-                          className="danger"
+                          className="danger workbench-danger-action"
                           aria-label={`delete-item-${item.id}`}
                           onClick={() => void handleDeleteOne(item)}
                           disabled={loading}
@@ -1027,33 +1079,6 @@ export function ResultsPage() {
               </tbody>
             </table>
           </div>
-
-          {total > 0 && (
-            <div className="jobs-pagination">
-              <span className="kv">{`\u5171 ${total} \u6761`}</span>
-              <div className="row">
-                <button
-                  type="button"
-                  className="ghost"
-                  aria-label="results-prev-page"
-                  disabled={loading || page <= 1}
-                  onClick={() => void load({ table, page: page - 1 })}
-                >
-                  {TEXT.prevPage}
-                </button>
-                <span className="kv">{`\u7b2c ${page} / ${totalPages} \u9875`}</span>
-                <button
-                  type="button"
-                  className="ghost"
-                  aria-label="results-next-page"
-                  disabled={loading || page >= totalPages}
-                  onClick={() => void load({ table, page: page + 1 })}
-                >
-                  {TEXT.nextPage}
-                </button>
-              </div>
-            </div>
-          )}
 
           {loading && (
             <div className="searching">
@@ -1070,8 +1095,6 @@ export function ResultsPage() {
             table={table}
             tableLabel={tableLabel}
             total={total}
-            selectedCount={selectedCount}
-            keywordLabel={activeKeywordLabel}
           />
         </aside>
       </section>

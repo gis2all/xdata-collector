@@ -868,15 +868,29 @@ export function JobsPage() {
     if (job.deleted_at) {
       return (
         <div className="table-actions jobs-row-actions">
-          <button type="button" className="ghost" onClick={() => openJobWorkspace(job)}>{"打开"}</button>
-          <button type="button" className="ghost" onClick={() => handleRestore(job)}>{"恢复"}</button>
+          <button
+            type="button"
+            className="ghost workbench-secondary-action"
+            data-testid={`job-row-open-${job.id}`}
+            onClick={() => openJobWorkspace(job)}
+          >
+            {"打开"}
+          </button>
+          <button type="button" className="ghost workbench-secondary-action" onClick={() => handleRestore(job)}>{"恢复"}</button>
         </div>
       );
     }
     return (
       <div className="table-actions jobs-row-actions">
-        <button type="button" className="ghost" onClick={() => openJobWorkspace(job)}>{"打开"}</button>
-        <button type="button" onClick={() => handleRunNow(job)}>{"立即运行"}</button>
+        <button
+          type="button"
+          className="ghost workbench-secondary-action"
+          data-testid={`job-row-open-${job.id}`}
+          onClick={() => openJobWorkspace(job)}
+        >
+          {"打开"}
+        </button>
+        <button type="button" className="ghost workbench-secondary-action" onClick={() => handleRunNow(job)}>{"立即运行"}</button>
       </div>
     );
   }
@@ -967,7 +981,7 @@ export function JobsPage() {
                 </select>
               </label>
               <div className="jobs-filter-actions">
-                <button type="button" className="ghost" onClick={submitQuery}>{"搜索"}</button>
+                <button type="button" className="ghost workbench-secondary-action" data-testid="jobs-search-button" onClick={submitQuery}>{"搜索"}</button>
               </div>
             </div>
 
@@ -978,12 +992,22 @@ export function JobsPage() {
               </div>
               <div className="jobs-managebar-actions">
                 {showSelectAllMatching && (
-                  <button type="button" className="ghost" aria-label="select-all-matching-jobs" onClick={selectAllMatchingJobs}>
+                  <button
+                    type="button"
+                    className="ghost workbench-secondary-action"
+                    aria-label="select-all-matching-jobs"
+                    onClick={selectAllMatchingJobs}
+                  >
                     {`已选中本页 ${jobs.length} 条。选择全部 ${total} 条匹配结果`}
                   </button>
                 )}
                 {selectedCount > 0 && (
-                  <button type="button" className="ghost" aria-label="clear-job-selection" onClick={clearSelection}>
+                  <button
+                    type="button"
+                    className="ghost workbench-secondary-action"
+                    aria-label="clear-job-selection"
+                    onClick={clearSelection}
+                  >
                     {"清空选择"}
                   </button>
                 )}
@@ -991,7 +1015,11 @@ export function JobsPage() {
                   <button
                     key={item.action}
                     type="button"
-                    className={item.tone === "danger" ? "danger" : item.tone === "ghost" ? "ghost" : undefined}
+                    className={
+                      item.tone === "danger"
+                        ? "danger workbench-danger-action"
+                        : "ghost workbench-secondary-action"
+                    }
                     disabled={!isBatchActionEnabled(item.action)}
                     onClick={() => handleBatchAction(item.action).catch(() => undefined)}
                   >
@@ -1005,7 +1033,30 @@ export function JobsPage() {
           {selectionWarning && <div className="alert error jobs-list-alert">{selectionWarning}</div>}
 
           <div className="card jobs-table-card">
-            <div className="jobs-table-wrap">
+            <div className="jobs-pagination" data-testid="jobs-pagination">
+              <span className="kv">{"共 "}{total}{" 条"}</span>
+              <div className="row">
+                <button
+                  type="button"
+                  className="ghost workbench-secondary-action"
+                  disabled={page <= 1}
+                  onClick={() => refreshJobs({ page: page - 1 }).catch(() => undefined)}
+                >
+                  {"上一页"}
+                </button>
+                <span className="kv">{"第 "}{page}{" / "}{totalPages}{" 页"}</span>
+                <button
+                  type="button"
+                  className="ghost workbench-secondary-action"
+                  disabled={page >= totalPages}
+                  onClick={() => refreshJobs({ page: page + 1 }).catch(() => undefined)}
+                >
+                  {"下一页"}
+                </button>
+              </div>
+            </div>
+
+            <div className="jobs-table-wrap" data-testid="jobs-table-wrap">
               {loading ? (
                 <div className="searching"><span className="spinner" /> {"正在加载任务..."}</div>
               ) : (
@@ -1070,15 +1121,6 @@ export function JobsPage() {
                 </table>
               )}
             </div>
-
-            <div className="jobs-pagination">
-              <span className="kv">{"共 "}{total}{" 条"}</span>
-              <div className="row">
-                <button type="button" className="ghost" disabled={page <= 1} onClick={() => refreshJobs({ page: page - 1 }).catch(() => undefined)}>{"上一页"}</button>
-                <span className="kv">{"第 "}{page}{" / "}{totalPages}{" 页"}</span>
-                <button type="button" className="ghost" disabled={page >= totalPages} onClick={() => refreshJobs({ page: page + 1 }).catch(() => undefined)}>{"下一页"}</button>
-              </div>
-            </div>
           </div>
         </section>
 
@@ -1103,7 +1145,14 @@ export function JobsPage() {
                   <div className="kv">{workspaceMeta}</div>
                 </div>
                 <div className="drawer-header-actions">
-                  <button type="button" className="ghost" onClick={() => { setSelectedJob(null); setDrawerMode("create"); resetForm(); setDrawerOpen(false); }}>{"关闭"}</button>
+                  <button
+                    type="button"
+                    className="ghost workbench-secondary-action"
+                    data-testid="jobs-close-workspace"
+                    onClick={() => { setSelectedJob(null); setDrawerMode("create"); resetForm(); setDrawerOpen(false); }}
+                  >
+                    {"关闭"}
+                  </button>
                 </div>
               </div>
 
@@ -1156,13 +1205,9 @@ export function JobsPage() {
                     <span>{"执行间隔（分钟）"}</span>
                     <input aria-label="job-interval" type="number" value={form.interval_minutes} onChange={(e) => updateForm("interval_minutes", Number(e.target.value))} disabled={drawerDisabled} />
                   </label>
-                  <label className="field checkbox-row">
-                    <span>{"启用"}</span>
+                  <label className="field checkbox-row jobs-current-task-toggle">
+                    <span>{"\u542f\u7528"}</span>
                     <input type="checkbox" checked={form.enabled} onChange={(e) => updateForm("enabled", e.target.checked)} disabled={drawerDisabled} />
-                  </label>
-                  <label className="field">
-                    <span>{"执行间隔说明"}</span>
-                    <input value={`${form.interval_minutes} 分钟`} readOnly />
                   </label>
                 </div>
               </div>
@@ -1190,9 +1235,33 @@ export function JobsPage() {
                           <option key={item.pack_name} value={item.pack_name}>{item.name}</option>
                         ))}
                       </select>
-                      <button type="button" className="ghost" aria-label="job-load-pack" onClick={() => handleImportPack().catch(() => undefined)} disabled={drawerDisabled}>{"载入任务包"}</button>
-                      <button type="button" className="ghost" aria-label="job-import-file-pack" onClick={() => { pendingFileActionRef.current = "draft"; fileInputRef.current?.click(); }} disabled={drawerDisabled}>{"从文件导入"}</button>
-                      <button type="button" className="ghost" aria-label="job-import-and-save-pack" onClick={() => { pendingFileActionRef.current = "save_new"; fileInputRef.current?.click(); }} disabled={drawerDisabled || savingPack}>{"导入并保存为新任务包"}</button>
+                      <button
+                        type="button"
+                        className="ghost workbench-secondary-action"
+                        aria-label="job-load-pack"
+                        onClick={() => handleImportPack().catch(() => undefined)}
+                        disabled={drawerDisabled}
+                      >
+                        {"载入任务包"}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost workbench-secondary-action"
+                        aria-label="job-import-file-pack"
+                        onClick={() => { pendingFileActionRef.current = "draft"; fileInputRef.current?.click(); }}
+                        disabled={drawerDisabled}
+                      >
+                        {"从文件导入"}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost workbench-secondary-action"
+                        aria-label="job-import-and-save-pack"
+                        onClick={() => { pendingFileActionRef.current = "save_new"; fileInputRef.current?.click(); }}
+                        disabled={drawerDisabled || savingPack}
+                      >
+                        {"导入并保存为新任务包"}
+                      </button>
                       <input
                         ref={fileInputRef}
                         data-testid="job-pack-file-input"
@@ -1213,11 +1282,19 @@ export function JobsPage() {
                     <div className="collector-subtitle">{"保存当前草稿"}</div>
                     <div className="kv" style={{ marginTop: 6 }}>{"把当前草稿另存为新任务包，或保存回当前绑定任务包。"}</div>
                     <div className="collector-toolbar" style={{ marginTop: 12, flexWrap: "wrap" }}>
-                      <button type="button" className="ghost" aria-label="job-save-as-pack" onClick={() => handleSavePack("create").catch(() => undefined)} disabled={drawerDisabled || savingPack}>{"另存为新任务包"}</button>
+                      <button
+                        type="button"
+                        className="ghost workbench-secondary-action"
+                        aria-label="job-save-as-pack"
+                        onClick={() => handleSavePack("create").catch(() => undefined)}
+                        disabled={drawerDisabled || savingPack}
+                      >
+                        {"另存为新任务包"}
+                      </button>
                       <button type="button" className="workbench-primary-action" aria-label="job-save-current-pack" onClick={() => handleSavePack("overwrite").catch(() => undefined)} disabled={drawerDisabled || savingPack || !form.pack_name}>{"保存到当前任务包"}</button>
                       <button
                         type="button"
-                        className="danger"
+                        className="danger workbench-danger-action"
                         aria-label="job-delete-pack"
                         onClick={() => handleDeleteCurrentPack().catch(() => undefined)}
                         disabled={drawerDisabled || deletingPack || !currentTaskPack?.pack_name}
@@ -1331,18 +1408,18 @@ export function JobsPage() {
 
               <div className="drawer-footer">
                 {!selectedJob ? (
-                  <button type="button" aria-label="submit-job" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
+                  <button type="button" className="workbench-primary-action" aria-label="submit-job" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
                 ) : selectedJob.deleted_at ? (
                   <>
-                    <button type="button" onClick={() => handleRestore(selectedJob)}>{"恢复任务"}</button>
-                    <button type="button" className="danger" onClick={() => handlePurge(selectedJob)}>{"彻底删除"}</button>
+                    <button type="button" className="ghost workbench-secondary-action" onClick={() => handleRestore(selectedJob)}>{"恢复任务"}</button>
+                    <button type="button" className="danger workbench-danger-action" onClick={() => handlePurge(selectedJob)}>{"彻底删除"}</button>
                   </>
                 ) : (
                   <>
-                    <button type="button" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
-                    <button type="button" className="ghost" onClick={() => handleRunNow(selectedJob)}>{"立即运行"}</button>
-                    <button type="button" className="ghost" onClick={() => handleToggle(selectedJob)}>{selectedJob.enabled ? "停用任务" : "启用任务"}</button>
-                    <button type="button" className="danger" onClick={() => handleDelete(selectedJob)}>{"删除任务"}</button>
+                    <button type="button" className="workbench-primary-action" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
+                    <button type="button" className="ghost workbench-secondary-action" onClick={() => handleRunNow(selectedJob)}>{"立即运行"}</button>
+                    <button type="button" className="ghost workbench-secondary-action" onClick={() => handleToggle(selectedJob)}>{selectedJob.enabled ? "停用任务" : "启用任务"}</button>
+                    <button type="button" className="danger workbench-danger-action" onClick={() => handleDelete(selectedJob)}>{"删除任务"}</button>
                   </>
                 )}
               </div>
@@ -1362,7 +1439,8 @@ export function JobsPage() {
                   <button type="button" className="workbench-primary-action" onClick={openCreate}>{"新建任务"}</button>
                   <button
                     type="button"
-                    className="ghost"
+                    className="ghost workbench-secondary-action"
+                    data-testid="jobs-refresh-empty"
                     onClick={() => refreshJobs({ keepDrawer: false, reloadSelected: false }).catch(() => undefined)}
                     disabled={loading}
                   >

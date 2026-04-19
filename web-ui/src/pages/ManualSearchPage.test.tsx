@@ -135,6 +135,7 @@ describe("ManualSearchPage", () => {
     expect(screen.getByRole("heading", { name: "执行上下文" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "执行结果" })).toBeInTheDocument();
     expect(screen.queryByTestId("manual-pack-state-grid")).not.toBeInTheDocument();
+    expect(screen.getByTestId("manual-pack-context-hint")).toHaveClass("workbench-subsurface");
     expect(screen.getByTestId("manual-pack-load-card")).toBeInTheDocument();
     expect(screen.getByTestId("manual-pack-save-card")).toBeInTheDocument();
     expect(screen.getByTestId("manual-search-editor-surface")).toBeInTheDocument();
@@ -149,6 +150,8 @@ describe("ManualSearchPage", () => {
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(within(header).getByRole("button", { name: "立即执行任务" })).toBeInTheDocument();
     expect(within(header).getByRole("button", { name: "立即执行任务" })).toHaveClass("workbench-primary-action");
+    expect(screen.getByTestId("manual-reset-draft")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("manual-refresh-task-packs")).toHaveClass("workbench-secondary-action");
     expect(within(header).queryByRole("button", { name: "清空当前草稿" })).not.toBeInTheDocument();
     expect(within(header).queryByRole("button", { name: "刷新任务包列表" })).not.toBeInTheDocument();
     expect(screen.getByText("当前草稿：未绑定草稿").closest(".manual-rail-hero")).toHaveClass("workbench-summary-panel");
@@ -159,7 +162,7 @@ describe("ManualSearchPage", () => {
     expect(screen.getByText("最近状态：未执行")).toBeInTheDocument();
     expect(screen.getByText("最近执行：尚未执行")).toBeInTheDocument();
     expect(screen.getAllByText("尚未执行").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "查看执行结果" })).toBeInTheDocument();
+    expect(screen.getByTestId("manual-scroll-results")).toHaveClass("workbench-secondary-action");
     expect(screen.queryByText("复制规则集")).not.toBeInTheDocument();
     expect(screen.queryByText("保存规则集")).not.toBeInTheDocument();
     expect(screen.queryByText("删除规则集")).not.toBeInTheDocument();
@@ -191,7 +194,7 @@ describe("ManualSearchPage", () => {
 
     const select = await screen.findByLabelText("manual-pack-select");
     fireEvent.change(select, { target: { value: "alpha-watch" } });
-    fireEvent.click(screen.getByLabelText("manual-load-pack"));
+    fireEvent.click(screen.getByTestId("manual-load-pack"));
 
     await waitFor(() => {
       expect(getTaskPackMock).toHaveBeenCalledWith("alpha-watch");
@@ -209,21 +212,27 @@ describe("ManualSearchPage", () => {
     expect(screen.queryByText("pack_path=config/packs/alpha-watch.json")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务包操作" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务正文摘要" })).toBeInTheDocument();
+    expect(screen.getByTestId("manual-pack-context-hint")).toHaveClass("workbench-subsurface");
     expect(screen.getByTestId("manual-pack-load-card")).toBeInTheDocument();
     expect(screen.getByTestId("manual-pack-save-card")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "恢复任务包内容" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "刷新任务包列表" })).toBeInTheDocument();
-    expect(screen.getByLabelText("manual-load-pack")).toBeInTheDocument();
-    expect(screen.getByLabelText("manual-save-as-pack")).toBeInTheDocument();
-    expect(screen.getByLabelText("manual-save-current-pack")).toBeInTheDocument();
-    expect(screen.getByLabelText("manual-save-current-pack")).toHaveClass("workbench-primary-action");
+    expect(screen.getByTestId("manual-load-pack")).toBeInTheDocument();
+    expect(screen.getByTestId("manual-save-as-pack")).toBeInTheDocument();
+    expect(screen.getByTestId("manual-save-current-pack")).toBeInTheDocument();
+    expect(screen.getByTestId("manual-load-pack")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("manual-import-file-pack")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("manual-import-and-save-pack")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("manual-save-as-pack")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("manual-save-current-pack")).toHaveClass("workbench-primary-action");
+    expect(screen.getByTestId("manual-delete-pack")).toHaveClass("workbench-danger-action");
     expect(screen.getByText("关键词片段").closest(".manual-body-detail-grid")).toHaveClass("workbench-summary-grid");
     expect(screen.getByTestId("manual-search-editor-surface")).toBeInTheDocument();
     expect(screen.getByTestId("manual-rule-editor-surface")).toBeInTheDocument();
     expect(screen.getByText(/只替换当前草稿/)).toBeInTheDocument();
     expect(screen.getByText(/会先导入文件，再立刻保存成新的本地任务包并绑定/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByLabelText("manual-save-as-pack"));
+    fireEvent.click(screen.getByTestId("manual-save-as-pack"));
 
     await waitFor(() => {
       expect(createTaskPackMock).toHaveBeenCalled();
@@ -284,7 +293,7 @@ describe("ManualSearchPage", () => {
       { type: "application/json" },
     );
 
-    fireEvent.click(screen.getByLabelText("manual-import-and-save-pack"));
+    fireEvent.click(screen.getByTestId("manual-import-and-save-pack"));
     fireEvent.change(fileInput, { target: { files: [file] } });
 
     await waitFor(() => {
@@ -304,7 +313,7 @@ describe("ManualSearchPage", () => {
 
     const select = await screen.findByLabelText("manual-pack-select");
     fireEvent.change(select, { target: { value: "alpha-watch" } });
-    fireEvent.click(screen.getByLabelText("manual-load-pack"));
+    fireEvent.click(screen.getByTestId("manual-load-pack"));
 
     await waitFor(() => {
       expect(screen.getAllByText("草稿状态：未修改").length).toBeGreaterThan(0);
@@ -320,13 +329,13 @@ describe("ManualSearchPage", () => {
 
     const select = await screen.findByLabelText("manual-pack-select");
     fireEvent.change(select, { target: { value: "alpha-watch" } });
-    fireEvent.click(screen.getByLabelText("manual-load-pack"));
+    fireEvent.click(screen.getByTestId("manual-load-pack"));
 
     await waitFor(() => {
       expect(screen.getByText("当前绑定：alpha-watch")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByLabelText("manual-delete-pack"));
+    fireEvent.click(screen.getByTestId("manual-delete-pack"));
 
     await waitFor(() => {
       expect(deleteTaskPackMock).toHaveBeenCalledWith("alpha-watch");

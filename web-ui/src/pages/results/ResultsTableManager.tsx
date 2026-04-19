@@ -1,3 +1,5 @@
+import { type ReactNode } from "react";
+
 type ResultsTableManagerProps = {
   tableName: string;
   total: number;
@@ -11,6 +13,7 @@ type ResultsTableManagerProps = {
   clearSelectionLabel: string;
   loading: boolean;
   fieldMenuOpen: boolean;
+  fieldMenu?: ReactNode;
   onSelectAllMatching: () => void;
   onClearSelection: () => void;
   onToggleFields: () => void;
@@ -32,6 +35,7 @@ export function ResultsTableManager({
   clearSelectionLabel,
   loading,
   fieldMenuOpen,
+  fieldMenu,
   onSelectAllMatching,
   onClearSelection,
   onToggleFields,
@@ -64,34 +68,55 @@ export function ResultsTableManager({
             <div className="results-field-picker">
               <button
                 type="button"
-                className="ghost"
+                className="ghost workbench-secondary-action"
                 aria-haspopup="dialog"
                 aria-expanded={fieldMenuOpen}
                 onClick={onToggleFields}
               >
                 {fieldsLabel}
               </button>
+              {fieldMenu}
             </div>
-            <button type="button" className="ghost" onClick={onRestoreDefaultColumns}>
+            <button type="button" className="ghost workbench-secondary-action" onClick={onRestoreDefaultColumns}>
               {resetColumnsLabel}
             </button>
           </div>
 
           <div className="results-manager-data-actions" data-testid="results-manager-data-actions">
             {showSelectAllMatching && (
-              <button type="button" className="ghost" aria-label="select-all-matching" onClick={onSelectAllMatching}>
+              <button
+                type="button"
+                className="ghost workbench-secondary-action"
+                aria-label="select-all-matching"
+                onClick={onSelectAllMatching}
+              >
                 选择全部匹配结果
               </button>
             )}
             {(selectedCount > 0 || allMatchingSelected) && (
-              <button type="button" className="ghost" aria-label="clear-selection" onClick={onClearSelection}>
+              <button
+                type="button"
+                className="ghost workbench-secondary-action"
+                aria-label="clear-selection"
+                onClick={onClearSelection}
+              >
                 {clearSelectionLabel}
               </button>
             )}
-            <button type="button" className="danger" onClick={onBatchDelete} disabled={loading || !selectedCount}>
+            <button
+              type="button"
+              className="danger workbench-danger-action"
+              onClick={onBatchDelete}
+              disabled={loading || !selectedCount}
+            >
               {batchDeleteLabel}
             </button>
-            <button type="button" className="ghost" onClick={onDedupe} disabled={loading}>
+            <button
+              type="button"
+              className="ghost workbench-secondary-action"
+              onClick={onDedupe}
+              disabled={loading}
+            >
               {dedupeLabel}
             </button>
           </div>

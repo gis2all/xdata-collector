@@ -70,6 +70,7 @@ describe("DashboardPage", () => {
     render(<DashboardPage />);
 
     expect(screen.getByTestId("dashboard-page-header")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新加载" })).toHaveClass("workbench-primary-action");
     expect(screen.getByTestId("dashboard-summary")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-panels")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-db-info")).toBeInTheDocument();

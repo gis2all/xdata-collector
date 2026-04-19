@@ -146,7 +146,7 @@ export function DashboardPage() {
           <p className="kv">{"快速查看本地数据库与 X 会话的上次已知状态，只有点击“重新加载”才会主动重新校验。"}</p>
         </div>
         <div className="dashboard-page-header-actions workbench-page-header-actions">
-          <button type="button" onClick={loadHealth} disabled={loading}>
+          <button type="button" className="workbench-primary-action" onClick={loadHealth} disabled={loading}>
             {loading ? "重新加载中..." : "重新加载"}
           </button>
         </div>

@@ -62,6 +62,7 @@ describe("LogsPage", () => {
           size: 0,
           updated_at: "",
           content: "",
+          error: "read failed",
         },
       ],
     });
@@ -72,11 +73,14 @@ describe("LogsPage", () => {
       expect(screen.getByTestId("logs-page-header")).toBeInTheDocument();
     });
 
+    expect(screen.getByRole("button", { name: TEXT.refresh })).toHaveClass("workbench-primary-action");
     expect(screen.getByTestId("logs-runtime-section")).toBeInTheDocument();
     expect(screen.getByTestId("logs-runs-section")).toBeInTheDocument();
     expect(screen.getByTestId("logs-run-rail")).toBeInTheDocument();
+    expect(screen.getByTestId("logs-runs-manager")).toHaveClass("workbench-summary-panel");
     expect(within(screen.getByTestId("logs-runtime-section")).getByText(TEXT.runtimeSnapshot)).toBeInTheDocument();
     expect(within(screen.getByTestId("logs-run-rail")).getByText(TEXT.runWorkbench)).toBeInTheDocument();
+    expect(screen.getByText(/读取失败/).closest(".logs-file-state")).toHaveClass("logs-file-state-error");
     expect(screen.getByText("boom")).toBeInTheDocument();
     expect(screen.getByText("api.current.out.log")).toBeInTheDocument();
     expect(screen.getByText("ready!")).toBeInTheDocument();
@@ -144,7 +148,7 @@ describe("LogsPage", () => {
     expect(screen.queryByTestId("logs-run-rail")).not.toBeInTheDocument();
     const apiGroup = screen.getByRole("heading", { name: "API" }).closest(".logs-service-group");
     expect(apiGroup).not.toBeNull();
-    expect(within(apiGroup as HTMLElement).getByText(TEXT.noLogContent)).toBeInTheDocument();
+    expect(within(apiGroup as HTMLElement).getByText(TEXT.noLogContent).closest(".logs-file-state")).toHaveClass("logs-file-state-empty");
     expect(screen.getAllByText(TEXT.noLogContent).length).toBeGreaterThanOrEqual(3);
   });
 

@@ -459,24 +459,41 @@ export function ManualSearchPage() {
               description="先决定当前草稿从哪里来，再决定是否保存成受管任务包。任务包操作不会替代右上角的执行主按钮。"
               aside={
                 <div className="collector-toolbar">
-                  <button type="button" className="ghost" onClick={resetDraft}>
+                  <button
+                    type="button"
+                    className="ghost workbench-secondary-action"
+                    data-testid="manual-reset-draft"
+                    onClick={resetDraft}
+                  >
                     {currentPack ? "恢复任务包内容" : "清空当前草稿"}
                   </button>
-                  <button type="button" className="ghost" onClick={() => refreshTaskPacks().catch(() => undefined)}>
+                  <button
+                    type="button"
+                    className="ghost workbench-secondary-action"
+                    data-testid="manual-refresh-task-packs"
+                    onClick={() => refreshTaskPacks().catch(() => undefined)}
+                  >
                     刷新任务包列表
                   </button>
                 </div>
               }
             />
+            <div
+              className="manual-pack-context-hint workbench-subsurface workbench-subsurface-muted"
+              data-testid="manual-pack-context-hint"
+            >
+              <div className="workbench-pill-row">
+                <span className="jobs-summary-pill workbench-pill">{`当前来源：${packSourceLabel}`}</span>
+                <span className="jobs-summary-pill workbench-pill">{`当前绑定：${currentPack?.pack_name || "--"}`}</span>
+                <span className="jobs-summary-pill workbench-pill">{`草稿状态：${packDraftLabel}`}</span>
+              </div>
+            </div>
             <div className="collector-grid collector-grid-2 manual-pack-actions-grid">
               <div className="collector-card manual-action-card" data-testid="manual-pack-load-card">
                 <div className="manual-action-card-head">
                   <div className="manual-action-card-copy">
                     <div className="manual-action-card-eyebrow">草稿来源</div>
                     <div className="collector-subtitle">载入到当前草稿</div>
-                  </div>
-                  <div className="manual-action-card-pills workbench-pill-row">
-                    <span className="jobs-summary-pill workbench-pill">{`当前来源：${packSourceLabel}`}</span>
                   </div>
                 </div>
                 <div className="kv manual-pack-note">
@@ -499,8 +516,8 @@ export function ManualSearchPage() {
                     </select>
                     <button
                       type="button"
-                      className="ghost"
-                      aria-label="manual-load-pack"
+                      className="ghost workbench-secondary-action"
+                      data-testid="manual-load-pack"
                       onClick={() => importSelectedPack().catch(() => undefined)}
                     >
                       载入任务包
@@ -512,8 +529,8 @@ export function ManualSearchPage() {
                   <div className="collector-toolbar manual-pack-toolbar manual-action-toolbar">
                     <button
                       type="button"
-                      className="ghost"
-                      aria-label="manual-import-file-pack"
+                      className="ghost workbench-secondary-action"
+                      data-testid="manual-import-file-pack"
                       onClick={() => {
                         pendingFileActionRef.current = "draft";
                         fileInputRef.current?.click();
@@ -523,8 +540,8 @@ export function ManualSearchPage() {
                     </button>
                     <button
                       type="button"
-                      className="ghost"
-                      aria-label="manual-import-and-save-pack"
+                      className="ghost workbench-secondary-action"
+                      data-testid="manual-import-and-save-pack"
                       onClick={() => {
                         pendingFileActionRef.current = "save_new";
                         fileInputRef.current?.click();
@@ -559,10 +576,6 @@ export function ManualSearchPage() {
                     <div className="manual-action-card-eyebrow">草稿落盘</div>
                     <div className="collector-subtitle">保存当前草稿</div>
                   </div>
-                  <div className="manual-action-card-pills workbench-pill-row">
-                    <span className="jobs-summary-pill workbench-pill">{`当前绑定：${currentPack?.pack_name || "--"}`}</span>
-                    <span className="jobs-summary-pill workbench-pill">{`草稿状态：${packDraftLabel}`}</span>
-                  </div>
                 </div>
                 <div className="kv manual-pack-note">
                   把当前草稿另存为新任务包，或保存回当前绑定任务包。
@@ -572,8 +585,8 @@ export function ManualSearchPage() {
                   <div className="collector-toolbar manual-pack-toolbar manual-action-toolbar">
                     <button
                       type="button"
-                      className="ghost"
-                      aria-label="manual-save-as-pack"
+                      className="ghost workbench-secondary-action"
+                      data-testid="manual-save-as-pack"
                       onClick={() => savePack("create").catch(() => undefined)}
                       disabled={savingPack}
                     >
@@ -582,7 +595,7 @@ export function ManualSearchPage() {
                     <button
                       type="button"
                       className="workbench-primary-action"
-                      aria-label="manual-save-current-pack"
+                      data-testid="manual-save-current-pack"
                       onClick={() => savePack("overwrite").catch(() => undefined)}
                       disabled={savingPack || !currentPack?.pack_name}
                     >
@@ -596,8 +609,8 @@ export function ManualSearchPage() {
                   <div className="collector-toolbar manual-pack-toolbar manual-action-toolbar">
                     <button
                       type="button"
-                      className="danger"
-                      aria-label="manual-delete-pack"
+                      className="danger workbench-danger-action"
+                      data-testid="manual-delete-pack"
                       onClick={() => handleDeleteCurrentPack().catch(() => undefined)}
                       disabled={deletingPack || !currentPack?.pack_name}
                     >
@@ -768,7 +781,12 @@ export function ManualSearchPage() {
           </div>
           <div className="manual-rail-footer">
             <div className="kv manual-rail-caption">完整执行输出会在下方全宽结果区展开，不会挤压右侧执行轨。</div>
-            <button type="button" className="ghost manual-results-link" onClick={scrollToResults}>
+            <button
+              type="button"
+              className="ghost manual-results-link workbench-secondary-action"
+              data-testid="manual-scroll-results"
+              onClick={scrollToResults}
+            >
               查看执行结果
             </button>
           </div>
