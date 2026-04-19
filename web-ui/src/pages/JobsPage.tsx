@@ -174,6 +174,12 @@ function draftSourceLabel(kind: DraftSourceKind) {
   return "默认空白";
 }
 
+function statusScopeLabel(status: JobStatusFilter) {
+  if (status === "deleted") return "已删除";
+  if (status === "all") return "全部";
+  return "启用中";
+}
+
 function JobsSectionHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
   return (
     <div className="jobs-section-header">
@@ -182,15 +188,6 @@ function JobsSectionHeader({ title, description, actions }: { title: string; des
         {description ? <p className="kv jobs-section-description">{description}</p> : null}
       </div>
       {actions ? <div className="jobs-section-actions">{actions}</div> : null}
-    </div>
-  );
-}
-
-function JobsMetricCard({ label, value, wide = false }: { label: string; value: ReactNode; wide?: boolean }) {
-  return (
-    <div className={`dashboard-detail-item${wide ? " dashboard-detail-item-wide" : ""}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
     </div>
   );
 }
@@ -447,7 +444,7 @@ export function JobsPage() {
     setDrawerOpen(true);
   }
 
-  async function openJob(job: JobRecord, mode: DrawerMode = "view") {
+  async function openJob(job: JobRecord, mode: DrawerMode = "edit") {
     try {
       const detail = await getJob(job.id);
       setSelectedJob(detail);
@@ -846,23 +843,23 @@ export function JobsPage() {
     refreshJobs({ page: 1, query: queryInput.trim() }).catch(() => undefined);
   }
 
+  function openJobWorkspace(job: JobRecord) {
+    void openJob(job, job.deleted_at ? "view" : "edit");
+  }
+
   function renderActions(job: JobRecord) {
     if (job.deleted_at) {
       return (
-        <div className="table-actions">
-          <button type="button" className="ghost" onClick={() => openJob(job, "view")}>{"查看"}</button>
-          <button type="button" onClick={() => handleRestore(job)}>{"恢复"}</button>
-          <button type="button" className="danger" onClick={() => handlePurge(job)}>{"彻底删除"}</button>
+        <div className="table-actions jobs-row-actions">
+          <button type="button" className="ghost" onClick={() => openJobWorkspace(job)}>{"打开"}</button>
+          <button type="button" className="ghost" onClick={() => handleRestore(job)}>{"恢复"}</button>
         </div>
       );
     }
     return (
-      <div className="table-actions">
-        <button type="button" className="ghost" onClick={() => openJob(job, "view")}>{"查看"}</button>
-        <button type="button" className="ghost" onClick={() => openJob(job, "edit")}>{"编辑"}</button>
+      <div className="table-actions jobs-row-actions">
+        <button type="button" className="ghost" onClick={() => openJobWorkspace(job)}>{"打开"}</button>
         <button type="button" onClick={() => handleRunNow(job)}>{"立即运行"}</button>
-        <button type="button" className="ghost" onClick={() => handleToggle(job)}>{job.enabled ? "停用" : "启用"}</button>
-        <button type="button" className="danger" onClick={() => handleDelete(job)}>{"删除"}</button>
       </div>
     );
   }
@@ -871,12 +868,18 @@ export function JobsPage() {
   const showTopSaveButton = !selectedJob?.deleted_at;
   const workspaceTitle = selectedJob ? "当前任务工作区" : "新建任务工作区";
   const workspaceMeta = selectedJob ? `任务 #${selectedJob.id}` : "未保存新任务";
+  const manageScopeLabel = statusScopeLabel(status);
   const currentStatusLabel = selectedJob ? jobState(selectedJob) : form.enabled ? "已启用" : "已停用";
   const nextRunLabel = selectedJob?.next_run_at ? formatUtcPlus8Time(selectedJob.next_run_at) : "保存后生成";
   const lastRunLabel = selectedJob?.last_run_status || "尚未运行";
   const lastRunTimeLabel = selectedJob?.last_run_ended_at || selectedJob?.last_run_started_at
     ? formatUtcPlus8Time(selectedJob.last_run_ended_at || selectedJob.last_run_started_at)
     : "尚未运行";
+  const currentTaskEyebrow = selectedJob ? `调度任务 #${selectedJob.id}` : "新建任务草稿";
+  const currentTaskHeroTitle = form.name.trim() || (selectedJob ? selectedJob.name : "未命名任务");
+  const currentTaskHeroDescription = selectedJob
+    ? "这里收口当前调度任务的基础设置，确认后再继续编辑任务正文。"
+    : "先把调度设置定下来，再继续补全任务包、搜索条件和规则。";
 
   return (
     <div className="jobs-page" data-testid="jobs-page">
@@ -929,9 +932,9 @@ export function JobsPage() {
 
             <div className="jobs-managebar" data-testid="jobs-manage-bar">
               <div className="jobs-managebar-summary">
-                <span className="kv">{`selected=${selectedCount}`}</span>
-                <span className="kv">{`total=${total}`}</span>
-                <span className="kv">{`status=${status}`}</span>
+                <span className="jobs-summary-pill">{`已选 ${selectedCount} 项`}</span>
+                <span className="jobs-summary-pill">{`共 ${total} 项任务`}</span>
+                <span className="jobs-summary-pill">{`当前范围：${manageScopeLabel}`}</span>
               </div>
               <div className="jobs-managebar-actions">
                 {showSelectAllMatching && (
@@ -986,8 +989,13 @@ export function JobsPage() {
                   </thead>
                   <tbody>
                     {jobs.map((job) => (
-                      <tr key={job.id} className={job.deleted_at ? "row-deleted" : ""}>
-                        <td>
+                      <tr
+                        key={job.id}
+                        className={`${job.deleted_at ? "row-deleted" : ""}${selectedJob?.id === job.id ? " active" : ""}`}
+                        data-job-active={selectedJob?.id === job.id ? "true" : "false"}
+                        onClick={() => openJobWorkspace(job)}
+                      >
+                        <td onClick={(event) => event.stopPropagation()}>
                           <input
                             aria-label={`select-job-${job.id}`}
                             type="checkbox"
@@ -1010,7 +1018,7 @@ export function JobsPage() {
                           <div>{job.last_run_status || "--"}</div>
                           <div className="kv">{formatUtcPlus8Time(job.last_run_ended_at || job.last_run_started_at)}</div>
                         </td>
-                        <td>{renderActions(job)}</td>
+                        <td onClick={(event) => event.stopPropagation()}>{renderActions(job)}</td>
                       </tr>
                     ))}
                     {!jobs.length && (
@@ -1069,12 +1077,21 @@ export function JobsPage() {
                     </button>
                   ) : undefined}
                 />
-                <div className="collector-grid collector-grid-2 jobs-current-task-grid">
-                  <JobsMetricCard label="状态" value={currentStatusLabel} />
-                  <JobsMetricCard label="下次运行" value={nextRunLabel} />
-                  <JobsMetricCard label="最近运行" value={lastRunLabel} />
-                  <JobsMetricCard label="最近运行时间" value={lastRunTimeLabel} />
-                  {selectedJob?.deleted_at && <JobsMetricCard label="删除时间" value={formatUtcPlus8Time(selectedJob.deleted_at)} wide />}
+                <div className="jobs-current-task-hero">
+                  <div className="jobs-current-task-copy">
+                    <div className="jobs-current-task-eyebrow">{currentTaskEyebrow}</div>
+                    <div className="jobs-current-task-name">{currentTaskHeroTitle}</div>
+                    <p className="kv jobs-current-task-note">{currentTaskHeroDescription}</p>
+                  </div>
+                  <div className="jobs-current-task-pills">
+                    <span className="jobs-summary-pill">{`当前状态：${currentStatusLabel}`}</span>
+                    <span className="jobs-summary-pill">{`下次运行：${nextRunLabel}`}</span>
+                    <span className="jobs-summary-pill">{`最近运行：${lastRunLabel}`}</span>
+                  </div>
+                  <div className="jobs-current-task-meta">
+                    <span>{`最近运行时间：${lastRunTimeLabel}`}</span>
+                    {selectedJob?.deleted_at ? <span>{`删除时间：${formatUtcPlus8Time(selectedJob.deleted_at)}`}</span> : null}
+                  </div>
                 </div>
                 <div className="collector-grid collector-grid-2 jobs-current-task-form">
                   <label className="field">

@@ -292,9 +292,9 @@ describe("JobsPage", () => {
     expect(screen.getByTestId("create-job-button")).toBeInTheDocument();
     expect(screen.getByTestId("jobs-filter-bar")).toBeInTheDocument();
     expect(screen.getByTestId("jobs-manage-bar")).toBeInTheDocument();
-    expect(screen.getByText("selected=0")).toBeInTheDocument();
-    expect(screen.getByText("total=0")).toBeInTheDocument();
-    expect(screen.getByText("status=active")).toBeInTheDocument();
+    expect(screen.getByText("已选 0 项")).toBeInTheDocument();
+    expect(screen.getByText("共 0 项任务")).toBeInTheDocument();
+    expect(screen.getByText("当前范围：启用中")).toBeInTheDocument();
   });
 
   it("shows a top save button for create mode and keeps the footer save button", async () => {
@@ -322,6 +322,21 @@ describe("JobsPage", () => {
     await waitFor(() => {
       expect(createJobMock).toHaveBeenCalled();
     });
+  });
+
+  it("renders a current-task hero for create mode", async () => {
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(listJobsMock).toHaveBeenCalled();
+    });
+
+    fireEvent.click(screen.getByTestId("create-job-button"));
+
+    expect(screen.getByText("新建任务草稿")).toBeInTheDocument();
+    expect(screen.getByText("当前状态：已启用")).toBeInTheDocument();
+    expect(screen.getByText("下次运行：保存后生成")).toBeInTheDocument();
+    expect(screen.getByText("最近运行：尚未运行")).toBeInTheDocument();
   });
 
   it("shows loading state on the top save button while creating and keeps the workspace editable after save", async () => {
@@ -380,7 +395,7 @@ describe("JobsPage", () => {
     expect(screen.getByLabelText("submit-job-top")).not.toBeDisabled();
   });
 
-  it("shows a top save button in both view and edit entry flows for active jobs", async () => {
+  it("opens the unified workspace from row click and keeps a lightweight open action for active jobs", async () => {
     listJobsMock.mockResolvedValueOnce({
       page: 1,
       page_size: 10,
@@ -394,13 +409,20 @@ describe("JobsPage", () => {
       expect(screen.getAllByText("alpha-watch-job").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "查看" }));
+    const row = screen.getAllByText("alpha-watch-job")[0]?.closest("tr");
+    expect(row).not.toBeNull();
+    fireEvent.click(row!);
 
     await waitFor(() => {
       expect(screen.getByLabelText("submit-job-top")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    expect(screen.queryByRole("button", { name: "\u67e5\u770b" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "\u7f16\u8f91" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "\u6253\u5f00" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "\u5173\u95ed" }));
+    fireEvent.click(screen.getByRole("button", { name: "\u6253\u5f00" }));
 
     await waitFor(() => {
       expect(screen.getByLabelText("submit-job-top")).toBeInTheDocument();
@@ -504,10 +526,10 @@ describe("JobsPage", () => {
     });
 
     fireEvent.click(screen.getByLabelText("jobs-select-page"));
-    expect(screen.getByText("selected=10")).toBeInTheDocument();
+    expect(screen.getByText("已选 10 项")).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("select-all-matching-jobs"));
-    expect(screen.getByText("selected=12")).toBeInTheDocument();
+    expect(screen.getByText("已选 12 项")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "批量删除" }));
 
@@ -646,7 +668,9 @@ describe("JobsPage", () => {
       expect(screen.getAllByText("alpha-watch-job").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "查看" }));
+    const row = screen.getAllByText("alpha-watch-job")[0]?.closest("tr");
+    expect(row).not.toBeNull();
+    fireEvent.click(row!);
 
     await waitFor(() => {
       expect(screen.getByText("当前绑定任务包")).toBeInTheDocument();
@@ -673,7 +697,9 @@ describe("JobsPage", () => {
       expect(screen.getAllByText("alpha-watch-job").length).toBeGreaterThan(0);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "查看" }));
+    const row = screen.getAllByText("alpha-watch-job")[0]?.closest("tr");
+    expect(row).not.toBeNull();
+    fireEvent.click(row!);
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "当前绑定任务包" })).toBeInTheDocument();

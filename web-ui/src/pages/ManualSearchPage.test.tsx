@@ -137,7 +137,13 @@ describe("ManualSearchPage", () => {
     expect(within(header).getByRole("button", { name: "立即执行任务" })).toBeInTheDocument();
     expect(within(header).queryByRole("button", { name: "清空当前草稿" })).not.toBeInTheDocument();
     expect(within(header).queryByRole("button", { name: "刷新任务包列表" })).not.toBeInTheDocument();
-    expect(screen.getByText("尚未执行")).toBeInTheDocument();
+    expect(screen.getByText("未绑定任务草稿")).toBeInTheDocument();
+    expect(screen.getByText("绑定状态：未绑定")).toBeInTheDocument();
+    expect(screen.getByText("草稿来源：默认空白")).toBeInTheDocument();
+    expect(screen.getByText("当前草稿：未绑定草稿")).toBeInTheDocument();
+    expect(screen.getByText("最近状态：未执行")).toBeInTheDocument();
+    expect(screen.getByText("最近执行：尚未执行")).toBeInTheDocument();
+    expect(screen.getAllByText("尚未执行").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "查看执行结果" })).toBeInTheDocument();
     expect(screen.queryByText("复制规则集")).not.toBeInTheDocument();
     expect(screen.queryByText("保存规则集")).not.toBeInTheDocument();
@@ -152,6 +158,7 @@ describe("ManualSearchPage", () => {
     expect(runManualMock).toHaveBeenCalled();
     expect(screen.getByText("alpha lang:en -is:retweet")).toBeInTheDocument();
     expect(screen.getByText("执行成功")).toBeInTheDocument();
+    expect(screen.getByText("最近状态：执行成功")).toBeInTheDocument();
     expect(screen.getByText("最近执行")).toBeInTheDocument();
     expect(screen.getByText("raw_total")).toBeInTheDocument();
     expect(screen.getByText("matched_total")).toBeInTheDocument();
@@ -177,8 +184,9 @@ describe("ManualSearchPage", () => {
     });
 
     expect(screen.getAllByText("Alpha Watch").length).toBeGreaterThan(0);
-    expect(screen.getByText("已绑定本地任务包")).toBeInTheDocument();
-    expect(screen.getByText("未修改")).toBeInTheDocument();
+    expect(screen.getByText("绑定状态：已绑定本地任务包")).toBeInTheDocument();
+    expect(screen.getByText("草稿状态：未修改")).toBeInTheDocument();
+    expect(screen.getByText("草稿来源：任务包载入")).toBeInTheDocument();
     expect(screen.getByText("pack_name=alpha-watch")).toBeInTheDocument();
     expect(screen.getByText("pack_path=config/packs/alpha-watch.json")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务包操作" })).toBeInTheDocument();
@@ -226,7 +234,8 @@ describe("ManualSearchPage", () => {
     });
 
     expect(screen.getByDisplayValue("Local Rule")).toBeInTheDocument();
-    expect(screen.getAllByText("未绑定").length).toBeGreaterThan(0);
+    expect(screen.getByText("绑定状态：未绑定")).toBeInTheDocument();
+    expect(screen.getByText("草稿来源：文件导入")).toBeInTheDocument();
   });
 
 
@@ -258,8 +267,8 @@ describe("ManualSearchPage", () => {
       expect(createTaskPackMock).toHaveBeenCalled();
     });
 
-    expect(screen.getByText("已绑定本地任务包")).toBeInTheDocument();
-    expect(screen.getByText("任务包载入")).toBeInTheDocument();
+    expect(screen.getByText("绑定状态：已绑定本地任务包")).toBeInTheDocument();
+    expect(screen.getByText("草稿来源：任务包载入")).toBeInTheDocument();
     expect(screen.getByText("pack_name=local-alpha-pack")).toBeInTheDocument();
     expect(screen.getByText("pack_path=config/packs/local-alpha-pack.json")).toBeInTheDocument();
     promptSpy.mockRestore();
@@ -273,7 +282,7 @@ describe("ManualSearchPage", () => {
     fireEvent.click(screen.getByLabelText("manual-load-pack"));
 
     await waitFor(() => {
-      expect(screen.getByText("未修改")).toBeInTheDocument();
+      expect(screen.getByText("草稿状态：未修改")).toBeInTheDocument();
     });
 
     fireEvent.change(screen.getByDisplayValue("Default Rule Set"), { target: { value: "Default Rule Set v2" } });
@@ -289,7 +298,7 @@ describe("ManualSearchPage", () => {
     fireEvent.click(screen.getByLabelText("manual-load-pack"));
 
     await waitFor(() => {
-      expect(screen.getByText("已绑定本地任务包")).toBeInTheDocument();
+      expect(screen.getByText("绑定状态：已绑定本地任务包")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByLabelText("manual-delete-pack"));
@@ -298,7 +307,7 @@ describe("ManualSearchPage", () => {
       expect(deleteTaskPackMock).toHaveBeenCalledWith("alpha-watch");
     });
 
-    expect(screen.getAllByText("未绑定").length).toBeGreaterThan(0);
+    expect(screen.getByText("绑定状态：未绑定")).toBeInTheDocument();
     expect(screen.getByText("已删除任务包 alpha-watch")).toBeInTheDocument();
   });
 });

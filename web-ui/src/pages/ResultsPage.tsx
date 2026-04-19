@@ -54,6 +54,11 @@ const TABLE_NAMES: Record<ItemTable, string> = {
   raw: "x_items_raw",
 };
 
+const TABLE_LABELS: Record<ItemTable, string> = {
+  curated: "筛选结果",
+  raw: "原始结果",
+};
+
 type ColumnDefinition = {
   key: ItemSortField;
   label: string;
@@ -457,6 +462,7 @@ export function ResultsPage() {
   const activeItem = useMemo(() => items.find((item) => item.id === activeRowId) ?? null, [activeRowId, items]);
   const allSelectedOnPage = items.length > 0 && selectedOnPage === items.length;
   const showSelectAllMatching = !allMatchingSelected && allSelectedOnPage && total > items.length;
+  const sortDirectionLabel = sortDir === "asc" ? "\u5347\u5e8f" : "\u964d\u5e8f";
   const tableMinWidth = Math.max(
     960,
     RESULTS_SELECT_COLUMN_WIDTH +
@@ -464,8 +470,9 @@ export function ResultsPage() {
       resolvedVisibleColumnDefinitions.reduce((sum, column) => sum + column.currentWidth, 0),
   );
   const tableName = TABLE_NAMES[table];
+  const tableLabel = TABLE_LABELS[table];
+  const activeKeywordLabel = appliedKeyword || "\u5168\u90e8";
   const dedupeConfirmText = `\u786e\u5b9a\u5bf9\u6574\u4e2a ${tableName} \u8868\u6267\u884c\u53bb\u91cd\u5417\uff1f\u6b64\u64cd\u4f5c\u4f1a\u5220\u9664\u91cd\u590d\u884c\u3002`;
-  const fullTableHint = `\u201c\u5168\u8868\u53bb\u91cd\u201d\u4f5c\u7528\u4e8e\u6574\u5f20 ${tableName} \u8868`;
   const batchDeleteConfirm = allMatchingSelected
     ? "\u786e\u5b9a\u786c\u5220\u9664\u5f53\u524d\u7b5b\u9009\u7ed3\u679c\u7684\u5168\u90e8\u8bb0\u5f55\u5417\uff1f\u6b64\u64cd\u4f5c\u65e0\u6cd5\u6062\u590d\u3002"
     : "\u786e\u5b9a\u786c\u5220\u9664\u5df2\u52fe\u9009\u7684\u8bb0\u5f55\u5417\uff1f\u6b64\u64cd\u4f5c\u65e0\u6cd5\u6062\u590d\u3002";
@@ -784,32 +791,50 @@ export function ResultsPage() {
 
   return (
     <div className="card results-page" data-testid="results-page">
-      <ResultsPageHeader
-        title={TEXT.title}
-        subtitle={TEXT.subtitle}
-        curatedLabel={TEXT.curatedTab}
-        rawLabel={TEXT.rawTab}
-        refreshLabel={TEXT.refresh}
-        table={table}
-        loading={loading}
-        onSwitchTable={(nextTable) => void handleTableSwitch(nextTable)}
-        onRefresh={() => void handleRefresh()}
-      />
+      <ResultsPageHeader title={TEXT.title} subtitle={TEXT.subtitle} />
 
       <section className="results-filter-layer" data-testid="results-filter-layer">
-        <label className="field">
-          <span>{TEXT.keywordLabel}</span>
-          <input
-            placeholder={TEXT.keywordPlaceholder}
-            value={keywordInput}
-            onChange={(event) => setKeywordInput(event.target.value)}
-            aria-label={TEXT.keywordLabel}
-          />
-        </label>
+        <div className="results-filter-copy">
+          <div className="results-filter-title">当前浏览范围</div>
+          <div className="kv">切换结果表、输入关键词，并按当前视图刷新列表。</div>
+        </div>
+        <div className="results-filter-summary" data-testid="results-filter-summary">
+          <div className="results-summary-pill">{`\u5f53\u524d\u8868\uff1a${tableLabel}`}</div>
+          <div className="results-summary-pill">{`\u5173\u952e\u8bcd\uff1a${activeKeywordLabel}`}</div>
+        </div>
+        <div className="results-filter-controls">
+          <div className="segmented-control" role="tablist" aria-label="results-table-switcher">
+            <button
+              type="button"
+              className={table === "curated" ? "active" : "ghost"}
+              onClick={() => void handleTableSwitch("curated")}
+            >
+              {TEXT.curatedTab}
+            </button>
+            <button
+              type="button"
+              className={table === "raw" ? "active" : "ghost"}
+              onClick={() => void handleTableSwitch("raw")}
+            >
+              {TEXT.rawTab}
+            </button>
+          </div>
+          <label className="field results-filter-keyword-field">
+            <span>{TEXT.keywordLabel}</span>
+            <input
+              placeholder={TEXT.keywordPlaceholder}
+              value={keywordInput}
+              onChange={(event) => setKeywordInput(event.target.value)}
+              aria-label={TEXT.keywordLabel}
+            />
+          </label>
+          <button type="button" onClick={() => void handleRefresh()} disabled={loading}>
+            {TEXT.refresh}
+          </button>
+        </div>
       </section>
 
       <ResultsTableManager
-        table={table}
         tableName={tableName}
         total={total}
         selectedCount={selectedCount}
@@ -865,13 +890,12 @@ export function ResultsPage() {
             </div>
           )}
 
-          <div className="results-meta row">
-            <span className="kv">{`loaded=${items.length}`}</span>
-            <span className="kv">{`page=${page}/${totalPages}`}</span>
-            <span className="kv">{`sort=${sortBy} ${sortDir}`}</span>
-            <span className="kv">{`page-size=${pageSize}`}</span>
-            <span className="kv">{`selected-on-page=${selectedOnPage}`}</span>
-            <span className="kv">{fullTableHint}</span>
+          <div className="results-table-status" data-testid="results-table-status">
+            <span className="results-summary-pill">{`\u5f53\u524d\u7b2c ${page} / ${totalPages} \u9875`}</span>
+            <span className="results-summary-pill">{`\u672c\u9875 ${items.length} \u6761`}</span>
+            <span className="results-summary-pill">{`\u672c\u9875\u5df2\u9009 ${selectedOnPage} \u6761`}</span>
+            <span className="results-summary-pill">{`\u6392\u5e8f\uff1a${sortBy} \u00b7 ${sortDirectionLabel}`}</span>
+            <span className="results-summary-pill">{`\u6bcf\u9875 ${pageSize} \u6761`}</span>
           </div>
 
           <div className={`results-table-wrap${isResizingColumn ? " dragging" : ""}`}>

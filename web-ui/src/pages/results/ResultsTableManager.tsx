@@ -1,7 +1,4 @@
-import type { ItemTable } from "../../api";
-
 type ResultsTableManagerProps = {
-  table: ItemTable;
   tableName: string;
   total: number;
   selectedCount: number;
@@ -44,12 +41,17 @@ export function ResultsTableManager({
 }: ResultsTableManagerProps) {
   return (
     <section className="results-manager-layer" data-testid="results-manager-layer">
-      <div className="results-manager-summary">
-        <div className="kv">{`table=${tableName}`}</div>
-        <div className="kv">{`total=${total}`}</div>
-        <div className="kv">{`selected=${selectedCount}`}</div>
-        {allMatchingSelected && <div className="kv">all-matching</div>}
+      <div className="results-manager-copy">
+        <div className="results-manager-title">表格管理</div>
+        <div className="kv">围绕当前结果表执行字段控制、批量选择和整表操作。</div>
       </div>
+
+      <div className="results-manager-summary">
+        <div className="results-summary-pill">{`共 ${total} 条`}</div>
+        <div className="results-summary-pill">{`已选 ${selectedCount} 条`}</div>
+        {allMatchingSelected && <div className="results-summary-pill">已选全部匹配结果</div>}
+      </div>
+
       <div className="results-manager-actions">
         {showSelectAllMatching && (
           <button type="button" className="ghost" aria-label="select-all-matching" onClick={onSelectAllMatching}>
@@ -82,6 +84,8 @@ export function ResultsTableManager({
           {dedupeLabel}
         </button>
       </div>
+
+      <div className="results-manager-note">{`全表去重会作用于当前整张 ${tableName} 表。`}</div>
     </section>
   );
 }

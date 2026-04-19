@@ -178,6 +178,15 @@ export function ManualSearchPage() {
     () => (result ? (result.final_queries?.length ? result.final_queries : [result.final_query]).filter(Boolean) : []),
     [result],
   );
+  const packBindingLabel = currentPack ? "已绑定本地任务包" : "未绑定";
+  const packDraftLabel = currentPack ? (draftDirty ? "已修改未保存" : "未修改") : "未绑定";
+  const packSourceLabel = draftSourceLabel(draftSource);
+  const packHeroEyebrow = currentPack ? "当前绑定任务包" : "当前草稿";
+  const packHeroTitle = currentPack?.meta.name || "未绑定任务草稿";
+  const packHeroDescription = currentPack?.meta.description || "当前正在编辑一个未绑定的临时任务草稿。";
+  const currentDraftStatusLabel = currentPack ? (draftDirty ? "已修改未保存" : "已绑定任务包") : "未绑定草稿";
+  const lastExecutionStatusLabel = executionStatusLabel(lastExecution.status);
+  const lastExecutionTimeLabel = lastExecution.executedAt ? formatUtcPlus8Time(lastExecution.executedAt) : "尚未执行";
 
   function resetToBlankDraft() {
     setSearchSpec(cloneSearchSpec(DEFAULT_SEARCH_SPEC));
@@ -432,35 +441,18 @@ export function ManualSearchPage() {
               title="当前任务包"
               description="任务包是当前草稿的绑定对象，只展示任务包身份和草稿来源，不在这里直接编辑正文。"
             />
-            <div className="collector-grid collector-grid-2 manual-pack-summary-grid">
-              <div className="collector-card">
-                <div className="collector-subtitle">任务包名称</div>
-                <div className="job-name" style={{ marginTop: 6 }}>
-                  {currentPack?.meta.name || "未绑定"}
-                </div>
-                <div className="kv" style={{ marginTop: 8 }}>
-                  {currentPack?.meta.description || "当前正在编辑一个未绑定的临时任务草稿。"}
-                </div>
-                <div className="kv" style={{ marginTop: 8 }}>
-                  {`pack_name=${currentPack?.pack_name || "--"}`}
-                </div>
-              </div>
-              <div className="collector-card">
-                <div className="collector-grid collector-grid-3 manual-pack-state-grid">
-                  <div className="dashboard-detail-item">
-                    <span>绑定状态</span>
-                    <strong>{currentPack ? "已绑定本地任务包" : "未绑定"}</strong>
-                  </div>
-                  <div className="dashboard-detail-item">
-                    <span>草稿状态</span>
-                    <strong>{currentPack ? (draftDirty ? "已修改未保存" : "未修改") : "未绑定"}</strong>
-                  </div>
-                  <div className="dashboard-detail-item">
-                    <span>草稿来源</span>
-                    <strong>{draftSourceLabel(draftSource)}</strong>
-                  </div>
-                </div>
+            <div className="manual-pack-hero">
+              <div className="manual-pack-hero-copy">
+                <div className="manual-pack-eyebrow">{packHeroEyebrow}</div>
+                <div className="manual-pack-name">{packHeroTitle}</div>
+                <p className="kv manual-pack-description">{packHeroDescription}</p>
+                <div className="kv manual-pack-path">{`pack_name=${currentPack?.pack_name || "--"}`}</div>
                 <div className="kv manual-pack-path">{`pack_path=${currentPack?.pack_path || "--"}`}</div>
+              </div>
+              <div className="manual-pack-pill-row">
+                <span className="jobs-summary-pill">{`绑定状态：${packBindingLabel}`}</span>
+                <span className="jobs-summary-pill">{`草稿状态：${packDraftLabel}`}</span>
+                <span className="jobs-summary-pill">{`草稿来源：${packSourceLabel}`}</span>
               </div>
             </div>
           </section>
@@ -635,16 +627,30 @@ export function ManualSearchPage() {
             title="执行上下文"
             description="这里只展示当前草稿状态和最近一次主动执行的摘要，不承载第二套主操作。"
           />
+          <div className="manual-rail-hero">
+            <div className="manual-rail-pills">
+              <span className="jobs-summary-pill">{`当前草稿：${currentDraftStatusLabel}`}</span>
+              <span className="jobs-summary-pill">{`最近状态：${lastExecutionStatusLabel}`}</span>
+              <span className="jobs-summary-pill">{`最近执行：${lastExecutionTimeLabel}`}</span>
+            </div>
+            <div className={`manual-execution-note ${lastExecution.status === "failed" ? "failed" : ""}`}>
+              {lastExecution.status === "idle"
+                ? "尚未执行"
+                : lastExecution.status === "failed"
+                  ? lastExecution.errorText || "最近一次执行失败，请检查任务正文后重试。"
+                  : "最近一次执行已完成，可继续查看下方完整结果。"}
+            </div>
+          </div>
           <div className="collector-grid collector-grid-2 manual-rail-grid">
             <div className="dashboard-detail-item">
               <span>草稿状态</span>
               <strong>
-                {currentPack ? (draftDirty ? "草稿待保存" : "草稿未修改") : "未绑定草稿"}
+                {currentDraftStatusLabel}
               </strong>
             </div>
             <div className="dashboard-detail-item">
               <span>最近执行</span>
-              <strong>{lastExecution.executedAt ? formatUtcPlus8Time(lastExecution.executedAt) : "--"}</strong>
+              <strong>{lastExecutionTimeLabel}</strong>
             </div>
             <div className="dashboard-detail-item">
               <span>最近一次结果</span>
@@ -666,13 +672,6 @@ export function ManualSearchPage() {
               <span>errors</span>
               <strong>{lastExecution.status === "idle" ? "--" : `${lastExecution.errorCount} 条`}</strong>
             </div>
-          </div>
-          <div className={`manual-execution-note ${lastExecution.status === "failed" ? "failed" : ""}`}>
-            {lastExecution.status === "idle"
-              ? "尚未执行"
-              : lastExecution.status === "failed"
-                ? lastExecution.errorText || "最近一次执行失败，请检查任务正文后重试。"
-                : "最近一次执行已完成，可继续查看下方完整结果。"}
           </div>
           <button type="button" className="ghost manual-results-link" onClick={scrollToResults}>
             查看执行结果

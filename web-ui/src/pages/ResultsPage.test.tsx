@@ -106,6 +106,9 @@ describe("ResultsPage", () => {
     expect(screen.getByTestId("results-main-workspace")).toBeInTheDocument();
     expect(screen.getByTestId("results-table-pane")).toBeInTheDocument();
     expect(screen.getByTestId("results-detail-rail")).toBeInTheDocument();
+    expect(screen.getByTestId("results-table-status")).toBeInTheDocument();
+    expect(screen.getByText("当前浏览范围")).toBeInTheDocument();
+    expect(screen.getByText("表格管理")).toBeInTheDocument();
   });
 
   it("shows an empty detail rail before a row is chosen, then renders curated detail content after row click", async () => {
@@ -117,7 +120,11 @@ describe("ResultsPage", () => {
       expect(screen.getByTestId("results-detail-rail")).toBeInTheDocument();
     });
 
+    expect(screen.getByText("右侧详情判读轨")).toBeInTheDocument();
     expect(screen.getByText("选择一条记录后，可在右侧快速判读详情。")).toBeInTheDocument();
+    expect(screen.getByText("判读方式")).toBeInTheDocument();
+    expect(screen.getByText("先扫表格")).toBeInTheDocument();
+    expect(screen.getByText("再看右侧")).toBeInTheDocument();
 
     const row = screen.getByText("Item 1").closest("tr");
     expect(row).not.toBeNull();
@@ -125,8 +132,14 @@ describe("ResultsPage", () => {
 
     const detailRail = screen.getByTestId("results-detail-rail");
     await waitFor(() => {
-      expect(within(detailRail).getByText("Summary 1")).toBeInTheDocument();
+      expect(within(detailRail).getByText("精选结果判读")).toBeInTheDocument();
     });
+    const summaryHeading = within(detailRail).getByText("内容摘要");
+    const cluesHeading = within(detailRail).getByText("命中线索");
+    const infoHeading = within(detailRail).getByText("结果信息");
+    expect(summaryHeading.compareDocumentPosition(cluesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(cluesHeading.compareDocumentPosition(infoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(detailRail).getByText("Summary 1")).toBeInTheDocument();
     expect(within(detailRail).getByText("author-1")).toBeInTheDocument();
     expect(within(detailRail).getByText(/rule-1/)).toBeInTheDocument();
   });
@@ -149,21 +162,31 @@ describe("ResultsPage", () => {
     expect(within(detailRail).getByText("author-1")).toBeInTheDocument();
   });
 
-  it("renders manager actions in the expected order and keeps keyword search outside the manager layer", async () => {
+  it("keeps table browsing controls in the filter layer and table actions in the manager layer", async () => {
     listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
 
     render(<ResultsPage />);
 
     await waitFor(() => {
+      expect(screen.getByTestId("results-filter-layer")).toBeInTheDocument();
       expect(screen.getByTestId("results-manager-layer")).toBeInTheDocument();
     });
 
+    const filter = screen.getByTestId("results-filter-layer");
     const manager = screen.getByTestId("results-manager-layer");
     const buttons = within(manager).getAllByRole("button").map((button) => button.textContent);
 
     expect(buttons).toEqual(["字段", "恢复默认", "批量删除", "全表去重"]);
+    expect(within(filter).getByRole("tablist", { name: "results-table-switcher" })).toBeInTheDocument();
+    expect(within(filter).getByRole("button", { name: TEXT.refresh })).toBeInTheDocument();
+    expect(within(filter).getByTestId("results-filter-summary")).toBeInTheDocument();
     expect(within(manager).queryByLabelText(TEXT.keywordLabel)).not.toBeInTheDocument();
-    expect(within(screen.getByTestId("results-filter-layer")).getByLabelText(TEXT.keywordLabel)).toBeInTheDocument();
+    expect(within(filter).getByLabelText(TEXT.keywordLabel)).toBeInTheDocument();
+    expect(within(filter).getByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
+    expect(within(filter).getByText("\u5173\u952e\u8bcd\uff1a\u5168\u90e8")).toBeInTheDocument();
+    expect(within(manager).queryByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).not.toBeInTheDocument();
+    expect(within(manager).getByText("共 1 条")).toBeInTheDocument();
+    expect(within(manager).getByText("已选 0 条")).toBeInTheDocument();
   });
 
   it("renders raw detail content after switching table and clicking a raw row", async () => {
@@ -189,11 +212,15 @@ describe("ResultsPage", () => {
 
     const detailRail = screen.getByTestId("results-detail-rail");
     await waitFor(() => {
-      expect(within(detailRail).getByText("原始正文")).toBeInTheDocument();
+      expect(within(detailRail).getByText("原始记录详情")).toBeInTheDocument();
     });
+    const bodyHeading = within(detailRail).getByText("原始正文");
+    const collectHeading = within(detailRail).getByText("采集信息");
+    expect(bodyHeading.compareDocumentPosition(collectHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(detailRail).getAllByText("raw-author-2").length).toBeGreaterThan(0);
     expect(within(detailRail).getByText("互动指标")).toBeInTheDocument();
     expect(within(detailRail).getByText("102")).toBeInTheDocument();
+    expect(within(detailRail).getByText("manual:2")).toBeInTheDocument();
   });
 
   it("renders default business columns and utc+8 timestamps", async () => {
@@ -461,10 +488,14 @@ describe("ResultsPage", () => {
       expect(screen.getByText("Item 1")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("loaded=100")).toBeInTheDocument();
-    expect(screen.getByText("total=132")).toBeInTheDocument();
-    expect(screen.getByText("page=1/2")).toBeInTheDocument();
-    expect(screen.getByText("共 132 条")).toBeInTheDocument();
+    const tableStatus = screen.getByTestId("results-table-status");
+    expect(within(tableStatus).getByText("\u5f53\u524d\u7b2c 1 / 2 \u9875")).toBeInTheDocument();
+    expect(within(tableStatus).getByText("\u672c\u9875 100 \u6761")).toBeInTheDocument();
+    expect(within(tableStatus).getByText("\u672c\u9875\u5df2\u9009 0 \u6761")).toBeInTheDocument();
+    expect(within(tableStatus).getByText("\u6392\u5e8f\uff1aid \u00b7 \u964d\u5e8f")).toBeInTheDocument();
+    expect(within(tableStatus).getByText("\u6bcf\u9875 100 \u6761")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-manager-layer")).getByText("共 132 条")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-filter-summary")).getByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
     expect(screen.getByText("第 1 / 2 页")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "results-next-page" }));
@@ -476,8 +507,8 @@ describe("ResultsPage", () => {
       expect(screen.getByText("Item 101")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("loaded=32")).toBeInTheDocument();
-    expect(screen.getByText("page=2/2")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-status")).getByText("\u5f53\u524d\u7b2c 2 / 2 \u9875")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-status")).getByText("\u672c\u9875 32 \u6761")).toBeInTheDocument();
     expect(screen.getByText("第 2 / 2 页")).toBeInTheDocument();
   });
 
@@ -493,12 +524,13 @@ describe("ResultsPage", () => {
 
     fireEvent.click(screen.getByLabelText(TEXT.selectPage));
 
-    expect(screen.getByText("selected=100")).toBeInTheDocument();
+    expect(screen.getByText("已选 100 条")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "select-all-matching" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "select-all-matching" }));
 
-    expect(screen.getByText("selected=132")).toBeInTheDocument();
+    expect(screen.getByText("已选 132 条")).toBeInTheDocument();
+    expect(screen.getByText("已选全部匹配结果")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "clear-selection" })).toBeInTheDocument();
   });
 
@@ -523,7 +555,7 @@ describe("ResultsPage", () => {
       expect(screen.getByText("Item 101")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("selected=132")).toBeInTheDocument();
+    expect(screen.getByText("已选 132 条")).toBeInTheDocument();
     expect(screen.getByLabelText("select-item-101")).toBeChecked();
   });
 
@@ -559,8 +591,9 @@ describe("ResultsPage", () => {
       expect(screen.getByText("Alpha 999")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("selected=0")).toBeInTheDocument();
-    expect(screen.getByText("page=1/1")).toBeInTheDocument();
+    expect(screen.getByText("已选 0 条")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-status")).getByText("\u5f53\u524d\u7b2c 1 / 1 \u9875")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-filter-summary")).getByText("\u5173\u952e\u8bcd\uff1aalpha")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "clear-selection" })).not.toBeInTheDocument();
   });
 
@@ -685,7 +718,7 @@ describe("ResultsPage", () => {
     });
 
     expect(screen.queryByText("summary_zh")).not.toBeInTheDocument();
-    expect(screen.getByText("table=x_items_raw")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-filter-summary")).getByText("\u5f53\u524d\u8868\uff1a\u539f\u59cb\u7ed3\u679c")).toBeInTheDocument();
   });
 
   it("clears selection and falls back invalid sort and columns when switching tables", async () => {
@@ -715,8 +748,8 @@ describe("ResultsPage", () => {
       expect(listItemsMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ sort_by: "id", sort_dir: "desc", table: "raw" }),
       );
-      expect(screen.getByText("table=x_items_raw")).toBeInTheDocument();
-      expect(screen.getByText("selected=0")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-filter-summary")).getByText("\u5f53\u524d\u8868\uff1a\u539f\u59cb\u7ed3\u679c")).toBeInTheDocument();
+      expect(screen.getByText("已选 0 条")).toBeInTheDocument();
       expect(screen.getByText("author")).toBeInTheDocument();
       expect(screen.queryByText("title")).not.toBeInTheDocument();
     });
