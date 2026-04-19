@@ -122,8 +122,24 @@ export function SettingsPage() {
         </div>
       </section>
 
-      {error && <div className="alert error">{error}</div>}
-      {message && <div className="alert success">{message}</div>}
+      {error && (
+        <div className="workbench-feedback workbench-feedback-danger" role="status">
+          <div className="workbench-feedback-copy">
+            <div className="workbench-feedback-eyebrow">配置反馈</div>
+            <strong>{error}</strong>
+            <p>当前编辑器草稿会保留，方便继续修正后再保存或导入。</p>
+          </div>
+        </div>
+      )}
+      {message && (
+        <div className="workbench-feedback workbench-feedback-success" role="status">
+          <div className="workbench-feedback-copy">
+            <div className="workbench-feedback-eyebrow">配置反馈</div>
+            <strong>{message}</strong>
+            <p>workspace 摘要和编辑器内容已同步到当前最新状态。</p>
+          </div>
+        </div>
+      )}
 
       <section className="card settings-summary workbench-layer" data-testid="settings-summary">
         <div className="settings-section-header workbench-section-header">
@@ -177,7 +193,7 @@ export function SettingsPage() {
         </div>
 
         <div className="collector-grid collector-grid-2 settings-actions-grid">
-          <div className="collector-card settings-action-card">
+          <div className="collector-card settings-action-card workbench-subsurface">
             <div className="settings-card-title">{"\u5237\u65b0\u4e0e\u5bf9\u9f50"}</div>
             <div className="collector-toolbar settings-card-actions">
               <button type="button" className="ghost" aria-label="reload-workspace" onClick={() => loadWorkspace().catch(() => undefined)} disabled={loading}>
@@ -189,7 +205,7 @@ export function SettingsPage() {
             </div>
           </div>
 
-          <div className="collector-card settings-action-card">
+          <div className="collector-card settings-action-card workbench-subsurface workbench-subsurface-muted">
             <div className="settings-card-title">{"\u5bfc\u5165\u65b0\u8349\u7a3f"}</div>
             <label className="field">
               <span>{"\u5bfc\u5165 workspace \u6587\u4ef6"}</span>
@@ -212,18 +228,20 @@ export function SettingsPage() {
           </div>
         </div>
 
-        <label className="field">
-          <span>workspace.json</span>
-          <textarea
-            aria-label="workspace-json"
-            value={editorText}
-            onChange={(event) => setEditorText(event.target.value)}
-            spellCheck={false}
-            rows={28}
-            className="settings-editor"
-            style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
-          />
-        </label>
+        <div className="workbench-subsurface settings-editor-surface">
+          <label className="field">
+            <span>workspace.json</span>
+            <textarea
+              aria-label="workspace-json"
+              value={editorText}
+              onChange={(event) => setEditorText(event.target.value)}
+              spellCheck={false}
+              rows={28}
+              className="settings-editor"
+              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
+            />
+          </label>
+        </div>
       </section>
     </div>
   );

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -28,8 +28,6 @@ vi.mock("./pages/SettingsPage", () => ({
 }));
 
 const ACTIVE_PAGE_STORAGE_KEY = "app.activePage.v1";
-const DASHBOARD_HEALTH_STATE_KEY = "dashboard.healthSnapshot.v1";
-
 describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -101,109 +99,26 @@ describe("App", () => {
     expect(screen.getByTestId("mock-dashboard")).toBeInTheDocument();
   });
 
-  it("renders the new shell structure and copy", () => {
+  it("renders the fixed rail shell structure", () => {
     render(<App />);
 
     expect(screen.getByTestId("sidebar-brand")).toBeInTheDocument();
+    expect(screen.getByTestId("sidebar-rail")).toBeInTheDocument();
     expect(screen.getByTestId("sidebar-nav")).toBeInTheDocument();
-    expect(screen.getByTestId("sidebar-runtime-summary")).toBeInTheDocument();
     expect(screen.getByText("X \u6570\u636e\u91c7\u96c6\u5668")).toBeInTheDocument();
-    expect(
-      screen.getByText("\u672c\u5730\u4efb\u52a1\u3001\u8c03\u5ea6\u4e0e\u7ed3\u679c\u5de5\u4f5c\u53f0"),
-    ).toBeInTheDocument();
+    expect(screen.queryByText("\u5f53\u524d\u9875")).not.toBeInTheDocument();
+    expect(screen.queryByText("\u8fd0\u884c\u6458\u8981")).not.toBeInTheDocument();
   });
 
   it("applies shell width classes to panels", () => {
     render(<App />);
 
-    expect(screen.getByTestId("panel-dashboard")).toHaveClass("page-shell-regular");
+    expect(screen.getByTestId("panel-dashboard")).toHaveClass("page-shell-wide");
     expect(screen.getByTestId("panel-manual")).toHaveClass("page-shell-wide");
     expect(screen.getByTestId("panel-jobs")).toHaveClass("page-shell-wide");
     expect(screen.getByTestId("panel-results")).toHaveClass("page-shell-wide");
     expect(screen.getByTestId("panel-logs")).toHaveClass("page-shell-wide");
-    expect(screen.getByTestId("panel-settings")).toHaveClass("page-shell-regular");
-  });
-
-  it("renders runtime summary from cached healthy snapshot", () => {
-    window.localStorage.setItem(
-      DASHBOARD_HEALTH_STATE_KEY,
-      JSON.stringify({
-        db: {
-          configured: true,
-          connected: true,
-          last_error: "",
-        },
-      }),
-    );
-
-    render(<App />);
-
-    expect(screen.getByTestId("runtime-db")).toHaveTextContent("\u6570\u636e\u5e93");
-    expect(screen.getByTestId("runtime-db")).toHaveTextContent("\u5df2\u8fde\u63a5");
-    expect(screen.getByTestId("runtime-api")).toHaveTextContent("\u5df2\u7f13\u5b58");
-    expect(screen.getByTestId("runtime-scheduler")).toHaveTextContent("\u672a\u6821\u9a8c");
-  });
-
-  it("renders neutral runtime summary when no cached snapshot exists", () => {
-    render(<App />);
-
-    expect(screen.getByTestId("runtime-api")).toHaveTextContent("\u672a\u6821\u9a8c");
-    expect(screen.getByTestId("runtime-scheduler")).toHaveTextContent("\u672a\u6821\u9a8c");
-    expect(screen.getByTestId("runtime-db")).toHaveTextContent("\u672a\u6821\u9a8c");
-  });
-
-  it("falls back to neutral runtime summary and clears invalid cached snapshot JSON", async () => {
-    window.localStorage.setItem(DASHBOARD_HEALTH_STATE_KEY, "{invalid-json");
-
-    render(<App />);
-
-    expect(screen.getByTestId("runtime-db")).toHaveTextContent("\u672a\u6821\u9a8c");
-    await waitFor(() => {
-      expect(window.localStorage.getItem(DASHBOARD_HEALTH_STATE_KEY)).toBeNull();
-    });
-  });
-
-  it("maps unconfigured db state to 未配置", () => {
-    window.localStorage.setItem(
-      DASHBOARD_HEALTH_STATE_KEY,
-      JSON.stringify({
-        db: {
-          configured: false,
-          connected: false,
-          last_error: "",
-        },
-      }),
-    );
-
-    render(<App />);
-
-    expect(screen.getByTestId("runtime-db")).toHaveTextContent("\u672a\u914d\u7f6e");
-  });
-
-  it("maps db connection failure with last_error to 最近失败", () => {
-    window.localStorage.setItem(
-      DASHBOARD_HEALTH_STATE_KEY,
-      JSON.stringify({
-        db: {
-          configured: true,
-          connected: false,
-          last_error: "boom",
-        },
-      }),
-    );
-
-    render(<App />);
-
-    expect(screen.getByTestId("runtime-db")).toHaveTextContent("\u6700\u8fd1\u5931\u8d25");
-  });
-
-  it("falls back to 未校验 when cached db fields are missing", () => {
-    window.localStorage.setItem(DASHBOARD_HEALTH_STATE_KEY, JSON.stringify({ db: {} }));
-
-    render(<App />);
-
-    expect(screen.getByTestId("runtime-api")).toHaveTextContent("\u5df2\u7f13\u5b58");
-    expect(screen.getByTestId("runtime-db")).toHaveTextContent("\u672a\u6821\u9a8c");
+    expect(screen.getByTestId("panel-settings")).toHaveClass("page-shell-wide");
   });
 
   it("handles localStorage getItem failures safely", () => {
@@ -213,8 +128,6 @@ describe("App", () => {
 
     try {
       expect(() => render(<App />)).not.toThrow();
-      expect(screen.getByTestId("runtime-api")).toHaveTextContent("\u672a\u6821\u9a8c");
-      expect(screen.getByTestId("runtime-db")).toHaveTextContent("\u672a\u6821\u9a8c");
       expect(screen.getByTestId("panel-dashboard")).toHaveAttribute("aria-hidden", "false");
     } finally {
       getItemSpy.mockRestore();

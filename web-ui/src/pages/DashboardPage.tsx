@@ -21,30 +21,32 @@ function healthTone(target: { configured: boolean; connected: boolean; last_erro
 
 function renderDatabaseInfo(info: DatabaseHealth) {
   return (
-    <div className="dashboard-detail-grid">
-      <div className="dashboard-detail-item">
-        <span>{"数据库路径"}</span>
-        <strong>{info.db_path || "unknown"}</strong>
-      </div>
-      <div className="dashboard-detail-item">
-        <span>{"文件存在"}</span>
-        <strong>{info.db_exists ? "是" : "否"}</strong>
-      </div>
-      <div className="dashboard-detail-item">
-        <span>{"任务数"}</span>
-        <strong>{info.job_count}</strong>
-      </div>
-      <div className="dashboard-detail-item">
-        <span>{"运行数"}</span>
-        <strong>{info.run_count}</strong>
-      </div>
-      <div className="dashboard-detail-item">
-        <span>{"最近校验"}</span>
-        <strong>{formatUtcPlus8Time(info.last_checked_at, "尚未校验")}</strong>
-      </div>
-      <div className="dashboard-detail-item">
-        <span>{"最近错误"}</span>
-        <strong>{info.last_error || "无"}</strong>
+    <div className="workbench-subsurface dashboard-detail-shell">
+      <div className="dashboard-detail-grid">
+        <div className="dashboard-detail-item">
+          <span>{"数据库路径"}</span>
+          <strong>{info.db_path || "unknown"}</strong>
+        </div>
+        <div className="dashboard-detail-item">
+          <span>{"文件存在"}</span>
+          <strong>{info.db_exists ? "是" : "否"}</strong>
+        </div>
+        <div className="dashboard-detail-item">
+          <span>{"任务数"}</span>
+          <strong>{info.job_count}</strong>
+        </div>
+        <div className="dashboard-detail-item">
+          <span>{"运行数"}</span>
+          <strong>{info.run_count}</strong>
+        </div>
+        <div className="dashboard-detail-item">
+          <span>{"最近校验"}</span>
+          <strong>{formatUtcPlus8Time(info.last_checked_at, "尚未校验")}</strong>
+        </div>
+        <div className="dashboard-detail-item">
+          <span>{"最近错误"}</span>
+          <strong>{info.last_error || "无"}</strong>
+        </div>
       </div>
     </div>
   );
@@ -52,26 +54,28 @@ function renderDatabaseInfo(info: DatabaseHealth) {
 
 function renderXInfo(info: XHealth) {
   return (
-    <div className="dashboard-detail-grid">
-      <div className="dashboard-detail-item">
-        <span>{"认证来源"}</span>
-        <strong>{info.auth_source || "unknown"}</strong>
-      </div>
-      <div className="dashboard-detail-item">
-        <span>{"浏览器提示"}</span>
-        <strong>{info.browser_hint || "unknown"}</strong>
-      </div>
-      <div className="dashboard-detail-item">
-        <span>{"账号摘要"}</span>
-        <strong>{info.account_hint || "unknown"}</strong>
-      </div>
-      <div className="dashboard-detail-item">
-        <span>{"最近校验"}</span>
-        <strong>{formatUtcPlus8Time(info.last_checked_at, "尚未校验")}</strong>
-      </div>
-      <div className="dashboard-detail-item dashboard-detail-item-wide">
-        <span>{"最近错误"}</span>
-        <strong>{info.last_error || "无"}</strong>
+    <div className="workbench-subsurface dashboard-detail-shell">
+      <div className="dashboard-detail-grid">
+        <div className="dashboard-detail-item">
+          <span>{"认证来源"}</span>
+          <strong>{info.auth_source || "unknown"}</strong>
+        </div>
+        <div className="dashboard-detail-item">
+          <span>{"浏览器提示"}</span>
+          <strong>{info.browser_hint || "unknown"}</strong>
+        </div>
+        <div className="dashboard-detail-item">
+          <span>{"账号摘要"}</span>
+          <strong>{info.account_hint || "unknown"}</strong>
+        </div>
+        <div className="dashboard-detail-item">
+          <span>{"最近校验"}</span>
+          <strong>{formatUtcPlus8Time(info.last_checked_at, "尚未校验")}</strong>
+        </div>
+        <div className="dashboard-detail-item dashboard-detail-item-wide">
+          <span>{"最近错误"}</span>
+          <strong>{info.last_error || "无"}</strong>
+        </div>
       </div>
     </div>
   );
@@ -148,7 +152,15 @@ export function DashboardPage() {
         </div>
       </section>
 
-      {error && <div className="alert error">{`错误: ${error}`}</div>}
+      {error && (
+        <div className="workbench-feedback workbench-feedback-danger" role="status">
+          <div className="workbench-feedback-copy">
+            <div className="workbench-feedback-eyebrow">运行反馈</div>
+            <strong>{`错误: ${error}`}</strong>
+            <p>保留当前展示状态，直到下一次主动重新加载成功。</p>
+          </div>
+        </div>
+      )}
 
       <section className="card dashboard-summary workbench-layer" data-testid="dashboard-summary">
         <div className="dashboard-summary-hero">

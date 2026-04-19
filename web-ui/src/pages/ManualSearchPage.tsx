@@ -197,12 +197,13 @@ export function ManualSearchPage() {
   const packBindingLabel = currentPack ? "已绑定本地任务包" : "未绑定";
   const packDraftLabel = currentPack ? (draftDirty ? "已修改未保存" : "未修改") : "未绑定";
   const packSourceLabel = draftSourceLabel(draftSource);
-  const packHeroEyebrow = currentPack ? "当前绑定任务包" : "当前草稿";
-  const packHeroTitle = currentPack?.meta.name || "未绑定任务草稿";
-  const packHeroDescription = currentPack?.meta.description || "当前正在编辑一个未绑定的临时任务草稿。";
   const currentDraftStatusLabel = currentPack ? (draftDirty ? "已修改未保存" : "已绑定任务包") : "未绑定草稿";
   const lastExecutionStatusLabel = executionStatusLabel(lastExecution.status);
   const lastExecutionTimeLabel = lastExecution.executedAt ? formatUtcPlus8Time(lastExecution.executedAt) : "尚未执行";
+  const resultsSummaryStatusLabel = `状态：${lastExecutionStatusLabel}`;
+  const resultsSummaryRawLabel = `raw_total：${lastExecution.status === "idle" ? "--" : lastExecution.rawTotal}`;
+  const resultsSummaryMatchedLabel = `matched_total：${lastExecution.status === "idle" ? "--" : lastExecution.matchedTotal}`;
+  const resultsSummaryErrorLabel = `errors：${lastExecution.status === "idle" ? "--" : lastExecution.errorCount}`;
 
   function resetToBlankDraft() {
     setSearchSpec(cloneSearchSpec(DEFAULT_SEARCH_SPEC));
@@ -452,27 +453,6 @@ export function ManualSearchPage() {
 
       <div className="manual-layout">
         <div className="manual-editor-pane">
-          <section className="card manual-section-card manual-section-card-hero workbench-layer">
-            <ManualSectionHeader
-              title="当前任务包"
-              description="任务包是当前草稿的绑定对象，只展示任务包身份和草稿来源，不在这里直接编辑正文。"
-            />
-            <div className="manual-pack-hero workbench-summary-panel">
-              <div className="manual-pack-hero-copy">
-                <div className="manual-pack-eyebrow">{packHeroEyebrow}</div>
-                <div className="manual-pack-name">{packHeroTitle}</div>
-                <p className="kv manual-pack-description">{packHeroDescription}</p>
-                <div className="kv manual-pack-path">{`pack_name=${currentPack?.pack_name || "--"}`}</div>
-                <div className="kv manual-pack-path">{`pack_path=${currentPack?.pack_path || "--"}`}</div>
-              </div>
-              <div className="manual-pack-pill-row workbench-pill-row">
-                <span className="jobs-summary-pill workbench-pill">{`绑定状态：${packBindingLabel}`}</span>
-                <span className="jobs-summary-pill workbench-pill">{`草稿状态：${packDraftLabel}`}</span>
-                <span className="jobs-summary-pill workbench-pill">{`草稿来源：${packSourceLabel}`}</span>
-              </div>
-            </div>
-          </section>
-
           <section className="card manual-section-card manual-section-card-muted workbench-layer">
             <ManualSectionHeader
               title="任务包操作"
@@ -489,107 +469,141 @@ export function ManualSearchPage() {
               }
             />
             <div className="collector-grid collector-grid-2 manual-pack-actions-grid">
-              <div className="collector-card">
-                <div className="collector-subtitle">载入到当前草稿</div>
+              <div className="collector-card manual-action-card" data-testid="manual-pack-load-card">
+                <div className="manual-action-card-head">
+                  <div className="manual-action-card-copy">
+                    <div className="manual-action-card-eyebrow">草稿来源</div>
+                    <div className="collector-subtitle">载入到当前草稿</div>
+                  </div>
+                  <div className="manual-action-card-pills workbench-pill-row">
+                    <span className="jobs-summary-pill workbench-pill">{`当前来源：${packSourceLabel}`}</span>
+                  </div>
+                </div>
                 <div className="kv manual-pack-note">
                   可以从任务包列表载入，也可以直接从本地 JSON 文件导入到当前草稿。
                 </div>
-                <div className="collector-toolbar manual-pack-toolbar">
-                  <select
-                    aria-label="manual-pack-select"
-                    value={selectedPackName}
-                    onChange={(event) => setSelectedPackName(event.target.value)}
-                  >
-                    <option value="">选择任务包</option>
-                    {taskPacks.map((item) => (
-                      <option key={item.pack_name} value={item.pack_name}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="ghost"
-                    aria-label="manual-load-pack"
-                    onClick={() => importSelectedPack().catch(() => undefined)}
-                  >
-                    载入任务包
-                  </button>
-                  <button
-                    type="button"
-                    className="ghost"
-                    aria-label="manual-import-file-pack"
-                    onClick={() => {
-                      pendingFileActionRef.current = "draft";
-                      fileInputRef.current?.click();
-                    }}
-                  >
-                    从文件导入
-                  </button>
-                  <button
-                    type="button"
-                    className="ghost"
-                    aria-label="manual-import-and-save-pack"
-                    onClick={() => {
-                      pendingFileActionRef.current = "save_new";
-                      fileInputRef.current?.click();
-                    }}
-                  >
-                    导入并保存为新任务包
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    data-testid="manual-pack-file-input"
-                    type="file"
-                    accept=".json,application/json"
-                    style={{ display: "none" }}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      void (pendingFileActionRef.current === "save_new"
-                        ? importAndSavePackFile(file)
-                        : importPackFile(file));
-                      event.currentTarget.value = "";
-                    }}
-                  />
+                <div className="manual-action-group">
+                  <div className="manual-action-group-label">载入已有任务包</div>
+                  <div className="collector-toolbar manual-pack-toolbar manual-action-toolbar">
+                    <select
+                      aria-label="manual-pack-select"
+                      value={selectedPackName}
+                      onChange={(event) => setSelectedPackName(event.target.value)}
+                    >
+                      <option value="">选择任务包</option>
+                      {taskPacks.map((item) => (
+                        <option key={item.pack_name} value={item.pack_name}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="ghost"
+                      aria-label="manual-load-pack"
+                      onClick={() => importSelectedPack().catch(() => undefined)}
+                    >
+                      载入任务包
+                    </button>
+                  </div>
                 </div>
-                <div className="kv manual-pack-note">从文件导入：只替换当前草稿，不会创建任务包。</div>
-                <div className="kv manual-pack-note">
-                  导入并保存为新任务包：会先导入文件，再立刻保存成新的本地任务包并绑定。
+                <div className="manual-action-group">
+                  <div className="manual-action-group-label">从本地文件导入</div>
+                  <div className="collector-toolbar manual-pack-toolbar manual-action-toolbar">
+                    <button
+                      type="button"
+                      className="ghost"
+                      aria-label="manual-import-file-pack"
+                      onClick={() => {
+                        pendingFileActionRef.current = "draft";
+                        fileInputRef.current?.click();
+                      }}
+                    >
+                      从文件导入
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost"
+                      aria-label="manual-import-and-save-pack"
+                      onClick={() => {
+                        pendingFileActionRef.current = "save_new";
+                        fileInputRef.current?.click();
+                      }}
+                    >
+                      导入并保存为新任务包
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      data-testid="manual-pack-file-input"
+                      type="file"
+                      accept=".json,application/json"
+                      style={{ display: "none" }}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        void (pendingFileActionRef.current === "save_new"
+                          ? importAndSavePackFile(file)
+                          : importPackFile(file));
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                  </div>
+                  <div className="kv manual-pack-note">从文件导入：只替换当前草稿，不会创建任务包。</div>
+                  <div className="kv manual-pack-note">
+                    导入并保存为新任务包：会先导入文件，再立刻保存成新的本地任务包并绑定。
+                  </div>
                 </div>
               </div>
-              <div className="collector-card">
-                <div className="collector-subtitle">保存当前草稿</div>
+              <div className="collector-card manual-action-card" data-testid="manual-pack-save-card">
+                <div className="manual-action-card-head">
+                  <div className="manual-action-card-copy">
+                    <div className="manual-action-card-eyebrow">草稿落盘</div>
+                    <div className="collector-subtitle">保存当前草稿</div>
+                  </div>
+                  <div className="manual-action-card-pills workbench-pill-row">
+                    <span className="jobs-summary-pill workbench-pill">{`当前绑定：${currentPack?.pack_name || "--"}`}</span>
+                    <span className="jobs-summary-pill workbench-pill">{`草稿状态：${packDraftLabel}`}</span>
+                  </div>
+                </div>
                 <div className="kv manual-pack-note">
                   把当前草稿另存为新任务包，或保存回当前绑定任务包。
                 </div>
-                <div className="collector-toolbar manual-pack-toolbar">
-                  <button
-                    type="button"
-                    className="ghost"
-                    aria-label="manual-save-as-pack"
-                    onClick={() => savePack("create").catch(() => undefined)}
-                    disabled={savingPack}
-                  >
-                    另存为新任务包
-                  </button>
-                  <button
-                    type="button"
-                    className="workbench-primary-action"
-                    aria-label="manual-save-current-pack"
-                    onClick={() => savePack("overwrite").catch(() => undefined)}
-                    disabled={savingPack || !currentPack?.pack_name}
-                  >
-                    保存到当前任务包
-                  </button>
-                  <button
-                    type="button"
-                    className="danger"
-                    aria-label="manual-delete-pack"
-                    onClick={() => handleDeleteCurrentPack().catch(() => undefined)}
-                    disabled={deletingPack || !currentPack?.pack_name}
-                  >
-                    {deletingPack ? "删除中..." : "删除当前任务包"}
-                  </button>
+                <div className="manual-action-group">
+                  <div className="manual-action-group-label">创建或覆盖</div>
+                  <div className="collector-toolbar manual-pack-toolbar manual-action-toolbar">
+                    <button
+                      type="button"
+                      className="ghost"
+                      aria-label="manual-save-as-pack"
+                      onClick={() => savePack("create").catch(() => undefined)}
+                      disabled={savingPack}
+                    >
+                      另存为新任务包
+                    </button>
+                    <button
+                      type="button"
+                      className="workbench-primary-action"
+                      aria-label="manual-save-current-pack"
+                      onClick={() => savePack("overwrite").catch(() => undefined)}
+                      disabled={savingPack || !currentPack?.pack_name}
+                    >
+                      保存到当前任务包
+                    </button>
+                  </div>
+                </div>
+                <div className="manual-action-group manual-action-group-danger">
+                  <div className="manual-action-group-label">删除当前绑定任务包</div>
+                  <div className="kv manual-pack-note">默认任务包和仍被自动任务引用的任务包不会在这里被直接删除。</div>
+                  <div className="collector-toolbar manual-pack-toolbar manual-action-toolbar">
+                    <button
+                      type="button"
+                      className="danger"
+                      aria-label="manual-delete-pack"
+                      onClick={() => handleDeleteCurrentPack().catch(() => undefined)}
+                      disabled={deletingPack || !currentPack?.pack_name}
+                    >
+                      {deletingPack ? "删除中..." : "删除当前任务包"}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -640,30 +654,64 @@ export function ManualSearchPage() {
           </section>
 
           <section className="card manual-section-card workbench-layer">
-            <ManualSectionHeader title="搜索条件" description="这里定义这个任务要去搜什么。" />
-            <div className="collector-panel">
-              <SearchSpecEditor value={searchSpec} onChange={setSearchSpec} disabled={loading} />
+            <ManualSectionHeader
+              title="搜索条件"
+              description="这里定义这个任务要去搜什么。"
+              aside={
+                <div className="workbench-pill-row">
+                  <span className="jobs-summary-pill workbench-pill">{`关键词片段：${keywordCount}`}</span>
+                  <span className="jobs-summary-pill workbench-pill">{`作者约束：${authorConstraintCount}`}</span>
+                </div>
+              }
+            />
+            <div className="manual-editor-surface" data-testid="manual-search-editor-surface">
+              <div className="manual-editor-surface-head">
+                <div className="manual-editor-surface-copy">
+                  <div className="collector-subtitle">搜索输入面板</div>
+                  <div className="kv">直接编辑搜索条件，顶部任务正文摘要会同步反映当前查询内容。</div>
+                </div>
+              </div>
+              <div className="collector-panel manual-editor-panel">
+                <SearchSpecEditor value={searchSpec} onChange={setSearchSpec} disabled={loading} />
+              </div>
             </div>
           </section>
 
           <section className="card manual-section-card workbench-layer">
-            <ManualSectionHeader title="规则" description="这里定义原始结果如何筛选、打分和分级。" />
-            <div className="collector-grid collector-grid-2" style={{ marginTop: 12, marginBottom: 12 }}>
-              <label className="field">
-                <span>规则名称</span>
-                <input value={draftRuleName} onChange={(event) => setDraftRuleName(event.target.value)} />
-              </label>
-              <label className="field">
-                <span>规则说明</span>
-                <input value={draftRuleDescription} onChange={(event) => setDraftRuleDescription(event.target.value)} />
-              </label>
-            </div>
-            <RuleSetEditor
-              ruleSet={ruleSetPreview}
-              draft={draftDefinition}
-              onDraftChange={setDraftDefinition}
-              disabled={loading}
+            <ManualSectionHeader
+              title="规则"
+              description="这里定义原始结果如何筛选、打分和分级。"
+              aside={
+                <div className="workbench-pill-row">
+                  <span className="jobs-summary-pill workbench-pill">{`规则：${ruleCount}`}</span>
+                  <span className="jobs-summary-pill workbench-pill">{`等级：${levelCount}`}</span>
+                </div>
+              }
             />
+            <div className="manual-editor-surface" data-testid="manual-rule-editor-surface">
+              <div className="manual-editor-surface-head">
+                <div className="manual-editor-surface-copy">
+                  <div className="collector-subtitle">筛选与打分规则</div>
+                  <div className="kv">先维护规则名称和说明，再在下方编辑等级、规则项和命中条件。</div>
+                </div>
+              </div>
+              <div className="collector-grid collector-grid-2 manual-rule-meta-grid">
+                <label className="field">
+                  <span>规则名称</span>
+                  <input value={draftRuleName} onChange={(event) => setDraftRuleName(event.target.value)} />
+                </label>
+                <label className="field">
+                  <span>规则说明</span>
+                  <input value={draftRuleDescription} onChange={(event) => setDraftRuleDescription(event.target.value)} />
+                </label>
+              </div>
+              <RuleSetEditor
+                ruleSet={ruleSetPreview}
+                draft={draftDefinition}
+                onDraftChange={setDraftDefinition}
+                disabled={loading}
+              />
+            </div>
           </section>
         </div>
 
@@ -732,6 +780,21 @@ export function ManualSearchPage() {
           title="执行结果"
           description="完整执行输出仍放在页面下方全宽区域，包含最终查询、原始结果和命中结果。"
         />
+        <div className="manual-results-hero workbench-summary-panel" data-testid="manual-results-summary-card">
+          <div className="manual-results-hero-copy">
+            <div className="workbench-section-eyebrow">执行概览</div>
+            <div className="collector-subtitle">结果区只负责承载完整输出</div>
+            <div className="kv">未执行时保留清晰空状态；执行后在这里先给出状态摘要，再展开完整结果。</div>
+          </div>
+          <div className="manual-results-hero-pills workbench-pill-row">
+            <span className={`jobs-summary-pill workbench-pill ${executionStatusTone(lastExecution.status)}`}>
+              {resultsSummaryStatusLabel}
+            </span>
+            <span className="jobs-summary-pill workbench-pill">{resultsSummaryRawLabel}</span>
+            <span className="jobs-summary-pill workbench-pill">{resultsSummaryMatchedLabel}</span>
+            <span className="jobs-summary-pill workbench-pill">{resultsSummaryErrorLabel}</span>
+          </div>
+        </div>
 
         {loading ? (
           <div className="searching" data-testid="manual-searching">

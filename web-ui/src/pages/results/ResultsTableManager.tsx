@@ -55,41 +55,46 @@ export function ResultsTableManager({
         </div>
       </div>
 
-      <div className="results-manager-toolbar" data-testid="results-manager-toolbar">
-        <div className="results-manager-view-actions" data-testid="results-manager-view-actions">
-          <div className="results-field-picker">
-            <button
-              type="button"
-              className="ghost"
-              aria-haspopup="dialog"
-              aria-expanded={fieldMenuOpen}
-              onClick={onToggleFields}
-            >
-              {fieldsLabel}
+      <div
+        className="results-manager-toolbar-shell workbench-subsurface workbench-subsurface-muted"
+        data-testid="results-manager-toolbar-shell"
+      >
+        <div className="results-manager-toolbar" data-testid="results-manager-toolbar">
+          <div className="results-manager-view-actions" data-testid="results-manager-view-actions">
+            <div className="results-field-picker">
+              <button
+                type="button"
+                className="ghost"
+                aria-haspopup="dialog"
+                aria-expanded={fieldMenuOpen}
+                onClick={onToggleFields}
+              >
+                {fieldsLabel}
+              </button>
+            </div>
+            <button type="button" className="ghost" onClick={onRestoreDefaultColumns}>
+              {resetColumnsLabel}
             </button>
           </div>
-          <button type="button" className="ghost" onClick={onRestoreDefaultColumns}>
-            {resetColumnsLabel}
-          </button>
-        </div>
 
-        <div className="results-manager-data-actions" data-testid="results-manager-data-actions">
-          {showSelectAllMatching && (
-            <button type="button" className="ghost" aria-label="select-all-matching" onClick={onSelectAllMatching}>
-              选择全部匹配结果
+          <div className="results-manager-data-actions" data-testid="results-manager-data-actions">
+            {showSelectAllMatching && (
+              <button type="button" className="ghost" aria-label="select-all-matching" onClick={onSelectAllMatching}>
+                选择全部匹配结果
+              </button>
+            )}
+            {(selectedCount > 0 || allMatchingSelected) && (
+              <button type="button" className="ghost" aria-label="clear-selection" onClick={onClearSelection}>
+                {clearSelectionLabel}
+              </button>
+            )}
+            <button type="button" className="danger" onClick={onBatchDelete} disabled={loading || !selectedCount}>
+              {batchDeleteLabel}
             </button>
-          )}
-          {(selectedCount > 0 || allMatchingSelected) && (
-            <button type="button" className="ghost" aria-label="clear-selection" onClick={onClearSelection}>
-              {clearSelectionLabel}
+            <button type="button" className="ghost" onClick={onDedupe} disabled={loading}>
+              {dedupeLabel}
             </button>
-          )}
-          <button type="button" className="danger" onClick={onBatchDelete} disabled={loading || !selectedCount}>
-            {batchDeleteLabel}
-          </button>
-          <button type="button" className="ghost" onClick={onDedupe} disabled={loading}>
-            {dedupeLabel}
-          </button>
+          </div>
         </div>
       </div>
 

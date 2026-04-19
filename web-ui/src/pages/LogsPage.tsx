@@ -141,10 +141,24 @@ export function LogsPage() {
         </div>
       </section>
 
-      {error && <div className="alert error">{error}</div>}
+      {error && (
+        <div className="workbench-feedback workbench-feedback-danger" role="status">
+          <div className="workbench-feedback-copy">
+            <div className="workbench-feedback-eyebrow">读取反馈</div>
+            <strong>{error}</strong>
+            <p>保留页面框架和刷新入口，方便直接继续重试。</p>
+          </div>
+        </div>
+      )}
       {loading && (
-        <div className="searching">
-          <span className="spinner" /> {UI_TEXT.loading}
+        <div className="workbench-feedback workbench-feedback-neutral">
+          <div className="workbench-feedback-copy">
+            <div className="workbench-feedback-eyebrow">运行中</div>
+            <strong className="searching">
+              <span className="spinner" /> {UI_TEXT.loading}
+            </strong>
+            <p>并行读取服务快照和采集运行记录。</p>
+          </div>
         </div>
       )}
 
@@ -168,7 +182,7 @@ export function LogsPage() {
             const tone = serviceGroupTone(files);
             const latest = latestUpdatedAt(files);
             return (
-              <section key={group.key} className="drawer-section logs-service-group">
+              <section key={group.key} className="drawer-section logs-service-group workbench-subsurface">
                 <div className="logs-service-group-hero">
                   <div className="logs-service-group-copy">
                     <h5>{group.label}</h5>
@@ -225,13 +239,13 @@ export function LogsPage() {
         ) : (
           <div className="logs-runs-layout">
             <div className="logs-runs-list">
-              <div className="logs-runs-manager workbench-pill-row">
+              <div className="logs-runs-manager workbench-pill-row workbench-subsurface workbench-subsurface-muted">
                 <span className="dashboard-summary-pill workbench-pill neutral">{`${UI_TEXT.triggerType}：${selectedRun?.trigger_type || "--"}`}</span>
                 <span className={`dashboard-summary-pill workbench-pill ${selectedRun ? statusClass(selectedRun.status) : "neutral"}`}>{`${UI_TEXT.status}：${selectedRun?.status || "--"}`}</span>
                 <span className="dashboard-summary-pill workbench-pill neutral">{`${UI_TEXT.statsSummary}：${selectedRun ? summarizeStats(selectedRun.stats_json) : "--"}`}</span>
               </div>
 
-              <div className="logs-table-wrap">
+              <div className="logs-table-wrap workbench-table-shell">
                 <table className="table logs-table">
                   <thead>
                     <tr>
@@ -309,11 +323,11 @@ export function LogsPage() {
                     <strong>{summarizeStats(selectedRun.stats_json)}</strong>
                   </div>
                 </div>
-                <div className="logs-detail-block">
+                <div className="logs-detail-block workbench-subsurface workbench-subsurface-muted">
                   <div className="logs-run-section-title">{UI_TEXT.errorInfo}</div>
                   <pre className="logs-pre">{selectedRun.error_text || UI_TEXT.noError}</pre>
                 </div>
-                <div className="logs-detail-block">
+                <div className="logs-detail-block workbench-subsurface workbench-subsurface-muted">
                   <div className="logs-run-section-title">stats_json</div>
                   <pre className="logs-pre">{JSON.stringify(selectedRun.stats_json || {}, null, 2)}</pre>
                 </div>

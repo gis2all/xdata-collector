@@ -265,8 +265,9 @@ export function JobsPage() {
     if (!currentTaskPackComparable) return false;
     return JSON.stringify(currentTaskPackComparable) !== JSON.stringify(currentJobDraftComparable);
   }, [currentTaskPackComparable, currentJobDraftComparable]);
-  const currentTaskPackName = currentTaskPack?.meta.name || (form.pack_name ? taskPacks.find((item) => item.pack_name === form.pack_name)?.name || form.pack_name : "未绑定");
-  const currentTaskPackDescription = currentTaskPack?.meta.description || "";
+  const manageSelectionSummary = selectedCount > 0
+    ? `当前已选 ${selectedCount} 项，可继续清空选择或直接执行批量操作。`
+    : "先在表格中勾选任务，再选择全部匹配结果或执行批量操作。";
   const currentRuleSetPreview = useMemo<RuleSet | null>(
     () => ({
       id: Number(form.rule_set.id ?? 0) || 0,
@@ -891,11 +892,17 @@ export function JobsPage() {
   const lastRunTimeLabel = selectedJob?.last_run_ended_at || selectedJob?.last_run_started_at
     ? formatUtcPlus8Time(selectedJob.last_run_ended_at || selectedJob.last_run_started_at)
     : "尚未运行";
-  const currentTaskEyebrow = selectedJob ? `调度任务 #${selectedJob.id}` : "新建任务草稿";
+  const currentTaskEyebrow = selectedJob ? `调度任务 #${selectedJob.id}` : "调度设置";
   const currentTaskHeroTitle = form.name.trim() || (selectedJob ? selectedJob.name : "未命名任务");
   const currentTaskHeroDescription = selectedJob
     ? "这里收口当前调度任务的基础设置，确认后再继续编辑任务正文。"
     : "先把调度设置定下来，再继续补全任务包、搜索条件和规则。";
+  const currentTaskPackName = currentTaskPack?.pack_name || form.pack_name || null;
+  const hasCurrentTaskPackBinding = Boolean(currentTaskPackName);
+  const currentTaskPackBindingLabel = hasCurrentTaskPackBinding ? "已绑定本地任务包" : "未绑定";
+  const currentTaskPackDraftLabel = hasCurrentTaskPackBinding
+    ? (currentTaskPack ? (taskPackDirty ? "已修改未保存" : "未修改") : "已绑定")
+    : "未绑定";
 
   return (
     <div className="jobs-page" data-testid="jobs-page">
@@ -919,7 +926,25 @@ export function JobsPage() {
       >
         <section className="jobs-list-pane">
           <div className="card jobs-list-tools workbench-layer">
-            <div className="jobs-list-filterbar" data-testid="jobs-filter-bar">
+            <div
+              className="jobs-list-tools-summary workbench-summary-panel"
+              data-testid="jobs-list-tools-summary"
+            >
+              <div className="jobs-list-tools-copy workbench-section-copy">
+                <div className="workbench-section-eyebrow">任务列表</div>
+                <div className="workbench-section-title jobs-list-tools-title">筛选与批量管理</div>
+                <div className="kv">先按名称和状态收口列表，再进入表格管理层完成全选、清空选择和批量操作。</div>
+              </div>
+              <div className="jobs-list-tools-pills workbench-pill-row">
+                <span className="jobs-summary-pill workbench-pill">{`当前范围：${manageScopeLabel}`}</span>
+                <span className="jobs-summary-pill workbench-pill">{`共 ${total} 项任务`}</span>
+              </div>
+            </div>
+
+            <div
+              className="jobs-list-filterbar workbench-subsurface workbench-subsurface-muted"
+              data-testid="jobs-filter-bar"
+            >
               <label className="field jobs-filter-field">
                 <span>{"搜索任务"}</span>
                 <input value={queryInput} onChange={(e) => setQueryInput(e.target.value)} placeholder={"按任务名称搜索"} aria-label="搜索任务" />
@@ -947,10 +972,9 @@ export function JobsPage() {
             </div>
 
             <div className="jobs-managebar" data-testid="jobs-manage-bar">
-              <div className="jobs-managebar-summary workbench-pill-row">
-                <span className="jobs-summary-pill workbench-pill">{`已选 ${selectedCount} 项`}</span>
-                <span className="jobs-summary-pill workbench-pill">{`共 ${total} 项任务`}</span>
-                <span className="jobs-summary-pill workbench-pill">{`当前范围：${manageScopeLabel}`}</span>
+              <div className="jobs-managebar-copy">
+                <div className="collector-subtitle">{"表格管理"}</div>
+                <div className="kv">{manageSelectionSummary}</div>
               </div>
               <div className="jobs-managebar-actions">
                 {showSelectAllMatching && (
@@ -1108,14 +1132,10 @@ export function JobsPage() {
                     <span>{`最近运行时间：${lastRunTimeLabel}`}</span>
                     {selectedJob?.deleted_at ? <span>{`删除时间：${formatUtcPlus8Time(selectedJob.deleted_at)}`}</span> : null}
                   </div>
-                  <div className="collector-grid collector-grid-4 jobs-current-task-summary-grid workbench-summary-grid">
+                  <div className="collector-grid collector-grid-3 jobs-current-task-summary-grid workbench-summary-grid">
                     <div className="dashboard-detail-item">
-                      <span>{"工作区模式"}</span>
-                      <strong>{selectedJob ? "编辑已保存任务" : "新建任务草稿"}</strong>
-                    </div>
-                    <div className="dashboard-detail-item">
-                      <span>{"任务包绑定"}</span>
-                      <strong>{currentTaskPack?.pack_name || "未绑定"}</strong>
+                      <span>{"当前状态"}</span>
+                      <strong>{currentStatusLabel}</strong>
                     </div>
                     <div className="dashboard-detail-item">
                       <span>{"最近运行状态"}</span>
@@ -1149,40 +1169,16 @@ export function JobsPage() {
 
               <div className="drawer-section workbench-layer">
                 <JobsSectionHeader
-                  title="当前绑定任务包"
-                  description="任务包负责承载当前任务的搜索条件和规则正文。"
-                />
-                <div className="collector-card jobs-pack-summary">
-                  <div className="collector-toolbar between">
-                    <div className="jobs-pack-meta">
-                      <div className="job-name" style={{ marginTop: 6 }}>{currentTaskPackName}</div>
-                      <div className="kv" style={{ marginTop: 6 }}>{currentTaskPackDescription || "先把任务包载入到当前草稿，再决定是另存为新任务包，还是保存回当前任务包。"}</div>
-                      <div className="kv" style={{ marginTop: 8 }}>{`pack_name=${currentTaskPack?.pack_name || "--"}`}</div>
-                      <div className="kv">{`pack_path=${currentTaskPack?.pack_path || "--"}`}</div>
-                    </div>
-                    <div className="collector-grid collector-grid-3 jobs-pack-state-grid workbench-summary-grid">
-                      <div className="dashboard-detail-item">
-                        <span>{"绑定状态"}</span>
-                        <strong>{currentTaskPack ? "已绑定本地任务包" : "未绑定"}</strong>
-                      </div>
-                      <div className="dashboard-detail-item">
-                        <span>{"草稿状态"}</span>
-                        <strong>{currentTaskPack ? (taskPackDirty ? "已修改未保存" : "未修改") : "未绑定"}</strong>
-                      </div>
-                      <div className="dashboard-detail-item">
-                        <span>{"草稿来源"}</span>
-                        <strong>{draftSourceLabel(draftSource)}</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="drawer-section workbench-layer">
-                <JobsSectionHeader
                   title="任务包操作"
                   description="先把任务包载入到当前草稿，再决定另存为新任务包、保存回当前任务包，或删除当前任务包。"
                 />
+                <div className="jobs-pack-context-hint workbench-subsurface workbench-subsurface-muted" data-testid="jobs-pack-context-hint">
+                  <div className="workbench-pill-row">
+                    <span className="jobs-summary-pill workbench-pill">{`当前绑定：${currentTaskPackName || "--"}`}</span>
+                    <span className="jobs-summary-pill workbench-pill">{`绑定状态：${currentTaskPackBindingLabel}`}</span>
+                    <span className="jobs-summary-pill workbench-pill">{`草稿状态：${currentTaskPackDraftLabel}`}</span>
+                  </div>
+                </div>
                 <div className="collector-grid collector-grid-2 jobs-pack-manager-grid jobs-pack-actions-grid">
                   <div className="collector-card">
                     <div className="collector-subtitle">{"载入到当前草稿"}</div>
@@ -1352,9 +1348,52 @@ export function JobsPage() {
               </div>
             </div>
           ) : (
-            <div className="drawer-empty">
-              <h4>{"任务面板"}</h4>
-              <p>{"选择一个任务查看详情，或新建任务并绑定 task pack。"}</p>
+            <div className="drawer-empty jobs-empty-workspace" data-testid="jobs-empty-workspace">
+              <div className="jobs-empty-hero workbench-summary-panel">
+                <div>
+                  <div className="jobs-empty-eyebrow">{"任务工作区"}</div>
+                  <h4>{"先从一个任务开始"}</h4>
+                  <p>{"左侧负责收口任务列表并打开任务，右侧工作区负责绑定任务包、编辑搜索条件与规则，并完成保存或立即运行。"}</p>
+                </div>
+                <div className="workbench-pill-row">
+                  <span className="jobs-summary-pill workbench-pill">{`可用任务包：${taskPacks.length}`}</span>
+                </div>
+                <div className="jobs-empty-actions">
+                  <button type="button" className="workbench-primary-action" onClick={openCreate}>{"新建任务"}</button>
+                  <button
+                    type="button"
+                    className="ghost"
+                    onClick={() => refreshJobs({ keepDrawer: false, reloadSelected: false }).catch(() => undefined)}
+                    disabled={loading}
+                  >
+                    {"刷新列表"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="collector-grid jobs-empty-grid workbench-summary-grid">
+                <div className="dashboard-detail-item">
+                  <span>{"1. 打开或新建任务"}</span>
+                  <strong>{"从左侧选择已有任务，或直接创建新的调度任务草稿。"}</strong>
+                </div>
+                <div className="dashboard-detail-item">
+                  <span>{"2. 绑定任务包"}</span>
+                  <strong>{"载入已有任务包，或从本地 JSON 导入到当前草稿后继续编辑。"}</strong>
+                </div>
+                <div className="dashboard-detail-item">
+                  <span>{"3. 完成编辑并保存"}</span>
+                  <strong>{"确认调度、搜索条件和规则后保存任务，必要时直接立即运行。"}</strong>
+                </div>
+              </div>
+
+              <div className="jobs-empty-guide">
+                <div className="jobs-empty-guide-title">{"这个工作区会承接的操作"}</div>
+                <ul className="jobs-empty-guide-list">
+                  <li>{"载入任务包、从文件导入、导入并保存为新任务包"}</li>
+                  <li>{"编辑调度设置、任务正文摘要、搜索条件和规则"}</li>
+                  <li>{"保存任务、立即运行、启停任务和批量操作"}</li>
+                </ul>
+              </div>
             </div>
           )}
         </aside>

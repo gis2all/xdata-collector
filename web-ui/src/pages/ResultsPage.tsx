@@ -795,51 +795,63 @@ export function ResultsPage() {
   }
 
   return (
-    <div className="card results-page" data-testid="results-page">
+    <div className="results-page" data-testid="results-page">
       <ResultsPageHeader title={TEXT.title} subtitle={TEXT.subtitle} />
 
       <section className="results-filter-layer workbench-layer" data-testid="results-filter-layer">
-        <div className="results-filter-copy workbench-section-copy">
-          <div className="workbench-section-eyebrow">浏览范围</div>
-          <div className="results-filter-title workbench-section-title">当前浏览范围</div>
-          <div className="kv">切换结果表、输入关键词，并按当前视图刷新列表。</div>
+        <div className="results-filter-summary-panel workbench-summary-panel" data-testid="results-filter-summary-panel">
+          <div className="results-filter-copy workbench-section-copy">
+            <div className="workbench-section-eyebrow">浏览范围</div>
+            <div className="results-filter-title workbench-section-title">当前浏览范围</div>
+            <div className="kv">切换结果表、输入关键词，并按当前视图刷新列表。</div>
+          </div>
+          <div className="results-filter-summary workbench-pill-row" data-testid="results-filter-summary">
+            <div className="results-summary-pill workbench-pill">{`\u5f53\u524d\u8868\uff1a${tableLabel}`}</div>
+            <div className="results-summary-pill workbench-pill">{`\u5173\u952e\u8bcd\uff1a${activeKeywordLabel}`}</div>
+          </div>
         </div>
-        <div className="results-filter-summary workbench-pill-row" data-testid="results-filter-summary">
-          <div className="results-summary-pill workbench-pill">{`\u5f53\u524d\u8868\uff1a${tableLabel}`}</div>
-          <div className="results-summary-pill workbench-pill">{`\u5173\u952e\u8bcd\uff1a${activeKeywordLabel}`}</div>
-        </div>
-        <div className="results-filter-controls results-filter-toolbar" data-testid="results-filter-toolbar">
-          <div className="results-filter-browse" data-testid="results-filter-browse">
-            <div className="segmented-control" role="tablist" aria-label="results-table-switcher">
+        <div
+          className="results-filter-toolbar-shell workbench-subsurface workbench-subsurface-muted"
+          data-testid="results-filter-toolbar-shell"
+        >
+          <div className="results-filter-controls results-filter-toolbar" data-testid="results-filter-toolbar">
+            <div className="results-filter-browse" data-testid="results-filter-browse">
+              <div className="segmented-control" role="tablist" aria-label="results-table-switcher">
+                <button
+                  type="button"
+                  className={table === "curated" ? "active" : "ghost"}
+                  onClick={() => void handleTableSwitch("curated")}
+                >
+                  {TEXT.curatedTab}
+                </button>
+                <button
+                  type="button"
+                  className={table === "raw" ? "active" : "ghost"}
+                  onClick={() => void handleTableSwitch("raw")}
+                >
+                  {TEXT.rawTab}
+                </button>
+              </div>
+              <label className="field results-filter-keyword-field">
+                <span>{TEXT.keywordLabel}</span>
+                <input
+                  placeholder={TEXT.keywordPlaceholder}
+                  value={keywordInput}
+                  onChange={(event) => setKeywordInput(event.target.value)}
+                  aria-label={TEXT.keywordLabel}
+                />
+              </label>
+            </div>
+            <div className="results-filter-primary" data-testid="results-filter-primary">
               <button
                 type="button"
-                className={table === "curated" ? "active" : "ghost"}
-                onClick={() => void handleTableSwitch("curated")}
+                className="workbench-primary-action"
+                onClick={() => void handleRefresh()}
+                disabled={loading}
               >
-                {TEXT.curatedTab}
-              </button>
-              <button
-                type="button"
-                className={table === "raw" ? "active" : "ghost"}
-                onClick={() => void handleTableSwitch("raw")}
-              >
-                {TEXT.rawTab}
+                {TEXT.refresh}
               </button>
             </div>
-            <label className="field results-filter-keyword-field">
-              <span>{TEXT.keywordLabel}</span>
-              <input
-                placeholder={TEXT.keywordPlaceholder}
-                value={keywordInput}
-                onChange={(event) => setKeywordInput(event.target.value)}
-                aria-label={TEXT.keywordLabel}
-              />
-            </label>
-          </div>
-          <div className="results-filter-primary" data-testid="results-filter-primary">
-            <button type="button" className="workbench-primary-action" onClick={() => void handleRefresh()} disabled={loading}>
-              {TEXT.refresh}
-            </button>
           </div>
         </div>
       </section>
@@ -884,6 +896,18 @@ export function ResultsPage() {
               </div>
             </div>
           )}
+          <div className="results-table-headband workbench-summary-panel" data-testid="results-table-headband">
+            <div className="results-table-headband-copy">
+              <div className="workbench-section-eyebrow">{"数据表格"}</div>
+              <div className="results-table-headband-title">{"当前结果表"}</div>
+              <div className="kv">{"按当前表浏览记录，支持拖动列宽、排序、勾选批量操作，并与右侧详情轨联动查看。"} </div>
+            </div>
+            <div className="results-table-headband-meta workbench-pill-row">
+              <span className="results-summary-pill workbench-pill">{`可见列 ${visibleColumnDefinitions.length} 个`}</span>
+              <span className="results-summary-pill workbench-pill">{`当前表：${tableLabel}`}</span>
+              <span className="results-summary-pill workbench-pill">{`列宽：可拖动调整`}</span>
+            </div>
+          </div>
 
           {error && <div className="alert error">{error}</div>}
           {message && <div className="alert success">{message}</div>}

@@ -101,17 +101,23 @@ describe("ResultsPage", () => {
       expect(screen.getByTestId("results-page-header")).toBeInTheDocument();
     });
 
+    expect(screen.getByTestId("results-page")).not.toHaveClass("card");
     expect(screen.getByTestId("results-page-header")).toHaveClass("workbench-page-header");
     expect(screen.getByTestId("results-filter-layer")).toHaveClass("workbench-layer");
+    expect(screen.getByTestId("results-filter-summary-panel")).toHaveClass("workbench-summary-panel");
+    expect(screen.getByTestId("results-filter-toolbar-shell")).toHaveClass("workbench-subsurface");
     expect(screen.getByTestId("results-manager-layer")).toHaveClass("workbench-layer");
+    expect(screen.getByTestId("results-manager-toolbar-shell")).toHaveClass("workbench-subsurface");
     expect(screen.getByTestId("results-main-workspace")).toBeInTheDocument();
     expect(screen.getByTestId("results-table-pane")).toBeInTheDocument();
+    expect(screen.getByTestId("results-table-headband")).toBeInTheDocument();
     expect(screen.getByTestId("results-detail-rail")).toHaveClass("workbench-layer");
     expect(screen.getByTestId("results-table-status")).toBeInTheDocument();
     expect(screen.getByTestId("results-filter-toolbar")).toBeInTheDocument();
     expect(screen.getByTestId("results-manager-toolbar")).toBeInTheDocument();
     expect(screen.getByTestId("results-manager-summary-panel")).toHaveClass("workbench-summary-panel");
     expect(screen.getByRole("button", { name: TEXT.refresh })).toHaveClass("workbench-primary-action");
+    expect(screen.getByText("当前结果表")).toBeInTheDocument();
     expect(screen.getByText("当前浏览范围")).toBeInTheDocument();
     expect(screen.getByText("表格管理")).toBeInTheDocument();
   });
@@ -222,22 +228,25 @@ describe("ResultsPage", () => {
 
     const filter = screen.getByTestId("results-filter-layer");
     const manager = screen.getByTestId("results-manager-layer");
-    const filterToolbar = within(filter).getByTestId("results-filter-toolbar");
+    const filterSummaryPanel = within(filter).getByTestId("results-filter-summary-panel");
+    const filterToolbarShell = within(filter).getByTestId("results-filter-toolbar-shell");
+    const filterToolbar = within(filterToolbarShell).getByTestId("results-filter-toolbar");
     const filterBrowse = within(filterToolbar).getByTestId("results-filter-browse");
     const filterPrimary = within(filterToolbar).getByTestId("results-filter-primary");
-    const managerToolbar = within(manager).getByTestId("results-manager-toolbar");
+    const managerToolbarShell = within(manager).getByTestId("results-manager-toolbar-shell");
+    const managerToolbar = within(managerToolbarShell).getByTestId("results-manager-toolbar");
     const managerViewActions = within(managerToolbar).getByTestId("results-manager-view-actions");
     const managerDataActions = within(managerToolbar).getByTestId("results-manager-data-actions");
 
     expect(within(filterBrowse).getByRole("tablist", { name: "results-table-switcher" })).toBeInTheDocument();
     expect(within(filterPrimary).getByRole("button", { name: TEXT.refresh })).toBeInTheDocument();
-    expect(within(filter).getByTestId("results-filter-summary")).toBeInTheDocument();
+    expect(within(filterSummaryPanel).getByTestId("results-filter-summary")).toBeInTheDocument();
     expect(within(managerViewActions).getAllByRole("button").map((button) => button.textContent)).toEqual(["字段", "恢复默认"]);
     expect(within(managerDataActions).getAllByRole("button").map((button) => button.textContent)).toEqual(["批量删除", "全表去重"]);
     expect(within(manager).queryByLabelText(TEXT.keywordLabel)).not.toBeInTheDocument();
     expect(within(filterBrowse).getByLabelText(TEXT.keywordLabel)).toBeInTheDocument();
-    expect(within(filter).getByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
-    expect(within(filter).getByText("\u5173\u952e\u8bcd\uff1a\u5168\u90e8")).toBeInTheDocument();
+    expect(within(filterSummaryPanel).getByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
+    expect(within(filterSummaryPanel).getByText("\u5173\u952e\u8bcd\uff1a\u5168\u90e8")).toBeInTheDocument();
     expect(within(manager).queryByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).not.toBeInTheDocument();
     expect(within(manager).getByText("共 1 条")).toBeInTheDocument();
     expect(within(manager).getByText("已选 0 条")).toBeInTheDocument();

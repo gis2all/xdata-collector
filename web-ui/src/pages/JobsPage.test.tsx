@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { JobsPage } from "./JobsPage";
@@ -229,6 +229,24 @@ describe("JobsPage", () => {
     expect(secondLayout.style.gridTemplateColumns).toBe("");
   });
 
+  it("renders a guided empty workspace before a task is opened", async () => {
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(listJobsMock).toHaveBeenCalled();
+    });
+
+    const emptyWorkspace = screen.getByTestId("jobs-empty-workspace");
+    expect(emptyWorkspace).toBeInTheDocument();
+    expect(within(emptyWorkspace).getByText("先从一个任务开始")).toBeInTheDocument();
+    expect(within(emptyWorkspace).getByText("这个工作区会承接的操作")).toBeInTheDocument();
+    expect(within(emptyWorkspace).getByRole("button", { name: "新建任务" })).toBeInTheDocument();
+    expect(within(emptyWorkspace).getByRole("button", { name: "刷新列表" })).toBeInTheDocument();
+    expect(within(emptyWorkspace).getByText("1. 打开或新建任务")).toBeInTheDocument();
+    expect(within(emptyWorkspace).getByText("2. 绑定任务包")).toBeInTheDocument();
+    expect(within(emptyWorkspace).getByText("3. 完成编辑并保存")).toBeInTheDocument();
+  });
+
   it("renders the reorganized editable workspace structure after loading a task pack", async () => {
     render(<JobsPage />);
 
@@ -253,22 +271,31 @@ describe("JobsPage", () => {
     });
 
     expect(screen.getByRole("heading", { name: "当前任务" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "当前绑定任务包" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "当前绑定任务包" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务包操作" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务正文摘要" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "搜索条件" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "规则" })).toBeInTheDocument();
-    expect(screen.getByText("已绑定本地任务包")).toBeInTheDocument();
+    expect(screen.getByText("绑定状态：已绑定本地任务包")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "当前任务" }).closest(".jobs-section-header")).toHaveClass("workbench-section-header");
     expect(screen.getByRole("heading", { name: "当前任务" }).closest(".drawer-section")).toHaveClass("workbench-layer");
     expect(screen.getByTestId("create-job-button")).toHaveClass("workbench-primary-action");
     expect(screen.getByLabelText("submit-job-top")).toHaveClass("workbench-primary-action");
     expect(screen.getByText("当前状态：已启用").closest(".jobs-current-task-hero")).toHaveClass("workbench-summary-panel");
-    expect(screen.getByText("工作区模式").closest(".jobs-current-task-summary-grid")).toHaveClass("workbench-summary-grid");
-    expect(screen.getByText("绑定状态").closest(".jobs-pack-state-grid")).toHaveClass("workbench-summary-grid");
+    expect(screen.queryByText("工作区模式")).not.toBeInTheDocument();
+    expect(screen.queryByText("新建任务草稿")).not.toBeInTheDocument();
+    expect(screen.queryByText("编辑已保存任务")).not.toBeInTheDocument();
+    expect(screen.queryByText("绑定状态")).not.toBeInTheDocument();
+    expect(
+      screen
+        .getByRole("heading", { name: "任务包操作" })
+        .compareDocumentPosition(screen.getByRole("heading", { name: "任务正文摘要" })),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(screen.getByText("关键词片段").closest(".jobs-task-body-grid")).toHaveClass("workbench-summary-grid");
-    expect(screen.getByText("pack_name=alpha-watch")).toBeInTheDocument();
-    expect(screen.getByText("pack_path=config/packs/alpha-watch.json")).toBeInTheDocument();
+    expect(screen.getByText("当前绑定：alpha-watch")).toBeInTheDocument();
+    expect(screen.getByText("绑定状态：已绑定本地任务包")).toBeInTheDocument();
+    expect(screen.getByText("草稿状态：未修改")).toBeInTheDocument();
+    expect(screen.queryByText("pack_path=config/packs/alpha-watch.json")).not.toBeInTheDocument();
     expect(screen.getByText("规则可视化编辑器")).toBeInTheDocument();
     expect(screen.getByLabelText("job-load-pack")).toBeInTheDocument();
     expect(screen.getByLabelText("job-save-as-pack")).toBeInTheDocument();
@@ -299,11 +326,16 @@ describe("JobsPage", () => {
     expect(screen.getByRole("heading", { name: "自动任务" })).toBeInTheDocument();
     expect(screen.getByText("自动任务负责调度；任务正文来自当前绑定任务包，包含搜索条件和规则。")).toBeInTheDocument();
     expect(screen.getByTestId("create-job-button")).toBeInTheDocument();
+    const listToolsSummary = screen.getByTestId("jobs-list-tools-summary");
+    expect(listToolsSummary).toBeInTheDocument();
+    expect(screen.getByText("筛选与批量管理")).toBeInTheDocument();
     expect(screen.getByTestId("jobs-filter-bar")).toBeInTheDocument();
-    expect(screen.getByTestId("jobs-manage-bar")).toBeInTheDocument();
-    expect(screen.getByText("已选 0 项")).toBeInTheDocument();
-    expect(screen.getByText("共 0 项任务")).toBeInTheDocument();
-    expect(screen.getByText("当前范围：启用中")).toBeInTheDocument();
+    const manageBar = screen.getByTestId("jobs-manage-bar");
+    expect(manageBar).toBeInTheDocument();
+    expect(manageBar).not.toHaveClass("workbench-subsurface");
+    expect(within(listToolsSummary).getByText("\u5171 0 \u9879\u4efb\u52a1")).toBeInTheDocument();
+    expect(within(listToolsSummary).getByText("\u5f53\u524d\u8303\u56f4\uff1a\u542f\u7528\u4e2d")).toBeInTheDocument();
+    expect(within(manageBar).getByText("\u5148\u5728\u8868\u683c\u4e2d\u52fe\u9009\u4efb\u52a1\uff0c\u518d\u9009\u62e9\u5168\u90e8\u5339\u914d\u7ed3\u679c\u6216\u6267\u884c\u6279\u91cf\u64cd\u4f5c\u3002")).toBeInTheDocument();
   });
 
   it("shows a top save button for create mode and keeps the footer save button", async () => {
@@ -343,7 +375,7 @@ describe("JobsPage", () => {
 
     fireEvent.click(screen.getByTestId("create-job-button"));
 
-    expect(screen.getAllByText("新建任务草稿").length).toBeGreaterThan(0);
+    expect(screen.queryByText("新建任务草稿")).not.toBeInTheDocument();
     expect(screen.getByText("当前状态：已启用")).toBeInTheDocument();
     expect(screen.getByText("下次运行：保存后生成")).toBeInTheDocument();
     expect(screen.getByText("最近运行：尚未运行")).toBeInTheDocument();
@@ -471,7 +503,9 @@ describe("JobsPage", () => {
     expect(screen.getByDisplayValue("scheduled-local")).toBeInTheDocument();
     expect(screen.getByDisplayValue("90")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Local Rule")).toBeInTheDocument();
-    expect(screen.getAllByText("未绑定").length).toBeGreaterThan(0);
+    expect(screen.getByText("当前绑定：--")).toBeInTheDocument();
+    expect(screen.getByText("绑定状态：未绑定")).toBeInTheDocument();
+    expect(screen.getByText("草稿状态：未绑定")).toBeInTheDocument();
   });
 
 
@@ -508,9 +542,10 @@ describe("JobsPage", () => {
 
     expect(screen.getByDisplayValue("scheduled-local")).toBeInTheDocument();
     expect(screen.getByDisplayValue("90")).toBeInTheDocument();
-    expect(screen.getByText("任务包载入")).toBeInTheDocument();
-    expect(screen.getByText("pack_name=local-alpha-pack")).toBeInTheDocument();
-    expect(screen.getByText("pack_path=config/packs/local-alpha-pack.json")).toBeInTheDocument();
+    expect(screen.getByText("当前绑定：local-alpha-pack")).toBeInTheDocument();
+    expect(screen.getByText("绑定状态：已绑定本地任务包")).toBeInTheDocument();
+    expect(screen.getByText("草稿状态：未修改")).toBeInTheDocument();
+    expect(screen.queryByText("pack_path=config/packs/local-alpha-pack.json")).not.toBeInTheDocument();
     promptSpy.mockRestore();
   });
 
@@ -536,10 +571,10 @@ describe("JobsPage", () => {
     });
 
     fireEvent.click(screen.getByLabelText("jobs-select-page"));
-    expect(screen.getByText("已选 10 项")).toBeInTheDocument();
+    expect(screen.getByText("当前已选 10 项，可继续清空选择或直接执行批量操作。")).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("select-all-matching-jobs"));
-    expect(screen.getByText("已选 12 项")).toBeInTheDocument();
+    expect(screen.getByText("当前已选 12 项，可继续清空选择或直接执行批量操作。")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "批量删除" }));
 
@@ -683,13 +718,13 @@ describe("JobsPage", () => {
     fireEvent.click(row!);
 
     await waitFor(() => {
-      expect(screen.getByText("当前绑定任务包")).toBeInTheDocument();
-      expect(screen.getByText("未修改")).toBeInTheDocument();
+      expect(screen.getByText("当前绑定：alpha-watch")).toBeInTheDocument();
+      expect(screen.getByText("草稿状态：未修改")).toBeInTheDocument();
     });
 
     fireEvent.change(screen.getByDisplayValue("alpha"), { target: { value: "alpha,beta" } });
 
-    expect(screen.getByText("已修改未保存")).toBeInTheDocument();
+    expect(screen.getByText("草稿状态：已修改未保存")).toBeInTheDocument();
   });
 
   it("shows a clear error when deleting a task pack still referenced by the current job", async () => {
@@ -712,7 +747,7 @@ describe("JobsPage", () => {
     fireEvent.click(row!);
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "当前绑定任务包" })).toBeInTheDocument();
+      expect(screen.getByText("当前绑定：alpha-watch")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByLabelText("job-delete-pack"));
