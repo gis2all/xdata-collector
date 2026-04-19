@@ -92,6 +92,110 @@ describe("ResultsPage", () => {
     vi.restoreAllMocks();
   });
 
+  it("renders the results workbench structure with header, filter layer, manager layer, and main workspace", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("results-page-header")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("results-filter-layer")).toBeInTheDocument();
+    expect(screen.getByTestId("results-manager-layer")).toBeInTheDocument();
+    expect(screen.getByTestId("results-main-workspace")).toBeInTheDocument();
+    expect(screen.getByTestId("results-table-pane")).toBeInTheDocument();
+    expect(screen.getByTestId("results-detail-rail")).toBeInTheDocument();
+  });
+
+  it("shows an empty detail rail before a row is chosen, then renders curated detail content after row click", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("results-detail-rail")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("选择一条记录后，可在右侧快速判读详情。")).toBeInTheDocument();
+
+    const row = screen.getByText("Item 1").closest("tr");
+    expect(row).not.toBeNull();
+    fireEvent.click(row!);
+
+    const detailRail = screen.getByTestId("results-detail-rail");
+    await waitFor(() => {
+      expect(within(detailRail).getByText("Summary 1")).toBeInTheDocument();
+    });
+    expect(within(detailRail).getByText("author-1")).toBeInTheDocument();
+    expect(within(detailRail).getByText(/rule-1/)).toBeInTheDocument();
+  });
+
+  it("renders detail content after selecting a row checkbox", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("select-item-1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText("select-item-1"));
+
+    const detailRail = screen.getByTestId("results-detail-rail");
+    await waitFor(() => {
+      expect(within(detailRail).getByText("Summary 1")).toBeInTheDocument();
+    });
+    expect(within(detailRail).getByText("author-1")).toBeInTheDocument();
+  });
+
+  it("renders manager actions in the expected order and keeps keyword search outside the manager layer", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("results-manager-layer")).toBeInTheDocument();
+    });
+
+    const manager = screen.getByTestId("results-manager-layer");
+    const buttons = within(manager).getAllByRole("button").map((button) => button.textContent);
+
+    expect(buttons).toEqual(["字段", "恢复默认", "批量删除", "全表去重"]);
+    expect(within(manager).queryByLabelText(TEXT.keywordLabel)).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("results-filter-layer")).getByLabelText(TEXT.keywordLabel)).toBeInTheDocument();
+  });
+
+  it("renders raw detail content after switching table and clicking a raw row", async () => {
+    listItemsMock
+      .mockResolvedValueOnce(makePage([makeItem(1)], 1))
+      .mockResolvedValueOnce(makePage([makeRawItem(2)], 1));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Item 1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "原始结果" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Raw text 2")).toBeInTheDocument();
+    });
+
+    const row = screen.getByText("Raw text 2").closest("tr");
+    expect(row).not.toBeNull();
+    fireEvent.click(row!);
+
+    const detailRail = screen.getByTestId("results-detail-rail");
+    await waitFor(() => {
+      expect(within(detailRail).getByText("原始正文")).toBeInTheDocument();
+    });
+    expect(within(detailRail).getAllByText("raw-author-2").length).toBeGreaterThan(0);
+    expect(within(detailRail).getByText("互动指标")).toBeInTheDocument();
+    expect(within(detailRail).getByText("102")).toBeInTheDocument();
+  });
+
   it("renders default business columns and utc+8 timestamps", async () => {
     listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
 

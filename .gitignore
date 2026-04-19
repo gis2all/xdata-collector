@@ -27,6 +27,7 @@ config/workspace.json
 config/packs/*.json
 !config/packs/default-rule-set.json
 artifacts/legacy/*.json
+artifacts/design/
 
 # Local data and test databases
 data/*.db
