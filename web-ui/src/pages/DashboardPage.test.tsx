@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DashboardPage } from "./DashboardPage";
@@ -64,24 +64,31 @@ describe("DashboardPage", () => {
     window.localStorage.clear();
   });
 
-  it("restores the last displayed dashboard state from local storage without any automatic health requests", async () => {
+  it("renders the dashboard workbench structure and restores the last displayed state without automatic health requests", async () => {
     window.localStorage.setItem(DASHBOARD_HEALTH_STATE_KEY, JSON.stringify(healthySnapshot));
 
     render(<DashboardPage />);
 
+    expect(screen.getByTestId("dashboard-page-header")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新加载" })).toHaveClass("workbench-primary-action");
+    expect(screen.getByTestId("dashboard-summary")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-panels")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-db-info")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-x-info")).toBeInTheDocument();
-    expect(screen.getAllByText("已连接").length).toBeGreaterThan(0);
+    expect(within(screen.getByTestId("dashboard-summary")).getByText("\u8fd0\u884c\u603b\u89c8\u5feb\u7167")).toBeInTheDocument();
+    expect(screen.getAllByText("\u5df2\u8fde\u63a5").length).toBeGreaterThan(0);
     expect(healthMock).not.toHaveBeenCalled();
     expect(healthSnapshotMock).not.toHaveBeenCalled();
   });
 
-  it("keeps the dashboard in not-yet-checked state when no local state exists", async () => {
+  it("keeps the dashboard in a not-yet-checked state when no local state exists", async () => {
     render(<DashboardPage />);
 
-    expect(screen.queryByTestId("dashboard-db-info")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("dashboard-x-info")).not.toBeInTheDocument();
-    expect(screen.getByText("尚未刷新")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-page-header")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-summary")).toBeInTheDocument();
+    expect(screen.queryByTestId("dashboard-panels")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("dashboard-summary")).getByText("\u5c1a\u672a\u6821\u9a8c")).toBeInTheDocument();
+    expect(screen.getByText("\u9875\u9762\u5237\u65b0\u4e0d\u4f1a\u81ea\u52a8\u91cd\u65b0\u6821\u9a8c")).toBeInTheDocument();
     expect(healthMock).not.toHaveBeenCalled();
     expect(healthSnapshotMock).not.toHaveBeenCalled();
   });
@@ -91,13 +98,14 @@ describe("DashboardPage", () => {
 
     render(<DashboardPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    fireEvent.click(screen.getByRole("button", { name: "\u91cd\u65b0\u52a0\u8f7d" }));
 
     await waitFor(() => {
       expect(healthMock).toHaveBeenCalledTimes(1);
     });
 
     expect(window.localStorage.getItem(DASHBOARD_HEALTH_STATE_KEY)).toContain("backend_snapshot");
+    expect(screen.getByTestId("dashboard-panels")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-db-info")).toBeInTheDocument();
   });
 
@@ -106,14 +114,14 @@ describe("DashboardPage", () => {
 
     render(<DashboardPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    fireEvent.click(screen.getByRole("button", { name: "\u91cd\u65b0\u52a0\u8f7d" }));
 
     await waitFor(() => {
       expect(healthMock).toHaveBeenCalledTimes(1);
     });
 
     expect(window.localStorage.getItem(DASHBOARD_HEALTH_STATE_KEY)).toContain("db probe failed");
-    expect(screen.getAllByText("最近校验失败").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("\u6700\u8fd1\u6821\u9a8c\u5931\u8d25").length).toBeGreaterThan(0);
   });
 
   it("keeps the previous displayed state when the reload request itself fails", async () => {
@@ -122,13 +130,13 @@ describe("DashboardPage", () => {
 
     render(<DashboardPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    fireEvent.click(screen.getByRole("button", { name: "\u91cd\u65b0\u52a0\u8f7d" }));
 
     await waitFor(() => {
-      expect(screen.getByText("错误: network down")).toBeInTheDocument();
+      expect(screen.getByText("\u9519\u8bef: network down")).toBeInTheDocument();
     });
 
-    expect(screen.getByTestId("dashboard-db-info")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-panels")).toBeInTheDocument();
     expect(window.localStorage.getItem(DASHBOARD_HEALTH_STATE_KEY)).toContain("backend_snapshot");
   });
 });

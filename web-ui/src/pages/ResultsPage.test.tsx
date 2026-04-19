@@ -92,6 +92,217 @@ describe("ResultsPage", () => {
     vi.restoreAllMocks();
   });
 
+  it("renders the results workbench structure with header, filter layer, manager layer, and main workspace", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("results-page-header")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("results-page")).not.toHaveClass("card");
+    expect(screen.getByTestId("results-page-header")).toHaveClass("workbench-page-header");
+    expect(screen.getByTestId("results-filter-layer")).toHaveClass("workbench-layer");
+    expect(screen.getByTestId("results-filter-summary-panel")).toHaveClass("workbench-summary-panel");
+    expect(screen.getByTestId("results-filter-toolbar-shell")).toHaveClass("workbench-subsurface");
+    expect(screen.getByTestId("results-manager-layer")).toHaveClass("workbench-layer");
+    expect(screen.getByTestId("results-manager-toolbar-shell")).toHaveClass("workbench-subsurface");
+    expect(screen.getByTestId("results-main-workspace")).toBeInTheDocument();
+    expect(screen.getByTestId("results-table-pane")).toBeInTheDocument();
+    expect(screen.getByTestId("results-table-headband")).toBeInTheDocument();
+    expect(screen.getByTestId("results-detail-rail")).toHaveClass("workbench-layer");
+    expect(screen.getByTestId("results-table-status")).toBeInTheDocument();
+    expect(screen.getByTestId("results-filter-toolbar")).toBeInTheDocument();
+    expect(screen.getByTestId("results-manager-toolbar")).toBeInTheDocument();
+    expect(screen.getByTestId("results-manager-summary-panel")).toHaveClass("workbench-summary-panel");
+    expect(screen.getByRole("button", { name: TEXT.refresh })).toHaveClass("workbench-primary-action");
+    expect(screen.getByRole("button", { name: TEXT.fields })).toHaveClass("workbench-secondary-action");
+    expect(screen.getByRole("button", { name: TEXT.resetColumns })).toHaveClass("workbench-secondary-action");
+    expect(screen.getByRole("button", { name: TEXT.dedupe })).toHaveClass("workbench-secondary-action");
+    expect(screen.getByRole("button", { name: TEXT.batchDelete })).toHaveClass("workbench-danger-action");
+    expect(screen.getByText("当前结果表")).toBeInTheDocument();
+    expect(screen.getByText("当前浏览范围")).toBeInTheDocument();
+    expect(screen.getByText("表格管理")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: TEXT.fields }));
+    const fieldMenu = screen.getByTestId("results-field-menu");
+    const fieldPicker = screen.getByRole("button", { name: TEXT.fields }).closest(".results-field-picker");
+    expect(fieldMenu).toBeInTheDocument();
+    expect(fieldPicker).toContainElement(fieldMenu);
+    expect(screen.getByText("列显示")).toBeInTheDocument();
+  });
+
+  it("loads the first curated row into the detail rail, then follows row switching", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1), makeItem(2)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("results-detail-rail")).toBeInTheDocument();
+    });
+
+    const detailRail = screen.getByTestId("results-detail-rail");
+    await waitFor(() => {
+      expect(within(detailRail).getByText("Summary 1")).toBeInTheDocument();
+    });
+    expect(within(detailRail).getByText(/author-1/)).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1").closest("tr")).toHaveAttribute("data-row-active", "true");
+
+    const row = within(screen.getByTestId("results-table-pane")).getByText("Item 2").closest("tr");
+    expect(row).not.toBeNull();
+    fireEvent.click(row!);
+
+    await waitFor(() => {
+      expect(within(detailRail).getByText("Summary 2")).toBeInTheDocument();
+    });
+    const sectionTitles = detailRail.querySelectorAll(".results-detail-section-title");
+    const summaryHeading = sectionTitles[0];
+    const cluesHeading = sectionTitles[1];
+    const infoHeading = sectionTitles[2];
+    expect(summaryHeading).toBeTruthy();
+    expect(cluesHeading).toBeTruthy();
+    expect(infoHeading).toBeTruthy();
+    expect(summaryHeading.compareDocumentPosition(cluesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(cluesHeading.compareDocumentPosition(infoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(detailRail.querySelector(".results-detail-hero")).toHaveClass("workbench-summary-panel");
+    expect(detailRail.querySelector(".results-detail-fact-grid")).toHaveClass("workbench-summary-grid");
+    expect(within(detailRail).queryByTestId("results-detail-context-grid")).not.toBeInTheDocument();
+    expect(within(detailRail).getByTestId("results-detail-hero")).toHaveClass("results-detail-card");
+    expect(within(detailRail).getByTestId("results-detail-summary-section")).toHaveClass("results-detail-card");
+    expect(within(detailRail).getByTestId("results-detail-clues-section")).toHaveClass("results-detail-card");
+    expect(within(detailRail).getByTestId("results-detail-info-section")).toHaveClass("results-detail-card");
+    expect(within(detailRail).getByText(/author-2/)).toBeInTheDocument();
+    expect(within(detailRail).getByText(/rule-2/)).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("Item 2").closest("tr")).toHaveAttribute("data-row-active", "true");
+  });
+
+  it("shows a contextual empty-state rail when the current table has no rows", async () => {
+    listItemsMock.mockResolvedValue(makePage([], 0));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("results-table-pane")).getByText("\u6682\u65e0\u7ed3\u679c\u8bb0\u5f55")).toBeInTheDocument();
+    });
+
+    const detailRail = screen.getByTestId("results-detail-rail");
+
+    expect(within(detailRail).getByText("\u5f53\u524d\u8868\u6682\u65e0\u8bb0\u5f55")).toBeInTheDocument();
+    expect(within(detailRail).queryByTestId("results-detail-context-grid")).not.toBeInTheDocument();
+    expect(within(detailRail).getByText("\u4e0b\u4e00\u6b65\u5efa\u8bae")).toBeInTheDocument();
+  });
+
+  it("renders detail content after selecting a row checkbox", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1), makeItem(2)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("select-item-2")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText("select-item-2"));
+
+    const detailRail = screen.getByTestId("results-detail-rail");
+    await waitFor(() => {
+      expect(within(detailRail).getByText("Summary 2")).toBeInTheDocument();
+    });
+    expect(within(detailRail).getByText(/author-2/)).toBeInTheDocument();
+  });
+
+  it("keeps the detail hero compact while preserving primary record cues", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    const detailRail = screen.getByTestId("results-detail-rail");
+
+    await waitFor(() => {
+      expect(within(detailRail).getByText("Summary 1")).toBeInTheDocument();
+    });
+
+    expect(within(detailRail).getByTestId("results-detail-hero-pills")).toHaveClass("workbench-pill-row");
+    expect(within(detailRail).queryByTestId("results-detail-context-grid")).not.toBeInTheDocument();
+    expect(within(detailRail).getByText(/author-1/)).toBeInTheDocument();
+    expect(within(detailRail).getByText("\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
+  });
+
+  it("keeps table browsing controls in the filter layer and table actions in the manager layer", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("results-filter-layer")).toBeInTheDocument();
+      expect(screen.getByTestId("results-manager-layer")).toBeInTheDocument();
+    });
+
+    const filter = screen.getByTestId("results-filter-layer");
+    const manager = screen.getByTestId("results-manager-layer");
+    const filterSummaryPanel = within(filter).getByTestId("results-filter-summary-panel");
+    const filterToolbarShell = within(filter).getByTestId("results-filter-toolbar-shell");
+    const filterToolbar = within(filterToolbarShell).getByTestId("results-filter-toolbar");
+    const filterBrowse = within(filterToolbar).getByTestId("results-filter-browse");
+    const filterPrimary = within(filterToolbar).getByTestId("results-filter-primary");
+    const managerToolbarShell = within(manager).getByTestId("results-manager-toolbar-shell");
+    const managerToolbar = within(managerToolbarShell).getByTestId("results-manager-toolbar");
+    const managerViewActions = within(managerToolbar).getByTestId("results-manager-view-actions");
+    const managerDataActions = within(managerToolbar).getByTestId("results-manager-data-actions");
+
+    expect(within(filterBrowse).getByRole("tablist", { name: "results-table-switcher" })).toBeInTheDocument();
+    expect(within(filterPrimary).getByRole("button", { name: TEXT.refresh })).toBeInTheDocument();
+    expect(within(filterSummaryPanel).getByTestId("results-filter-summary")).toBeInTheDocument();
+    expect(within(managerViewActions).getAllByRole("button").map((button) => button.textContent)).toEqual(["字段", "恢复默认"]);
+    expect(within(managerDataActions).getAllByRole("button").map((button) => button.textContent)).toEqual(["批量删除", "全表去重"]);
+    expect(within(manager).queryByLabelText(TEXT.keywordLabel)).not.toBeInTheDocument();
+    expect(within(filterBrowse).getByLabelText(TEXT.keywordLabel)).toBeInTheDocument();
+    expect(within(filterSummaryPanel).getByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
+    expect(within(filterSummaryPanel).getByText("\u5173\u952e\u8bcd\uff1a\u5168\u90e8")).toBeInTheDocument();
+    expect(within(manager).queryByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).not.toBeInTheDocument();
+    expect(within(manager).getByText("共 1 条")).toBeInTheDocument();
+    expect(within(manager).getByText("已选 0 条")).toBeInTheDocument();
+  });
+
+  it("loads the first raw row into the detail rail after switching tables", async () => {
+    listItemsMock
+      .mockResolvedValueOnce(makePage([makeItem(1)], 1))
+      .mockResolvedValueOnce(makePage([makeRawItem(2)], 1));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(within(screen.getByRole("tablist", { name: "results-table-switcher" })).getAllByRole("button")[1]);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Raw text 2")).toBeInTheDocument();
+    });
+
+    const detailRail = screen.getByTestId("results-detail-rail");
+    await waitFor(() => {
+      expect(within(detailRail).getByText("Raw text 2")).toBeInTheDocument();
+    });
+    const sectionTitles = detailRail.querySelectorAll(".results-detail-section-title");
+    const bodyHeading = sectionTitles[0];
+    const collectHeading = sectionTitles[1];
+    expect(bodyHeading).toBeTruthy();
+    expect(collectHeading).toBeTruthy();
+    expect(bodyHeading.compareDocumentPosition(collectHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(detailRail.querySelector(".results-detail-hero")).toHaveClass("workbench-summary-panel");
+    expect(detailRail.querySelector(".results-detail-fact-grid")).toHaveClass("workbench-summary-grid");
+    expect(within(detailRail).queryByTestId("results-detail-context-grid")).not.toBeInTheDocument();
+    expect(within(detailRail).getByTestId("results-detail-hero")).toHaveClass("results-detail-card");
+    expect(within(detailRail).getByTestId("results-detail-collect-section")).toHaveClass("results-detail-card");
+    expect(within(detailRail).getByTestId("results-detail-metrics-section")).toHaveClass("results-detail-card");
+    expect(within(detailRail).getAllByText("raw-author-2").length).toBeGreaterThan(0);
+    expect(within(detailRail).getByText("102")).toBeInTheDocument();
+    expect(within(detailRail).getByText("manual:2")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("Raw text 2").closest("tr")).toHaveAttribute("data-row-active", "true");
+  });
+
   it("renders default business columns and utc+8 timestamps", async () => {
     listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
 
@@ -108,12 +319,12 @@ describe("ResultsPage", () => {
     expect(screen.getByRole("button", { name: TEXT.batchDelete })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: TEXT.dedupe })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: TEXT.fields })).toBeInTheDocument();
-    expect(screen.getByText("title")).toBeInTheDocument();
-    expect(screen.getByText("summary_zh")).toBeInTheDocument();
-    expect(screen.getByText("author")).toBeInTheDocument();
-    expect(screen.getByText("created_at_x")).toBeInTheDocument();
-    expect(screen.queryByText("dedupe_key")).not.toBeInTheDocument();
-    expect(screen.queryByText("reasons_json")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("title")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("summary_zh")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("author")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("created_at_x")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).queryByText("dedupe_key")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).queryByText("reasons_json")).not.toBeInTheDocument();
     const scoreAscButton = screen.getByRole("button", { name: "score asc" });
     const scoreDescButton = screen.getByRole("button", { name: "score desc" });
     expect(scoreAscButton).toBeInTheDocument();
@@ -123,8 +334,11 @@ describe("ResultsPage", () => {
     expect(screen.queryByText("DESC")).not.toBeInTheDocument();
     expect(scoreAscButton).toHaveTextContent("↑");
     expect(scoreDescButton).toHaveTextContent("↓");
+    expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1").closest(".results-cell-content")).toHaveClass("results-cell-content-text");
+    expect(within(screen.getByTestId("results-table-pane")).getByText("Summary 1").closest(".results-cell-content")).toHaveClass("results-cell-content-text");
+    expect(screen.getByRole("link", { name: "https://x.com/demo/status/1" }).closest(".results-cell-content")).toHaveClass("results-cell-content-link");
     expect(screen.queryByRole("button", { name: "dedupe_key asc" })).not.toBeInTheDocument();
-    expect(screen.getByText("2026-04-13 08:49:06 UTC+8")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("2026-04-13 08:49:06 UTC+8")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "https://x.com/demo/status/1" })).toHaveAttribute(
       "href",
       "https://x.com/demo/status/1",
@@ -137,14 +351,14 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: TEXT.fields }));
     fireEvent.click(screen.getByLabelText("toggle-column-dedupe_key"));
 
     expect(await screen.findByRole("button", { name: "dedupe_key asc" })).toBeInTheDocument();
-    expect(screen.getByText("dedupe-1")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("dedupe-1")).toBeInTheDocument();
     expect(window.localStorage.getItem(RESULTS_VISIBLE_COLUMNS_KEY)).toContain("dedupe_key");
   });
 
@@ -154,7 +368,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("score")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("score")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: TEXT.fields }));
@@ -176,14 +390,14 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("title")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("title")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("level")).toBeInTheDocument();
-    expect(screen.getByText("created_at_x")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("level")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("created_at_x")).toBeInTheDocument();
     expect(screen.queryByText("summary_zh")).not.toBeInTheDocument();
-    expect(screen.queryByText("source_url")).not.toBeInTheDocument();
-    expect(screen.queryByText("score")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).queryByText("source_url")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).queryByText("score")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "score asc" })).not.toBeInTheDocument();
   });
 
@@ -193,10 +407,10 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("title")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("title")).toBeInTheDocument();
     });
 
-    const titleHeader = screen.getByText("title").closest("th");
+    const titleHeader = within(screen.getByTestId("results-table-pane")).getByText("title").closest("th");
     expect(titleHeader).toHaveStyle({ width: "220px" });
   });
 
@@ -206,10 +420,10 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("title")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("title")).toBeInTheDocument();
     });
 
-    const titleHeader = screen.getByText("title").closest("th");
+    const titleHeader = within(screen.getByTestId("results-table-pane")).getByText("title").closest("th");
     const titleResizer = screen.getByRole("separator", { name: "resize-column-title" });
 
     fireEvent.mouseDown(titleResizer, { clientX: 220 });
@@ -232,10 +446,10 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("title")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("title")).toBeInTheDocument();
     });
 
-    const titleHeader = screen.getByText("title").closest("th");
+    const titleHeader = within(screen.getByTestId("results-table-pane")).getByText("title").closest("th");
     expect(titleHeader).toHaveStyle({ width: "320px" });
   });
 
@@ -254,18 +468,18 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("title")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("title")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("title").closest("th")).toHaveStyle({ width: "310px" });
+    expect(within(screen.getByTestId("results-table-pane")).getByText("title").closest("th")).toHaveStyle({ width: "310px" });
 
     fireEvent.click(screen.getByRole("button", { name: "原始结果" }));
 
     await waitFor(() => {
-      expect(screen.getByText("text")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("text")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("text").closest("th")).toHaveStyle({ width: "360px" });
+    expect(within(screen.getByTestId("results-table-pane")).getByText("text").closest("th")).toHaveStyle({ width: "360px" });
   });
 
   it("restores a hidden column with its previously saved width", async () => {
@@ -278,7 +492,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("summary_zh")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("summary_zh")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: TEXT.fields }));
@@ -323,7 +537,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     const getTitleOrder = () =>
@@ -354,14 +568,25 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("loaded=100")).toBeInTheDocument();
-    expect(screen.getByText("total=132")).toBeInTheDocument();
-    expect(screen.getByText("page=1/2")).toBeInTheDocument();
-    expect(screen.getByText("共 132 条")).toBeInTheDocument();
+    const tableStatus = screen.getByTestId("results-table-status");
+    expect(within(tableStatus).getByText("\u5f53\u524d\u7b2c 1 / 2 \u9875")).toBeInTheDocument();
+    expect(within(tableStatus).getByText("\u672c\u9875 100 \u6761")).toBeInTheDocument();
+    expect(within(tableStatus).getByText("\u672c\u9875\u5df2\u9009 0 \u6761")).toBeInTheDocument();
+    expect(within(tableStatus).getByText("\u6392\u5e8f\uff1aid \u00b7 \u964d\u5e8f")).toBeInTheDocument();
+    expect(within(tableStatus).getByText("\u6bcf\u9875 100 \u6761")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-manager-layer")).getByText("共 132 条")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-filter-summary")).getByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
     expect(screen.getByText("第 1 / 2 页")).toBeInTheDocument();
+    expect(screen.getByTestId("results-pagination")).toHaveClass("workbench-subsurface");
+    expect(
+      screen.getByTestId("results-pagination").compareDocumentPosition(screen.getByTestId("results-table-wrap")) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "results-prev-page" })).toHaveClass("workbench-secondary-action");
+    expect(screen.getByRole("button", { name: "results-next-page" })).toHaveClass("workbench-secondary-action");
 
     fireEvent.click(screen.getByRole("button", { name: "results-next-page" }));
 
@@ -369,11 +594,11 @@ describe("ResultsPage", () => {
       expect(listItemsMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ page: 2, page_size: 100, sort_by: "id", sort_dir: "desc", table: "curated" }),
       );
-      expect(screen.getByText("Item 101")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 101")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("loaded=32")).toBeInTheDocument();
-    expect(screen.getByText("page=2/2")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-status")).getByText("\u5f53\u524d\u7b2c 2 / 2 \u9875")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-status")).getByText("\u672c\u9875 32 \u6761")).toBeInTheDocument();
     expect(screen.getByText("第 2 / 2 页")).toBeInTheDocument();
   });
 
@@ -384,17 +609,18 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByLabelText(TEXT.selectPage));
 
-    expect(screen.getByText("selected=100")).toBeInTheDocument();
+    expect(screen.getByText("已选 100 条")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "select-all-matching" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "select-all-matching" }));
 
-    expect(screen.getByText("selected=132")).toBeInTheDocument();
+    expect(screen.getByText("已选 132 条")).toBeInTheDocument();
+    expect(screen.getByText("已选全部匹配结果")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "clear-selection" })).toBeInTheDocument();
   });
 
@@ -408,7 +634,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByLabelText(TEXT.selectPage));
@@ -416,10 +642,10 @@ describe("ResultsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "results-next-page" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Item 101")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 101")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("selected=132")).toBeInTheDocument();
+    expect(screen.getByText("已选 132 条")).toBeInTheDocument();
     expect(screen.getByLabelText("select-item-101")).toBeChecked();
   });
 
@@ -434,7 +660,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByLabelText(TEXT.selectPage));
@@ -442,7 +668,7 @@ describe("ResultsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "results-next-page" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Item 101")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 101")).toBeInTheDocument();
     });
 
     fireEvent.change(screen.getByLabelText(TEXT.keywordLabel), { target: { value: "alpha" } });
@@ -452,11 +678,12 @@ describe("ResultsPage", () => {
       expect(listItemsMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ page: 1, page_size: 100, keyword: "alpha", table: "curated" }),
       );
-      expect(screen.getByText("Alpha 999")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Alpha 999")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("selected=0")).toBeInTheDocument();
-    expect(screen.getByText("page=1/1")).toBeInTheDocument();
+    expect(screen.getByText("已选 0 条")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-status")).getByText("\u5f53\u524d\u7b2c 1 / 1 \u9875")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-filter-summary")).getByText("\u5173\u952e\u8bcd\uff1aalpha")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "clear-selection" })).not.toBeInTheDocument();
   });
 
@@ -469,7 +696,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByLabelText(TEXT.selectPage));
@@ -492,7 +719,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByLabelText(TEXT.selectPage));
@@ -515,9 +742,10 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 7")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 7")).toBeInTheDocument();
     });
 
+    expect(screen.getByRole("button", { name: "delete-item-7" })).toHaveClass("workbench-danger-action");
     fireEvent.click(screen.getByRole("button", { name: "delete-item-7" }));
 
     await waitFor(() => {
@@ -542,7 +770,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 3")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 3")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: TEXT.dedupe }));
@@ -565,7 +793,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "原始结果" }));
@@ -574,14 +802,14 @@ describe("ResultsPage", () => {
       expect(listItemsMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ page: 1, page_size: 100, sort_by: "id", sort_dir: "desc", table: "raw" }),
       );
-      expect(screen.getByText("tweet_id")).toBeInTheDocument();
-      expect(screen.getByText("text")).toBeInTheDocument();
-      expect(screen.getByText("views")).toBeInTheDocument();
-      expect(screen.getByText("Raw text 2")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("tweet_id")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("text")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("views")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Raw text 2")).toBeInTheDocument();
     });
 
     expect(screen.queryByText("summary_zh")).not.toBeInTheDocument();
-    expect(screen.getByText("table=x_items_raw")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-filter-summary")).getByText("\u5f53\u524d\u8868\uff1a\u539f\u59cb\u7ed3\u679c")).toBeInTheDocument();
   });
 
   it("clears selection and falls back invalid sort and columns when switching tables", async () => {
@@ -594,7 +822,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "title asc" }));
@@ -611,10 +839,10 @@ describe("ResultsPage", () => {
       expect(listItemsMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ sort_by: "id", sort_dir: "desc", table: "raw" }),
       );
-      expect(screen.getByText("table=x_items_raw")).toBeInTheDocument();
-      expect(screen.getByText("selected=0")).toBeInTheDocument();
-      expect(screen.getByText("author")).toBeInTheDocument();
-      expect(screen.queryByText("title")).not.toBeInTheDocument();
+      expect(within(screen.getByTestId("results-filter-summary")).getByText("\u5f53\u524d\u8868\uff1a\u539f\u59cb\u7ed3\u679c")).toBeInTheDocument();
+      expect(screen.getByText("已选 0 条")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("author")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).queryByText("title")).not.toBeInTheDocument();
     });
   });
 
@@ -630,13 +858,13 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "原始结果" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Raw text 3")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Raw text 3")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: TEXT.dedupe }));

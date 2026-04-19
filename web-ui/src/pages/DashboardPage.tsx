@@ -12,32 +12,41 @@ function healthStatus(target: { configured: boolean; connected: boolean; last_er
   return "已配置";
 }
 
+function healthTone(target: { configured: boolean; connected: boolean; last_error: string }) {
+  if (!target.configured) return "neutral";
+  if (target.connected) return "success";
+  if (target.last_error) return "danger";
+  return "neutral";
+}
+
 function renderDatabaseInfo(info: DatabaseHealth) {
   return (
-    <div className="dashboard-detail-grid">
-      <div className="dashboard-detail-item">
-        <span>{"数据库路径"}</span>
-        <strong>{info.db_path || "unknown"}</strong>
-      </div>
-      <div className="dashboard-detail-item">
-        <span>{"文件存在"}</span>
-        <strong>{info.db_exists ? "是" : "否"}</strong>
-      </div>
-      <div className="dashboard-detail-item">
-        <span>{"任务数"}</span>
-        <strong>{info.job_count}</strong>
-      </div>
-      <div className="dashboard-detail-item">
-        <span>{"运行数"}</span>
-        <strong>{info.run_count}</strong>
-      </div>
-      <div className="dashboard-detail-item">
-        <span>{"最近校验"}</span>
-        <strong>{formatUtcPlus8Time(info.last_checked_at, "尚未校验")}</strong>
-      </div>
-      <div className="dashboard-detail-item">
-        <span>{"最近错误"}</span>
-        <strong>{info.last_error || "无"}</strong>
+    <div className="workbench-subsurface dashboard-detail-shell">
+      <div className="dashboard-detail-grid">
+        <div className="dashboard-detail-item">
+          <span>{"数据库路径"}</span>
+          <strong>{info.db_path || "unknown"}</strong>
+        </div>
+        <div className="dashboard-detail-item">
+          <span>{"文件存在"}</span>
+          <strong>{info.db_exists ? "是" : "否"}</strong>
+        </div>
+        <div className="dashboard-detail-item">
+          <span>{"任务数"}</span>
+          <strong>{info.job_count}</strong>
+        </div>
+        <div className="dashboard-detail-item">
+          <span>{"运行数"}</span>
+          <strong>{info.run_count}</strong>
+        </div>
+        <div className="dashboard-detail-item">
+          <span>{"最近校验"}</span>
+          <strong>{formatUtcPlus8Time(info.last_checked_at, "尚未校验")}</strong>
+        </div>
+        <div className="dashboard-detail-item">
+          <span>{"最近错误"}</span>
+          <strong>{info.last_error || "无"}</strong>
+        </div>
       </div>
     </div>
   );
@@ -45,26 +54,28 @@ function renderDatabaseInfo(info: DatabaseHealth) {
 
 function renderXInfo(info: XHealth) {
   return (
-    <div className="dashboard-detail-grid">
-      <div className="dashboard-detail-item">
-        <span>{"认证来源"}</span>
-        <strong>{info.auth_source || "unknown"}</strong>
-      </div>
-      <div className="dashboard-detail-item">
-        <span>{"浏览器提示"}</span>
-        <strong>{info.browser_hint || "unknown"}</strong>
-      </div>
-      <div className="dashboard-detail-item">
-        <span>{"账号摘要"}</span>
-        <strong>{info.account_hint || "unknown"}</strong>
-      </div>
-      <div className="dashboard-detail-item">
-        <span>{"最近校验"}</span>
-        <strong>{formatUtcPlus8Time(info.last_checked_at, "尚未校验")}</strong>
-      </div>
-      <div className="dashboard-detail-item dashboard-detail-item-wide">
-        <span>{"最近错误"}</span>
-        <strong>{info.last_error || "无"}</strong>
+    <div className="workbench-subsurface dashboard-detail-shell">
+      <div className="dashboard-detail-grid">
+        <div className="dashboard-detail-item">
+          <span>{"认证来源"}</span>
+          <strong>{info.auth_source || "unknown"}</strong>
+        </div>
+        <div className="dashboard-detail-item">
+          <span>{"浏览器提示"}</span>
+          <strong>{info.browser_hint || "unknown"}</strong>
+        </div>
+        <div className="dashboard-detail-item">
+          <span>{"账号摘要"}</span>
+          <strong>{info.account_hint || "unknown"}</strong>
+        </div>
+        <div className="dashboard-detail-item">
+          <span>{"最近校验"}</span>
+          <strong>{formatUtcPlus8Time(info.last_checked_at, "尚未校验")}</strong>
+        </div>
+        <div className="dashboard-detail-item dashboard-detail-item-wide">
+          <span>{"最近错误"}</span>
+          <strong>{info.last_error || "无"}</strong>
+        </div>
       </div>
     </div>
   );
@@ -112,57 +123,87 @@ export function DashboardPage() {
     }
   }
 
+  const summaryTitle = state ? "运行总览快照" : "尚未校验";
+  const summaryDescription = state
+    ? "当前页面保持上一次主动“重新加载”后的展示状态，页面刷新不会自动重新校验。"
+    : "页面刷新不会自动重新校验，只有点击“重新加载”后才会更新当前展示状态。";
   const updatedAtLabel = state?.summary.source === "runtime_snapshot"
-    ? "运行快照更新时间"
-    : "后端快照更新时间";
+    ? "运行快照更新"
+    : "当前展示更新";
+  const updatedAtValue = state
+    ? `${updatedAtLabel}：${formatUtcPlus8Time(state.summary.updated_at, "尚未校验")}`
+    : "页面刷新不会自动重新校验";
+  const dbStatusLabel = state ? healthStatus(state.db) : "尚未校验";
+  const xStatusLabel = state ? healthStatus(state.x) : "尚未校验";
+  const dbStatusTone = state ? healthTone(state.db) : "neutral";
+  const xStatusTone = state ? healthTone(state.x) : "neutral";
 
   return (
-    <>
-      <div className="card" data-testid="dashboard-health">
-        <h3>{"运行总览"}</h3>
-        <div className="grid-3">
-          <div className="kv">
-            <b>{state ? healthStatus(state.db) : loading ? "加载中" : "尚未校验"}</b>
-            {"本地数据库"}
-          </div>
-          <div className="kv">
-            <b>{state ? healthStatus(state.x) : loading ? "加载中" : "尚未校验"}</b>
-            {"X 会话"}
-          </div>
+    <div className="dashboard-page" data-testid="dashboard-page">
+      <section className="card dashboard-page-header workbench-page-header" data-testid="dashboard-page-header">
+        <div className="dashboard-page-header-copy workbench-page-header-copy">
+          <h3>{"运行总览"}</h3>
+          <p className="kv">{"快速查看本地数据库与 X 会话的上次已知状态，只有点击“重新加载”才会主动重新校验。"}</p>
         </div>
-        <div className="kv" style={{ marginTop: 8 }}>
-          {error
-            ? `错误: ${error}`
-            : state
-              ? `${updatedAtLabel}: ${formatUtcPlus8Time(state.summary.updated_at, "尚未校验")}`
-              : loading
-                ? "正在读取后端快照..."
-                : "尚未刷新"}
-        </div>
-      </div>
-
-      {state && (
-        <>
-          <div className="card" data-testid="dashboard-db-info">
-            <h3>{"数据库基本信息"}</h3>
-            {renderDatabaseInfo(state.db)}
-          </div>
-
-          <div className="card" data-testid="dashboard-x-info">
-            <h3>{"X 基本信息"}</h3>
-            {renderXInfo(state.x)}
-          </div>
-        </>
-      )}
-
-      <div className="card" data-testid="dashboard-actions">
-        <h3>{"快速操作"}</h3>
-        <div className="row">
-          <button type="button" onClick={loadHealth} disabled={loading}>
-            {loading ? "刷新中..." : "重新加载"}
+        <div className="dashboard-page-header-actions workbench-page-header-actions">
+          <button type="button" className="workbench-primary-action" onClick={loadHealth} disabled={loading}>
+            {loading ? "重新加载中..." : "重新加载"}
           </button>
         </div>
-      </div>
-    </>
+      </section>
+
+      {error && (
+        <div className="workbench-feedback workbench-feedback-danger" role="status">
+          <div className="workbench-feedback-copy">
+            <div className="workbench-feedback-eyebrow">运行反馈</div>
+            <strong>{`错误: ${error}`}</strong>
+            <p>保留当前展示状态，直到下一次主动重新加载成功。</p>
+          </div>
+        </div>
+      )}
+
+      <section className="card dashboard-summary workbench-layer" data-testid="dashboard-summary">
+        <div className="dashboard-summary-hero">
+          <div className="dashboard-summary-copy">
+            <div className="dashboard-summary-eyebrow">{"当前状态"}</div>
+            <h4 className="dashboard-summary-title">{summaryTitle}</h4>
+            <p className="kv">{summaryDescription}</p>
+          </div>
+          <div className="dashboard-summary-pills workbench-pill-row">
+            <span className={`dashboard-summary-pill workbench-pill ${dbStatusTone}`}>{`本地数据库：${dbStatusLabel}`}</span>
+            <span className={`dashboard-summary-pill workbench-pill ${xStatusTone}`}>{`X 会话：${xStatusLabel}`}</span>
+            <span className="dashboard-summary-pill workbench-pill neutral">{updatedAtValue}</span>
+          </div>
+        </div>
+      </section>
+
+      {state && (
+        <section className="dashboard-panels" data-testid="dashboard-panels">
+          <section className="card dashboard-status-card workbench-layer" data-testid="dashboard-db-info">
+            <div className="dashboard-status-card-hero workbench-section-header">
+              <div className="dashboard-status-card-copy workbench-section-copy">
+                <div className="dashboard-status-eyebrow workbench-section-eyebrow">{"本地数据库"}</div>
+                <h4 className="workbench-section-title">{"DB 连接与运行数据"}</h4>
+                <p className="kv">{"聚合路径、文件存在、任务数、运行数和最近校验结果。"}</p>
+              </div>
+              <span className={`dashboard-summary-pill workbench-pill ${dbStatusTone}`}>{dbStatusLabel}</span>
+            </div>
+            {renderDatabaseInfo(state.db)}
+          </section>
+
+          <section className="card dashboard-status-card workbench-layer" data-testid="dashboard-x-info">
+            <div className="dashboard-status-card-hero workbench-section-header">
+              <div className="dashboard-status-card-copy workbench-section-copy">
+                <div className="dashboard-status-eyebrow workbench-section-eyebrow">{"X 会话"}</div>
+                <h4 className="workbench-section-title">{"认证与会话状态"}</h4>
+                <p className="kv">{"聚合认证来源、账号摘要、浏览器提示与最近校验结果。"}</p>
+              </div>
+              <span className={`dashboard-summary-pill workbench-pill ${xStatusTone}`}>{xStatusLabel}</span>
+            </div>
+            {renderXInfo(state.x)}
+          </section>
+        </section>
+      )}
+    </div>
   );
 }

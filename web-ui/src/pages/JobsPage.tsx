@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   JobBatchAction,
   JobBatchResponse,
@@ -174,6 +174,24 @@ function draftSourceLabel(kind: DraftSourceKind) {
   return "默认空白";
 }
 
+function statusScopeLabel(status: JobStatusFilter) {
+  if (status === "deleted") return "已删除";
+  if (status === "all") return "全部";
+  return "启用中";
+}
+
+function JobsSectionHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
+  return (
+    <div className="jobs-section-header workbench-section-header">
+      <div className="workbench-section-copy">
+        <h5 className="workbench-section-title">{title}</h5>
+        {description ? <p className="kv jobs-section-description">{description}</p> : null}
+      </div>
+      {actions ? <div className="jobs-section-actions">{actions}</div> : null}
+    </div>
+  );
+}
+
 export function JobsPage() {
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [taskPacks, setTaskPacks] = useState<TaskPackSummary[]>([]);
@@ -227,12 +245,29 @@ export function JobsPage() {
     [currentTaskPack],
   );
   const currentJobDraftComparable = useMemo(() => buildJobDraftComparable(form), [form]);
+  const taskKeywordCount = useMemo(
+    () =>
+      [
+        form.search_spec.all_keywords,
+        form.search_spec.exact_phrases,
+        form.search_spec.any_keywords,
+        form.search_spec.exclude_keywords,
+      ].reduce((total, items) => total + items.length, 0),
+    [form.search_spec],
+  );
+  const taskAuthorConstraintCount = useMemo(
+    () => form.search_spec.authors_include.length + form.search_spec.authors_exclude.length,
+    [form.search_spec],
+  );
+  const taskRuleCount = useMemo(() => form.rule_set.definition.rules?.length || 0, [form.rule_set.definition]);
+  const taskLevelCount = useMemo(() => form.rule_set.definition.levels?.length || 0, [form.rule_set.definition]);
   const taskPackDirty = useMemo(() => {
     if (!currentTaskPackComparable) return false;
     return JSON.stringify(currentTaskPackComparable) !== JSON.stringify(currentJobDraftComparable);
   }, [currentTaskPackComparable, currentJobDraftComparable]);
-  const currentTaskPackName = currentTaskPack?.meta.name || (form.pack_name ? taskPacks.find((item) => item.pack_name === form.pack_name)?.name || form.pack_name : "未绑定");
-  const currentTaskPackDescription = currentTaskPack?.meta.description || "";
+  const manageSelectionSummary = selectedCount > 0
+    ? `当前已选 ${selectedCount} 项，可继续清空选择或直接执行批量操作。`
+    : "先在表格中勾选任务，再选择全部匹配结果或执行批量操作。";
   const currentRuleSetPreview = useMemo<RuleSet | null>(
     () => ({
       id: Number(form.rule_set.id ?? 0) || 0,
@@ -426,7 +461,7 @@ export function JobsPage() {
     setDrawerOpen(true);
   }
 
-  async function openJob(job: JobRecord, mode: DrawerMode = "view") {
+  async function openJob(job: JobRecord, mode: DrawerMode = "edit") {
     try {
       const detail = await getJob(job.id);
       setSelectedJob(detail);
@@ -825,87 +860,77 @@ export function JobsPage() {
     refreshJobs({ page: 1, query: queryInput.trim() }).catch(() => undefined);
   }
 
+  function openJobWorkspace(job: JobRecord) {
+    void openJob(job, job.deleted_at ? "view" : "edit");
+  }
+
   function renderActions(job: JobRecord) {
     if (job.deleted_at) {
       return (
-        <div className="table-actions">
-          <button type="button" className="ghost" onClick={() => openJob(job, "view")}>{"查看"}</button>
-          <button type="button" onClick={() => handleRestore(job)}>{"恢复"}</button>
-          <button type="button" className="danger" onClick={() => handlePurge(job)}>{"彻底删除"}</button>
+        <div className="table-actions jobs-row-actions">
+          <button
+            type="button"
+            className="ghost workbench-secondary-action"
+            data-testid={`job-row-open-${job.id}`}
+            onClick={() => openJobWorkspace(job)}
+          >
+            {"打开"}
+          </button>
+          <button type="button" className="ghost workbench-secondary-action" onClick={() => handleRestore(job)}>{"恢复"}</button>
         </div>
       );
     }
     return (
-      <div className="table-actions">
-        <button type="button" className="ghost" onClick={() => openJob(job, "view")}>{"查看"}</button>
-        <button type="button" className="ghost" onClick={() => openJob(job, "edit")}>{"编辑"}</button>
-        <button type="button" onClick={() => handleRunNow(job)}>{"立即运行"}</button>
-        <button type="button" className="ghost" onClick={() => handleToggle(job)}>{job.enabled ? "停用" : "启用"}</button>
-        <button type="button" className="danger" onClick={() => handleDelete(job)}>{"删除"}</button>
+      <div className="table-actions jobs-row-actions">
+        <button
+          type="button"
+          className="ghost workbench-secondary-action"
+          data-testid={`job-row-open-${job.id}`}
+          onClick={() => openJobWorkspace(job)}
+        >
+          {"打开"}
+        </button>
+        <button type="button" className="ghost workbench-secondary-action" onClick={() => handleRunNow(job)}>{"立即运行"}</button>
       </div>
     );
   }
 
   const drawerDisabled = Boolean(selectedJob?.deleted_at) && drawerMode !== "create";
-  const showTopSaveButton = drawerMode !== "view";
+  const showTopSaveButton = !selectedJob?.deleted_at;
+  const workspaceTitle = selectedJob ? "当前任务工作区" : "新建任务工作区";
+  const workspaceMeta = selectedJob ? `任务 #${selectedJob.id}` : "未保存新任务";
+  const manageScopeLabel = statusScopeLabel(status);
+  const currentStatusLabel = selectedJob ? jobState(selectedJob) : form.enabled ? "已启用" : "已停用";
+  const nextRunLabel = selectedJob?.next_run_at ? formatUtcPlus8Time(selectedJob.next_run_at) : "保存后生成";
+  const lastRunLabel = selectedJob?.last_run_status || "尚未运行";
+  const lastRunTimeLabel = selectedJob?.last_run_ended_at || selectedJob?.last_run_started_at
+    ? formatUtcPlus8Time(selectedJob.last_run_ended_at || selectedJob.last_run_started_at)
+    : "尚未运行";
+  const currentTaskEyebrow = selectedJob ? `调度任务 #${selectedJob.id}` : "调度设置";
+  const currentTaskHeroTitle = form.name.trim() || (selectedJob ? selectedJob.name : "未命名任务");
+  const currentTaskHeroDescription = selectedJob
+    ? "这里收口当前调度任务的基础设置，确认后再继续编辑任务正文。"
+    : "先把调度设置定下来，再继续补全任务包、搜索条件和规则。";
+  const currentTaskPackName = currentTaskPack?.pack_name || form.pack_name || null;
+  const hasCurrentTaskPackBinding = Boolean(currentTaskPackName);
+  const currentTaskPackBindingLabel = hasCurrentTaskPackBinding ? "已绑定本地任务包" : "未绑定";
+  const currentTaskPackDraftLabel = hasCurrentTaskPackBinding
+    ? (currentTaskPack ? (taskPackDirty ? "已修改未保存" : "未修改") : "已绑定")
+    : "未绑定";
 
   return (
-    <div className="card jobs-page" data-testid="jobs-page">
-      <div className="jobs-header">
-        <div>
+    <div className="jobs-page" data-testid="jobs-page">
+      <section className="card jobs-page-header workbench-page-header">
+        <div className="workbench-page-header-copy">
           <h3>{"自动任务"}</h3>
           <p className="kv">{"自动任务负责调度；任务正文来自当前绑定任务包，包含搜索条件和规则。"}</p>
         </div>
-        <div className="jobs-toolbar">
-          <input value={queryInput} onChange={(e) => setQueryInput(e.target.value)} placeholder={"按任务名称搜索"} aria-label="搜索任务" />
-          <select
-            value={status}
-            onChange={(e) => {
-              const nextStatus = e.target.value as JobStatusFilter;
-              setStatus(nextStatus);
-              clearSelection();
-              refreshJobs({ page: 1, status: nextStatus }).catch(() => undefined);
-            }}
-            aria-label="任务状态"
-          >
-            <option value="active">{"启用中"}</option>
-            <option value="all">{"全部"}</option>
-            <option value="deleted">{"已删除"}</option>
-          </select>
-          <button type="button" onClick={submitQuery}>{"搜索"}</button>
-          <button type="button" data-testid="create-job-button" onClick={openCreate}>{"新建任务"}</button>
+        <div className="jobs-page-header-actions workbench-page-header-actions">
+          <button type="button" className="workbench-primary-action" data-testid="create-job-button" onClick={openCreate}>{"新建任务"}</button>
         </div>
-      </div>
-
-      <div className="jobs-toolbar" style={{ marginTop: 12, flexWrap: "wrap" }}>
-        <span className="kv">{`selected=${selectedCount}`}</span>
-        <span className="kv">{`total=${total}`}</span>
-        <span className="kv">{`status=${status}`}</span>
-        {showSelectAllMatching && (
-          <button type="button" className="ghost" aria-label="select-all-matching-jobs" onClick={selectAllMatchingJobs}>
-            {`已选中本页 ${jobs.length} 条。选择全部 ${total} 条匹配结果`}
-          </button>
-        )}
-        {selectedCount > 0 && (
-          <button type="button" className="ghost" aria-label="clear-job-selection" onClick={clearSelection}>
-            {"清空选择"}
-          </button>
-        )}
-        {batchActionSpecs.map((item) => (
-          <button
-            key={item.action}
-            type="button"
-            className={item.tone === "danger" ? "danger" : item.tone === "ghost" ? "ghost" : undefined}
-            disabled={!isBatchActionEnabled(item.action)}
-            onClick={() => handleBatchAction(item.action).catch(() => undefined)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      </section>
 
       {error && <div className="alert error">{error}</div>}
-      {selectionWarning && <div className="alert error">{selectionWarning}</div>}
       {actionMessage && <div className="alert success" style={{ whiteSpace: "pre-line" }}>{actionMessage}</div>}
 
       <div
@@ -913,75 +938,191 @@ export function JobsPage() {
         className={`jobs-layout${isResizing ? " dragging" : ""}`}
         data-testid="jobs-layout"
       >
-        <div className="jobs-table-wrap">
-          {loading ? (
-            <div className="searching"><span className="spinner" /> {"正在加载任务..."}</div>
-          ) : (
-            <table className="table jobs-table">
-              <thead>
-                <tr>
-                  <th>
-                    <label className="field checkbox-row" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                      <input aria-label="jobs-select-page" type="checkbox" checked={allPageSelected} onChange={togglePageSelection} />
-                      <span>{"本页全选"}</span>
-                    </label>
-                  </th>
-                  <th>{"任务"}</th>
-                  <th>{"任务包"}</th>
-                  <th>{"间隔"}</th>
-                  <th>{"状态"}</th>
-                  <th>{"下次运行"}</th>
-                  <th>{"最近运行"}</th>
-                  <th>{"操作"}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {jobs.map((job) => (
-                  <tr key={job.id} className={job.deleted_at ? "row-deleted" : ""}>
-                    <td>
-                      <input
-                        aria-label={`select-job-${job.id}`}
-                        type="checkbox"
-                        checked={allMatchingSelected || selectedIds.includes(job.id)}
-                        onChange={(event) => toggleRowSelection(job, event.target.checked)}
-                      />
-                    </td>
-                    <td>
-                      <div className="job-name">{job.name}</div>
-                      <div className="kv">#{job.id}</div>
-                    </td>
-                    <td>
-                      <div className="job-name">{job.pack_meta?.name || job.pack_name || "--"}</div>
-                      <div className="kv">{job.pack_name || "--"}</div>
-                    </td>
-                    <td>{job.interval_minutes} {"分钟"}</td>
-                    <td><span className={`badge ${job.deleted_at ? "b" : job.enabled ? "a" : ""}`}>{jobState(job)}</span></td>
-                    <td>{formatUtcPlus8Time(job.next_run_at)}</td>
-                    <td>
-                      <div>{job.last_run_status || "--"}</div>
-                      <div className="kv">{formatUtcPlus8Time(job.last_run_ended_at || job.last_run_started_at)}</div>
-                    </td>
-                    <td>{renderActions(job)}</td>
-                  </tr>
-                ))}
-                {!jobs.length && (
-                  <tr>
-                    <td colSpan={8} style={{ textAlign: "center", color: "#64748b" }}>{status === "deleted" ? "暂无已删除任务" : "暂无任务"}</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          )}
+        <section className="jobs-list-pane">
+          <div className="card jobs-list-tools workbench-layer">
+            <div
+              className="jobs-list-tools-summary workbench-summary-panel"
+              data-testid="jobs-list-tools-summary"
+            >
+              <div className="jobs-list-tools-copy workbench-section-copy">
+                <div className="workbench-section-eyebrow">任务列表</div>
+                <div className="workbench-section-title jobs-list-tools-title">筛选与批量管理</div>
+                <div className="kv">先按名称和状态收口列表，再进入表格管理层完成全选、清空选择和批量操作。</div>
+              </div>
+              <div className="jobs-list-tools-pills workbench-pill-row">
+                <span className="jobs-summary-pill workbench-pill">{`当前范围：${manageScopeLabel}`}</span>
+                <span className="jobs-summary-pill workbench-pill">{`共 ${total} 项任务`}</span>
+              </div>
+            </div>
 
-          <div className="jobs-pagination">
-            <span className="kv">{"共 "}{total}{" 条"}</span>
-            <div className="row">
-              <button type="button" className="ghost" disabled={page <= 1} onClick={() => refreshJobs({ page: page - 1 }).catch(() => undefined)}>{"上一页"}</button>
-              <span className="kv">{"第 "}{page}{" / "}{totalPages}{" 页"}</span>
-              <button type="button" className="ghost" disabled={page >= totalPages} onClick={() => refreshJobs({ page: page + 1 }).catch(() => undefined)}>{"下一页"}</button>
+            <div
+              className="jobs-list-filterbar workbench-subsurface workbench-subsurface-muted"
+              data-testid="jobs-filter-bar"
+            >
+              <label className="field jobs-filter-field">
+                <span>{"搜索任务"}</span>
+                <input value={queryInput} onChange={(e) => setQueryInput(e.target.value)} placeholder={"按任务名称搜索"} aria-label="搜索任务" />
+              </label>
+              <label className="field jobs-filter-field jobs-filter-status">
+                <span>{"状态"}</span>
+                <select
+                  value={status}
+                  onChange={(e) => {
+                    const nextStatus = e.target.value as JobStatusFilter;
+                    setStatus(nextStatus);
+                    clearSelection();
+                    refreshJobs({ page: 1, status: nextStatus }).catch(() => undefined);
+                  }}
+                  aria-label="任务状态"
+                >
+                  <option value="active">{"启用中"}</option>
+                  <option value="all">{"全部"}</option>
+                  <option value="deleted">{"已删除"}</option>
+                </select>
+              </label>
+              <div className="jobs-filter-actions">
+                <button type="button" className="ghost workbench-secondary-action" data-testid="jobs-search-button" onClick={submitQuery}>{"搜索"}</button>
+              </div>
+            </div>
+
+            <div className="jobs-managebar" data-testid="jobs-manage-bar">
+              <div className="jobs-managebar-copy">
+                <div className="collector-subtitle">{"表格管理"}</div>
+                <div className="kv">{manageSelectionSummary}</div>
+              </div>
+              <div className="jobs-managebar-actions">
+                {showSelectAllMatching && (
+                  <button
+                    type="button"
+                    className="ghost workbench-secondary-action"
+                    aria-label="select-all-matching-jobs"
+                    onClick={selectAllMatchingJobs}
+                  >
+                    {`已选中本页 ${jobs.length} 条。选择全部 ${total} 条匹配结果`}
+                  </button>
+                )}
+                {selectedCount > 0 && (
+                  <button
+                    type="button"
+                    className="ghost workbench-secondary-action"
+                    aria-label="clear-job-selection"
+                    onClick={clearSelection}
+                  >
+                    {"清空选择"}
+                  </button>
+                )}
+                {batchActionSpecs.map((item) => (
+                  <button
+                    key={item.action}
+                    type="button"
+                    className={
+                      item.tone === "danger"
+                        ? "danger workbench-danger-action"
+                        : "ghost workbench-secondary-action"
+                    }
+                    disabled={!isBatchActionEnabled(item.action)}
+                    onClick={() => handleBatchAction(item.action).catch(() => undefined)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+
+          {selectionWarning && <div className="alert error jobs-list-alert">{selectionWarning}</div>}
+
+          <div className="card jobs-table-card">
+            <div className="jobs-pagination" data-testid="jobs-pagination">
+              <span className="kv">{"共 "}{total}{" 条"}</span>
+              <div className="row">
+                <button
+                  type="button"
+                  className="ghost workbench-secondary-action"
+                  disabled={page <= 1}
+                  onClick={() => refreshJobs({ page: page - 1 }).catch(() => undefined)}
+                >
+                  {"上一页"}
+                </button>
+                <span className="kv">{"第 "}{page}{" / "}{totalPages}{" 页"}</span>
+                <button
+                  type="button"
+                  className="ghost workbench-secondary-action"
+                  disabled={page >= totalPages}
+                  onClick={() => refreshJobs({ page: page + 1 }).catch(() => undefined)}
+                >
+                  {"下一页"}
+                </button>
+              </div>
+            </div>
+
+            <div className="jobs-table-wrap" data-testid="jobs-table-wrap">
+              {loading ? (
+                <div className="searching"><span className="spinner" /> {"正在加载任务..."}</div>
+              ) : (
+                <table className="table jobs-table">
+                  <thead>
+                    <tr>
+                      <th>
+                        <label className="field checkbox-row jobs-select-page-label">
+                          <input aria-label="jobs-select-page" type="checkbox" checked={allPageSelected} onChange={togglePageSelection} />
+                          <span>{"本页全选"}</span>
+                        </label>
+                      </th>
+                      <th>{"任务"}</th>
+                      <th>{"任务包"}</th>
+                      <th>{"间隔"}</th>
+                      <th>{"状态"}</th>
+                      <th>{"下次运行"}</th>
+                      <th>{"最近运行"}</th>
+                      <th>{"操作"}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jobs.map((job) => (
+                      <tr
+                        key={job.id}
+                        className={`${job.deleted_at ? "row-deleted" : ""}${selectedJob?.id === job.id ? " active" : ""}`}
+                        data-job-active={selectedJob?.id === job.id ? "true" : "false"}
+                        onClick={() => openJobWorkspace(job)}
+                      >
+                        <td onClick={(event) => event.stopPropagation()}>
+                          <input
+                            aria-label={`select-job-${job.id}`}
+                            type="checkbox"
+                            checked={allMatchingSelected || selectedIds.includes(job.id)}
+                            onChange={(event) => toggleRowSelection(job, event.target.checked)}
+                          />
+                        </td>
+                        <td>
+                          <div className="job-name jobs-row-title">{job.name}</div>
+                          <div className="kv jobs-row-meta">#{job.id}</div>
+                        </td>
+                        <td>
+                          <div className="job-name jobs-row-title">{job.pack_meta?.name || job.pack_name || "--"}</div>
+                          <div className="kv jobs-row-meta">{job.pack_name || "--"}</div>
+                        </td>
+                        <td>{job.interval_minutes} {"分钟"}</td>
+                        <td><span className={`badge ${job.deleted_at ? "b" : job.enabled ? "a" : ""}`}>{jobState(job)}</span></td>
+                        <td>{formatUtcPlus8Time(job.next_run_at)}</td>
+                        <td>
+                          <div>{job.last_run_status || "--"}</div>
+                          <div className="kv">{formatUtcPlus8Time(job.last_run_ended_at || job.last_run_started_at)}</div>
+                        </td>
+                        <td onClick={(event) => event.stopPropagation()}>{renderActions(job)}</td>
+                      </tr>
+                    ))}
+                    {!jobs.length && (
+                      <tr>
+                        <td colSpan={8} style={{ textAlign: "center", color: "#64748b" }}>{status === "deleted" ? "暂无已删除任务" : "暂无任务"}</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </section>
 
         {isSplitLayout && (
           <div
@@ -997,55 +1138,65 @@ export function JobsPage() {
 
         <aside className={`jobs-drawer ${drawerOpen ? "open" : ""}`}>
           {drawerOpen ? (
-            <>
+            <div className="jobs-workspace">
               <div className="drawer-header">
                 <div>
-                  <h4>{drawerMode === "create" ? "新建任务" : drawerMode === "edit" ? "编辑任务" : "任务详情"}</h4>
-                  <div className="kv">{selectedJob ? `任务 #${selectedJob.id}` : "未保存新任务"}</div>
+                  <h4>{workspaceTitle}</h4>
+                  <div className="kv">{workspaceMeta}</div>
                 </div>
                 <div className="drawer-header-actions">
-                  {showTopSaveButton && (
-                    <button type="button" aria-label="submit-job-top" onClick={handleSave} disabled={saving}>
-                      {saving ? "保存中..." : "保存任务"}
-                    </button>
-                  )}
-                  <button type="button" className="ghost" onClick={() => { setSelectedJob(null); setDrawerMode("create"); resetForm(); setDrawerOpen(false); }}>{"关闭"}</button>
+                  <button
+                    type="button"
+                    className="ghost workbench-secondary-action"
+                    data-testid="jobs-close-workspace"
+                    onClick={() => { setSelectedJob(null); setDrawerMode("create"); resetForm(); setDrawerOpen(false); }}
+                  >
+                    {"关闭"}
+                  </button>
                 </div>
               </div>
 
-              {selectedJob && (
-                <div className="drawer-section">
-                  <h5>{"调度设置"}</h5>
-                  <div className="collector-grid collector-grid-2">
+              <div className="drawer-section jobs-current-task-section workbench-layer">
+                <JobsSectionHeader
+                  title="当前任务"
+                  description="先确认调度状态和基础设置，再继续调整任务正文。"
+                  actions={showTopSaveButton ? (
+                    <button type="button" className="workbench-primary-action" aria-label="submit-job-top" onClick={handleSave} disabled={saving}>
+                      {saving ? "保存中..." : "保存任务"}
+                    </button>
+                  ) : undefined}
+                />
+                <div className="jobs-current-task-hero workbench-summary-panel">
+                  <div className="jobs-current-task-copy">
+                    <div className="jobs-current-task-eyebrow">{currentTaskEyebrow}</div>
+                    <div className="jobs-current-task-name">{currentTaskHeroTitle}</div>
+                    <p className="kv jobs-current-task-note">{currentTaskHeroDescription}</p>
+                  </div>
+                  <div className="jobs-current-task-pills workbench-pill-row">
+                    <span className="jobs-summary-pill workbench-pill">{`当前状态：${currentStatusLabel}`}</span>
+                    <span className="jobs-summary-pill workbench-pill">{`下次运行：${nextRunLabel}`}</span>
+                    <span className="jobs-summary-pill workbench-pill">{`最近运行：${lastRunLabel}`}</span>
+                  </div>
+                  <div className="jobs-current-task-meta">
+                    <span>{`最近运行时间：${lastRunTimeLabel}`}</span>
+                    {selectedJob?.deleted_at ? <span>{`删除时间：${formatUtcPlus8Time(selectedJob.deleted_at)}`}</span> : null}
+                  </div>
+                  <div className="collector-grid collector-grid-3 jobs-current-task-summary-grid workbench-summary-grid">
                     <div className="dashboard-detail-item">
-                      <span>{"状态"}</span>
-                      <strong>{jobState(selectedJob)}</strong>
+                      <span>{"当前状态"}</span>
+                      <strong>{currentStatusLabel}</strong>
                     </div>
                     <div className="dashboard-detail-item">
-                      <span>{"下次运行"}</span>
-                      <strong>{formatUtcPlus8Time(selectedJob.next_run_at)}</strong>
-                    </div>
-                    <div className="dashboard-detail-item">
-                      <span>{"最近运行"}</span>
-                      <strong>{selectedJob.last_run_status || "--"}</strong>
+                      <span>{"最近运行状态"}</span>
+                      <strong>{lastRunLabel}</strong>
                     </div>
                     <div className="dashboard-detail-item">
                       <span>{"最近运行时间"}</span>
-                      <strong>{formatUtcPlus8Time(selectedJob.last_run_ended_at || selectedJob.last_run_started_at)}</strong>
+                      <strong>{lastRunTimeLabel}</strong>
                     </div>
-                    {selectedJob.deleted_at && (
-                      <div className="dashboard-detail-item dashboard-detail-item-wide">
-                        <span>{"删除时间"}</span>
-                        <strong>{formatUtcPlus8Time(selectedJob.deleted_at)}</strong>
-                      </div>
-                    )}
                   </div>
                 </div>
-              )}
-
-              <div className="drawer-section">
-                <h5>{"调度设置"}</h5>
-                <div className="collector-grid collector-grid-2">
+                <div className="collector-grid collector-grid-2 jobs-current-task-form">
                   <label className="field">
                     <span>{"任务名称"}</span>
                     <input aria-label="job-name" value={form.name} onChange={(e) => updateForm("name", e.target.value)} disabled={drawerDisabled} />
@@ -1054,47 +1205,26 @@ export function JobsPage() {
                     <span>{"执行间隔（分钟）"}</span>
                     <input aria-label="job-interval" type="number" value={form.interval_minutes} onChange={(e) => updateForm("interval_minutes", Number(e.target.value))} disabled={drawerDisabled} />
                   </label>
-                </div>
-                <div className="collector-grid collector-grid-2" style={{ marginTop: 8 }}>
-                  <label className="field checkbox-row">
-                    <span>{"启用"}</span>
+                  <label className="field checkbox-row jobs-current-task-toggle">
+                    <span>{"\u542f\u7528"}</span>
                     <input type="checkbox" checked={form.enabled} onChange={(e) => updateForm("enabled", e.target.checked)} disabled={drawerDisabled} />
-                  </label>
-                  <label className="field">
-                    <span>{"执行间隔说明"}</span>
-                    <input value={`${form.interval_minutes} 分钟`} readOnly />
                   </label>
                 </div>
               </div>
 
-              <div className="drawer-section">
-                <h5>{"任务正文"}</h5>
-                <div className="collector-card jobs-pack-summary">
-                  <h6 style={{ margin: "0 0 10px", fontSize: 14 }}>{"当前绑定任务包"}</h6>
-                  <div className="collector-toolbar between">
-                    <div className="jobs-pack-meta">
-                      <div className="job-name" style={{ marginTop: 6 }}>{currentTaskPackName}</div>
-                      <div className="kv" style={{ marginTop: 6 }}>{currentTaskPackDescription || "先把任务包载入到当前草稿，再决定是另存为新任务包，还是保存回当前任务包。"}</div>
-                      <div className="kv" style={{ marginTop: 8 }}>{`pack_name=${currentTaskPack?.pack_name || "--"}`}</div>
-                      <div className="kv">{`pack_path=${currentTaskPack?.pack_path || "--"}`}</div>
-                    </div>
-                    <div className="collector-grid collector-grid-3 jobs-pack-state-grid">
-                      <div className="dashboard-detail-item">
-                        <span>{"绑定状态"}</span>
-                        <strong>{currentTaskPack ? "已绑定本地任务包" : "未绑定"}</strong>
-                      </div>
-                      <div className="dashboard-detail-item">
-                        <span>{"草稿状态"}</span>
-                        <strong>{currentTaskPack ? (taskPackDirty ? "已修改未保存" : "未修改") : "未绑定"}</strong>
-                      </div>
-                      <div className="dashboard-detail-item">
-                        <span>{"草稿来源"}</span>
-                        <strong>{draftSourceLabel(draftSource)}</strong>
-                      </div>
-                    </div>
+              <div className="drawer-section workbench-layer">
+                <JobsSectionHeader
+                  title="任务包操作"
+                  description="先把任务包载入到当前草稿，再决定另存为新任务包、保存回当前任务包，或删除当前任务包。"
+                />
+                <div className="jobs-pack-context-hint workbench-subsurface workbench-subsurface-muted" data-testid="jobs-pack-context-hint">
+                  <div className="workbench-pill-row">
+                    <span className="jobs-summary-pill workbench-pill">{`当前绑定：${currentTaskPackName || "--"}`}</span>
+                    <span className="jobs-summary-pill workbench-pill">{`绑定状态：${currentTaskPackBindingLabel}`}</span>
+                    <span className="jobs-summary-pill workbench-pill">{`草稿状态：${currentTaskPackDraftLabel}`}</span>
                   </div>
                 </div>
-                <div className="collector-grid collector-grid-2 jobs-pack-manager-grid" style={{ marginTop: 12 }}>
+                <div className="collector-grid collector-grid-2 jobs-pack-manager-grid jobs-pack-actions-grid">
                   <div className="collector-card">
                     <div className="collector-subtitle">{"载入到当前草稿"}</div>
                     <div className="kv" style={{ marginTop: 6 }}>{"可以从任务包列表载入，也可以直接从本地 JSON 文件导入。"}</div>
@@ -1105,9 +1235,33 @@ export function JobsPage() {
                           <option key={item.pack_name} value={item.pack_name}>{item.name}</option>
                         ))}
                       </select>
-                      <button type="button" className="ghost" aria-label="job-load-pack" onClick={() => handleImportPack().catch(() => undefined)} disabled={drawerDisabled}>{"载入任务包"}</button>
-                      <button type="button" className="ghost" aria-label="job-import-file-pack" onClick={() => { pendingFileActionRef.current = "draft"; fileInputRef.current?.click(); }} disabled={drawerDisabled}>{"从文件导入"}</button>
-                      <button type="button" className="ghost" aria-label="job-import-and-save-pack" onClick={() => { pendingFileActionRef.current = "save_new"; fileInputRef.current?.click(); }} disabled={drawerDisabled || savingPack}>{"导入并保存为新任务包"}</button>
+                      <button
+                        type="button"
+                        className="ghost workbench-secondary-action"
+                        aria-label="job-load-pack"
+                        onClick={() => handleImportPack().catch(() => undefined)}
+                        disabled={drawerDisabled}
+                      >
+                        {"载入任务包"}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost workbench-secondary-action"
+                        aria-label="job-import-file-pack"
+                        onClick={() => { pendingFileActionRef.current = "draft"; fileInputRef.current?.click(); }}
+                        disabled={drawerDisabled}
+                      >
+                        {"从文件导入"}
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost workbench-secondary-action"
+                        aria-label="job-import-and-save-pack"
+                        onClick={() => { pendingFileActionRef.current = "save_new"; fileInputRef.current?.click(); }}
+                        disabled={drawerDisabled || savingPack}
+                      >
+                        {"导入并保存为新任务包"}
+                      </button>
                       <input
                         ref={fileInputRef}
                         data-testid="job-pack-file-input"
@@ -1128,11 +1282,19 @@ export function JobsPage() {
                     <div className="collector-subtitle">{"保存当前草稿"}</div>
                     <div className="kv" style={{ marginTop: 6 }}>{"把当前草稿另存为新任务包，或保存回当前绑定任务包。"}</div>
                     <div className="collector-toolbar" style={{ marginTop: 12, flexWrap: "wrap" }}>
-                      <button type="button" className="ghost" aria-label="job-save-as-pack" onClick={() => handleSavePack("create").catch(() => undefined)} disabled={drawerDisabled || savingPack}>{"另存为新任务包"}</button>
-                      <button type="button" aria-label="job-save-current-pack" onClick={() => handleSavePack("overwrite").catch(() => undefined)} disabled={drawerDisabled || savingPack || !form.pack_name}>{"保存到当前任务包"}</button>
                       <button
                         type="button"
-                        className="danger"
+                        className="ghost workbench-secondary-action"
+                        aria-label="job-save-as-pack"
+                        onClick={() => handleSavePack("create").catch(() => undefined)}
+                        disabled={drawerDisabled || savingPack}
+                      >
+                        {"另存为新任务包"}
+                      </button>
+                      <button type="button" className="workbench-primary-action" aria-label="job-save-current-pack" onClick={() => handleSavePack("overwrite").catch(() => undefined)} disabled={drawerDisabled || savingPack || !form.pack_name}>{"保存到当前任务包"}</button>
+                      <button
+                        type="button"
+                        className="danger workbench-danger-action"
                         aria-label="job-delete-pack"
                         onClick={() => handleDeleteCurrentPack().catch(() => undefined)}
                         disabled={drawerDisabled || deletingPack || !currentTaskPack?.pack_name}
@@ -1142,21 +1304,60 @@ export function JobsPage() {
                     </div>
                   </div>
                 </div>
-                <div className="collector-query-preview" style={{ marginTop: 12 }}>
-                  <div className="collector-subtitle">{"任务正文摘要"}</div>
-                  <code>{buildQueryPreview(form.search_spec) || "--"}</code>
+              </div>
+
+              <div className="drawer-section workbench-layer">
+                <JobsSectionHeader
+                  title="任务正文摘要"
+                  description="这里先快速预览当前草稿会形成的搜索表达，再继续深入编辑搜索条件和规则。"
+                />
+                <div className="jobs-task-body-summary">
+                  <div className="collector-query-preview jobs-pack-query-preview">
+                    <div className="collector-subtitle">{"查询摘要"}</div>
+                    <code>{buildQueryPreview(form.search_spec) || "--"}</code>
+                  </div>
+                  <div className="dashboard-detail-grid jobs-task-body-grid workbench-summary-grid">
+                    <div className="dashboard-detail-item">
+                      <span>{"关键词片段"}</span>
+                      <strong>{`${taskKeywordCount} 项`}</strong>
+                    </div>
+                    <div className="dashboard-detail-item">
+                      <span>{"作者约束"}</span>
+                      <strong>{`${taskAuthorConstraintCount} 项`}</strong>
+                    </div>
+                    <div className="dashboard-detail-item">
+                      <span>{"规则条数"}</span>
+                      <strong>{`${taskRuleCount} 条`}</strong>
+                    </div>
+                    <div className="dashboard-detail-item">
+                      <span>{"等级数"}</span>
+                      <strong>{`${taskLevelCount} 层`}</strong>
+                    </div>
+                    <div className="dashboard-detail-item dashboard-detail-item-wide">
+                      <span>{"规则名称"}</span>
+                      <strong>{form.rule_set.name || "--"}</strong>
+                    </div>
+                    <div className="dashboard-detail-item dashboard-detail-item-wide">
+                      <span>{"规则说明"}</span>
+                      <strong>{form.rule_set.description || "未填写规则说明"}</strong>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="drawer-section">
-                <h5>{"搜索条件"}</h5>
-                <div className="kv">{"这里定义自动任务具体要去搜什么。"}</div>
+              <div className="drawer-section workbench-layer">
+                <JobsSectionHeader
+                  title="搜索条件"
+                  description="这里定义自动任务具体要去搜什么。"
+                />
                 <SearchSpecEditor value={form.search_spec} onChange={(next) => updateForm("search_spec", next)} disabled={drawerDisabled} />
               </div>
 
-              <div className="drawer-section">
-                <h5>{"规则"}</h5>
-                <div className="kv">{"这里定义原始结果如何筛选、打分和分级。"}</div>
+              <div className="drawer-section workbench-layer">
+                <JobsSectionHeader
+                  title="规则"
+                  description="这里定义原始结果如何筛选、打分和分级。"
+                />
                 <div className="collector-grid collector-grid-2" style={{ marginTop: 12, marginBottom: 12 }}>
                   <label className="field">
                     <span>{"规则名称"}</span>
@@ -1199,34 +1400,78 @@ export function JobsPage() {
               </div>
 
               {selectedJob?.last_run_stats && (
-                <div className="drawer-section">
-                  <h5>{"最近运行统计"}</h5>
+                <div className="drawer-section workbench-layer">
+                  <JobsSectionHeader title="最近运行统计" description="保留最近一次任务执行的统计输出，便于快速复盘。" />
                   <pre className="drawer-json">{JSON.stringify(selectedJob.last_run_stats, null, 2)}</pre>
                 </div>
               )}
 
               <div className="drawer-footer">
                 {!selectedJob ? (
-                  <button type="button" aria-label="submit-job" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
+                  <button type="button" className="workbench-primary-action" aria-label="submit-job" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
                 ) : selectedJob.deleted_at ? (
                   <>
-                    <button type="button" onClick={() => handleRestore(selectedJob)}>{"恢复任务"}</button>
-                    <button type="button" className="danger" onClick={() => handlePurge(selectedJob)}>{"彻底删除"}</button>
+                    <button type="button" className="ghost workbench-secondary-action" onClick={() => handleRestore(selectedJob)}>{"恢复任务"}</button>
+                    <button type="button" className="danger workbench-danger-action" onClick={() => handlePurge(selectedJob)}>{"彻底删除"}</button>
                   </>
                 ) : (
                   <>
-                    <button type="button" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
-                    <button type="button" className="ghost" onClick={() => handleRunNow(selectedJob)}>{"立即运行"}</button>
-                    <button type="button" className="ghost" onClick={() => handleToggle(selectedJob)}>{selectedJob.enabled ? "停用任务" : "启用任务"}</button>
-                    <button type="button" className="danger" onClick={() => handleDelete(selectedJob)}>{"删除任务"}</button>
+                    <button type="button" className="workbench-primary-action" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
+                    <button type="button" className="ghost workbench-secondary-action" onClick={() => handleRunNow(selectedJob)}>{"立即运行"}</button>
+                    <button type="button" className="ghost workbench-secondary-action" onClick={() => handleToggle(selectedJob)}>{selectedJob.enabled ? "停用任务" : "启用任务"}</button>
+                    <button type="button" className="danger workbench-danger-action" onClick={() => handleDelete(selectedJob)}>{"删除任务"}</button>
                   </>
                 )}
               </div>
-            </>
+            </div>
           ) : (
-            <div className="drawer-empty">
-              <h4>{"任务面板"}</h4>
-              <p>{"选择一个任务查看详情，或新建任务并绑定 task pack。"}</p>
+            <div className="drawer-empty jobs-empty-workspace" data-testid="jobs-empty-workspace">
+              <div className="jobs-empty-hero workbench-summary-panel">
+                <div>
+                  <div className="jobs-empty-eyebrow">{"任务工作区"}</div>
+                  <h4>{"先从一个任务开始"}</h4>
+                  <p>{"左侧负责收口任务列表并打开任务，右侧工作区负责绑定任务包、编辑搜索条件与规则，并完成保存或立即运行。"}</p>
+                </div>
+                <div className="workbench-pill-row">
+                  <span className="jobs-summary-pill workbench-pill">{`可用任务包：${taskPacks.length}`}</span>
+                </div>
+                <div className="jobs-empty-actions">
+                  <button type="button" className="workbench-primary-action" onClick={openCreate}>{"新建任务"}</button>
+                  <button
+                    type="button"
+                    className="ghost workbench-secondary-action"
+                    data-testid="jobs-refresh-empty"
+                    onClick={() => refreshJobs({ keepDrawer: false, reloadSelected: false }).catch(() => undefined)}
+                    disabled={loading}
+                  >
+                    {"刷新列表"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="collector-grid jobs-empty-grid workbench-summary-grid">
+                <div className="dashboard-detail-item">
+                  <span>{"1. 打开或新建任务"}</span>
+                  <strong>{"从左侧选择已有任务，或直接创建新的调度任务草稿。"}</strong>
+                </div>
+                <div className="dashboard-detail-item">
+                  <span>{"2. 绑定任务包"}</span>
+                  <strong>{"载入已有任务包，或从本地 JSON 导入到当前草稿后继续编辑。"}</strong>
+                </div>
+                <div className="dashboard-detail-item">
+                  <span>{"3. 完成编辑并保存"}</span>
+                  <strong>{"确认调度、搜索条件和规则后保存任务，必要时直接立即运行。"}</strong>
+                </div>
+              </div>
+
+              <div className="jobs-empty-guide">
+                <div className="jobs-empty-guide-title">{"这个工作区会承接的操作"}</div>
+                <ul className="jobs-empty-guide-list">
+                  <li>{"载入任务包、从文件导入、导入并保存为新任务包"}</li>
+                  <li>{"编辑调度设置、任务正文摘要、搜索条件和规则"}</li>
+                  <li>{"保存任务、立即运行、启停任务和批量操作"}</li>
+                </ul>
+              </div>
             </div>
           )}
         </aside>

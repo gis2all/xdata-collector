@@ -12,6 +12,9 @@ import {
   type ResultItemRecord,
   type SortDirection,
 } from "../api";
+import { ResultsDetailRail } from "./results/ResultsDetailRail";
+import { ResultsPageHeader } from "./results/ResultsPageHeader";
+import { ResultsTableManager } from "./results/ResultsTableManager";
 import { formatUtcPlus8Time } from "../time";
 
 const RESULTS_VISIBLE_COLUMNS_KEY = "results.visibleColumns.v1";
@@ -49,6 +52,11 @@ const TEXT = {
 const TABLE_NAMES: Record<ItemTable, string> = {
   curated: "x_items_curated",
   raw: "x_items_raw",
+};
+
+const TABLE_LABELS: Record<ItemTable, string> = {
+  curated: "筛选结果",
+  raw: "原始结果",
 };
 
 type ColumnDefinition = {
@@ -413,9 +421,26 @@ function renderSortButtons(
   );
 }
 
+function getCellContentClass(field: ItemSortField) {
+  if (["title", "summary_zh", "excerpt", "text"].includes(field)) {
+    return "results-cell-content results-cell-content-text";
+  }
+  if (["source_url", "canonical_url"].includes(field)) {
+    return "results-cell-content results-cell-content-link";
+  }
+  if (["id", "run_id", "score", "views", "likes", "replies", "retweets", "rule_set_id"].includes(field)) {
+    return "results-cell-content results-cell-content-compact";
+  }
+  if (field === "level") {
+    return "results-cell-content results-cell-content-badge";
+  }
+  return "results-cell-content results-cell-content-meta";
+}
+
 export function ResultsPage() {
   const [table, setTable] = useState<ItemTable>("curated");
   const [items, setItems] = useState<ResultItemRecord[]>([]);
+  const [activeRowId, setActiveRowId] = useState<number | null>(null);
   const [keywordInput, setKeywordInput] = useState("");
   const [appliedKeyword, setAppliedKeyword] = useState("");
   const [page, setPage] = useState(1);
@@ -450,8 +475,10 @@ export function ResultsPage() {
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
   const selectedOnPage = allMatchingSelected ? items.length : items.filter((item) => selectedIds.includes(item.id)).length;
   const selectedCount = allMatchingSelected ? total : selectedIds.length;
+  const activeItem = useMemo(() => items.find((item) => item.id === activeRowId) ?? null, [activeRowId, items]);
   const allSelectedOnPage = items.length > 0 && selectedOnPage === items.length;
   const showSelectAllMatching = !allMatchingSelected && allSelectedOnPage && total > items.length;
+  const sortDirectionLabel = sortDir === "asc" ? "\u5347\u5e8f" : "\u964d\u5e8f";
   const tableMinWidth = Math.max(
     960,
     RESULTS_SELECT_COLUMN_WIDTH +
@@ -459,8 +486,9 @@ export function ResultsPage() {
       resolvedVisibleColumnDefinitions.reduce((sum, column) => sum + column.currentWidth, 0),
   );
   const tableName = TABLE_NAMES[table];
+  const tableLabel = TABLE_LABELS[table];
+  const activeKeywordLabel = appliedKeyword || "\u5168\u90e8";
   const dedupeConfirmText = `\u786e\u5b9a\u5bf9\u6574\u4e2a ${tableName} \u8868\u6267\u884c\u53bb\u91cd\u5417\uff1f\u6b64\u64cd\u4f5c\u4f1a\u5220\u9664\u91cd\u590d\u884c\u3002`;
-  const fullTableHint = `\u201c\u5168\u8868\u53bb\u91cd\u201d\u4f5c\u7528\u4e8e\u6574\u5f20 ${tableName} \u8868`;
   const batchDeleteConfirm = allMatchingSelected
     ? "\u786e\u5b9a\u786c\u5220\u9664\u5f53\u524d\u7b5b\u9009\u7ed3\u679c\u7684\u5168\u90e8\u8bb0\u5f55\u5417\uff1f\u6b64\u64cd\u4f5c\u65e0\u6cd5\u6062\u590d\u3002"
     : "\u786e\u5b9a\u786c\u5220\u9664\u5df2\u52fe\u9009\u7684\u8bb0\u5f55\u5417\uff1f\u6b64\u64cd\u4f5c\u65e0\u6cd5\u6062\u590d\u3002";
@@ -585,6 +613,12 @@ export function ResultsPage() {
       setItems(nextItems);
       setTotal(totalItems);
       setPage(currentPage);
+      setActiveRowId((current) => {
+        if (current != null && nextItems.some((item) => item.id === current)) {
+          return current;
+        }
+        return nextItems[0]?.id ?? null;
+      });
       setSelectedIds((current) => {
         if (shouldClearSelection) {
           return [];
@@ -777,233 +811,293 @@ export function ResultsPage() {
   }
 
   return (
-    <div className="card results-page" data-testid="results-page">
-      <div className="results-header">
-        <div>
-          <h3>{TEXT.title}</h3>
-          <div className="kv">{TEXT.subtitle}</div>
-        </div>
-        <div className="results-summary">
-          <div className="kv">{`table=${tableName}`}</div>
-          <div className="kv">{`loaded=${items.length}`}</div>
-          <div className="kv">{`total=${total}`}</div>
-          <div className="kv">{`page=${page}/${totalPages}`}</div>
-          <div className="kv">{`selected=${selectedCount}`}</div>
-          <div className="kv">{`sort=${sortBy} ${sortDir}`}</div>
-        </div>
-      </div>
+    <div className="results-page" data-testid="results-page">
+      <ResultsPageHeader title={TEXT.title} subtitle={TEXT.subtitle} />
 
-      <div className="results-toolbar">
-        <div className="segmented-control" role="tablist" aria-label="results-table-switcher">
-          <button type="button" className={table === "curated" ? "active" : "ghost"} onClick={() => void handleTableSwitch("curated")}>
-            {TEXT.curatedTab}
-          </button>
-          <button type="button" className={table === "raw" ? "active" : "ghost"} onClick={() => void handleTableSwitch("raw")}>
-            {TEXT.rawTab}
-          </button>
+      <section className="results-filter-layer workbench-layer" data-testid="results-filter-layer">
+        <div className="results-filter-summary-panel workbench-summary-panel" data-testid="results-filter-summary-panel">
+          <div className="results-filter-copy workbench-section-copy">
+            <div className="workbench-section-eyebrow">浏览范围</div>
+            <div className="results-filter-title workbench-section-title">当前浏览范围</div>
+            <div className="kv">切换结果表、输入关键词，并按当前视图刷新列表。</div>
+          </div>
+          <div className="results-filter-summary workbench-pill-row" data-testid="results-filter-summary">
+            <div className="results-summary-pill workbench-pill">{`\u5f53\u524d\u8868\uff1a${tableLabel}`}</div>
+            <div className="results-summary-pill workbench-pill">{`\u5173\u952e\u8bcd\uff1a${activeKeywordLabel}`}</div>
+          </div>
         </div>
-        <label className="field">
-          <span>{TEXT.keywordLabel}</span>
-          <input
-            placeholder={TEXT.keywordPlaceholder}
-            value={keywordInput}
-            onChange={(event) => setKeywordInput(event.target.value)}
-            aria-label={TEXT.keywordLabel}
-          />
-        </label>
-        <button type="button" onClick={() => void handleRefresh()} disabled={loading}>
-          {TEXT.refresh}
-        </button>
-        <div className="results-field-picker">
-          <button
-            type="button"
-            className="ghost"
-            aria-haspopup="dialog"
-            aria-expanded={fieldMenuOpen}
-            onClick={() => setFieldMenuOpen((current) => !current)}
-          >
-            {TEXT.fields}
-          </button>
-          {fieldMenuOpen && (
-            <div className="results-field-menu">
-              <div className="results-field-list">
-                {columnDefinitions.map((column) => (
-                  <label key={column.key} className="results-field-option">
-                    <input
-                      type="checkbox"
-                      aria-label={`toggle-column-${column.key}`}
-                      checked={visibleColumns.includes(column.key)}
-                      onChange={() => toggleColumnVisibility(column.key)}
-                    />
-                    <span>{column.label}</span>
-                  </label>
-                ))}
+        <div
+          className="results-filter-toolbar-shell workbench-subsurface workbench-subsurface-muted"
+          data-testid="results-filter-toolbar-shell"
+        >
+          <div className="results-filter-controls results-filter-toolbar" data-testid="results-filter-toolbar">
+            <div className="results-filter-browse" data-testid="results-filter-browse">
+              <div className="segmented-control" role="tablist" aria-label="results-table-switcher">
+                <button
+                  type="button"
+                  className={table === "curated" ? "active" : "ghost"}
+                  onClick={() => void handleTableSwitch("curated")}
+                >
+                  {TEXT.curatedTab}
+                </button>
+                <button
+                  type="button"
+                  className={table === "raw" ? "active" : "ghost"}
+                  onClick={() => void handleTableSwitch("raw")}
+                >
+                  {TEXT.rawTab}
+                </button>
               </div>
-              <div className="results-field-actions">
-                <button type="button" className="ghost" onClick={handleRestoreDefaultColumns}>
-                  {TEXT.resetColumns}
+              <label className="field results-filter-keyword-field">
+                <span>{TEXT.keywordLabel}</span>
+                <input
+                  placeholder={TEXT.keywordPlaceholder}
+                  value={keywordInput}
+                  onChange={(event) => setKeywordInput(event.target.value)}
+                  aria-label={TEXT.keywordLabel}
+                />
+              </label>
+            </div>
+            <div className="results-filter-primary" data-testid="results-filter-primary">
+              <button
+                type="button"
+                className="workbench-primary-action"
+                onClick={() => void handleRefresh()}
+                disabled={loading}
+              >
+                {TEXT.refresh}
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <ResultsTableManager
+        tableName={tableName}
+        total={total}
+        selectedCount={selectedCount}
+        allMatchingSelected={allMatchingSelected}
+        showSelectAllMatching={showSelectAllMatching}
+        fieldsLabel={TEXT.fields}
+        resetColumnsLabel={TEXT.resetColumns}
+        batchDeleteLabel={TEXT.batchDelete}
+        dedupeLabel={TEXT.dedupe}
+        clearSelectionLabel={TEXT.clearSelection}
+        loading={loading}
+        fieldMenuOpen={fieldMenuOpen}
+        fieldMenu={fieldMenuOpen ? (
+          <div className="results-field-menu" data-testid="results-field-menu">
+            <div className="results-field-menu-header">
+              <div className="results-field-menu-copy">
+                <div className="results-field-menu-title">列显示</div>
+                <div className="kv">隐藏列会保留宽度设置，重新显示时会恢复。</div>
+              </div>
+              <span className="results-summary-pill workbench-pill">{`已选 ${visibleColumnDefinitions.length} 列`}</span>
+            </div>
+            <div className="results-field-list">
+              {columnDefinitions.map((column) => (
+                <label key={column.key} className="results-field-option">
+                  <input
+                    type="checkbox"
+                    aria-label={`toggle-column-${column.key}`}
+                    checked={visibleColumns.includes(column.key)}
+                    onChange={() => toggleColumnVisibility(column.key)}
+                  />
+                  <span>{column.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        onSelectAllMatching={handleSelectAllMatching}
+        onClearSelection={handleClearSelection}
+        onToggleFields={() => setFieldMenuOpen((current) => !current)}
+        onRestoreDefaultColumns={handleRestoreDefaultColumns}
+        onBatchDelete={() => void handleBatchDelete()}
+        onDedupe={() => void handleDedupe()}
+      />
+
+      <section className="results-main-workspace" data-testid="results-main-workspace">
+        <div className="results-table-pane" data-testid="results-table-pane">
+          <div className="results-table-headband workbench-summary-panel" data-testid="results-table-headband">
+            <div className="results-table-headband-copy">
+              <div className="workbench-section-eyebrow">{"数据表格"}</div>
+              <div className="results-table-headband-title">{"当前结果表"}</div>
+              <div className="kv">{"按当前表浏览记录，支持拖动列宽、排序、勾选批量操作，并与右侧详情轨联动查看。"} </div>
+            </div>
+            <div className="results-table-headband-meta workbench-pill-row">
+              <span className="results-summary-pill workbench-pill">{`可见列 ${visibleColumnDefinitions.length} 个`}</span>
+              <span className="results-summary-pill workbench-pill">{`当前表：${tableLabel}`}</span>
+              <span className="results-summary-pill workbench-pill">{`列宽：可拖动调整`}</span>
+            </div>
+          </div>
+
+          {error && <div className="alert error">{error}</div>}
+          {message && <div className="alert success">{message}</div>}
+
+          {showSelectAllMatching && (
+            <div className="results-selection-banner row">
+              <span className="kv">{`${TEXT.selectAllMatchingPrefix} ${items.length} \u6761\u3002`}</span>
+            </div>
+          )}
+
+          {allMatchingSelected && total > 0 && (
+            <div className="results-selection-banner row">
+              <span className="kv">{`${TEXT.allMatchingSelected} ${total} \u6761\u3002`}</span>
+            </div>
+          )}
+
+          <div className="results-table-status workbench-pill-row" data-testid="results-table-status">
+            <span className="results-summary-pill workbench-pill">{`\u5f53\u524d\u7b2c ${page} / ${totalPages} \u9875`}</span>
+            <span className="results-summary-pill workbench-pill">{`\u672c\u9875 ${items.length} \u6761`}</span>
+            <span className="results-summary-pill workbench-pill">{`\u672c\u9875\u5df2\u9009 ${selectedOnPage} \u6761`}</span>
+            <span className="results-summary-pill workbench-pill">{`\u6392\u5e8f\uff1a${sortBy} \u00b7 ${sortDirectionLabel}`}</span>
+            <span className="results-summary-pill workbench-pill">{`\u6bcf\u9875 ${pageSize} \u6761`}</span>
+          </div>
+
+          {total > 0 && (
+            <div className="results-pagination workbench-subsurface" data-testid="results-pagination">
+              <span className="kv">{`\u5171 ${total} \u6761`}</span>
+              <div className="row">
+                <button
+                  type="button"
+                  className="ghost workbench-secondary-action"
+                  aria-label="results-prev-page"
+                  disabled={loading || page <= 1}
+                  onClick={() => void load({ table, page: page - 1 })}
+                >
+                  {TEXT.prevPage}
+                </button>
+                <span className="kv">{`\u7b2c ${page} / ${totalPages} \u9875`}</span>
+                <button
+                  type="button"
+                  className="ghost workbench-secondary-action"
+                  aria-label="results-next-page"
+                  disabled={loading || page >= totalPages}
+                  onClick={() => void load({ table, page: page + 1 })}
+                >
+                  {TEXT.nextPage}
                 </button>
               </div>
             </div>
           )}
-        </div>
-        <button type="button" className="danger" onClick={() => void handleBatchDelete()} disabled={loading || !selectedCount}>
-          {TEXT.batchDelete}
-        </button>
-        <button type="button" className="ghost" onClick={() => void handleDedupe()} disabled={loading}>
-          {TEXT.dedupe}
-        </button>
-      </div>
 
-      {error && <div className="alert error">{error}</div>}
-      {message && <div className="alert success">{message}</div>}
-
-      {showSelectAllMatching && (
-        <div className="results-selection-banner row">
-          <span className="kv">{`${TEXT.selectAllMatchingPrefix} ${items.length} \u6761\u3002`}</span>
-          <button type="button" className="ghost" aria-label="select-all-matching" onClick={handleSelectAllMatching}>
-            {`${TEXT.selectAllMatching} ${total} \u6761`}
-          </button>
-        </div>
-      )}
-
-      {allMatchingSelected && total > 0 && (
-        <div className="results-selection-banner row">
-          <span className="kv">{`${TEXT.allMatchingSelected} ${total} \u6761\u3002`}</span>
-          <button type="button" className="ghost" aria-label="clear-selection" onClick={handleClearSelection}>
-            {TEXT.clearSelection}
-          </button>
-        </div>
-      )}
-
-      <div className="results-meta row">
-        <span className="kv">{`page-size=${pageSize}`}</span>
-        <span className="kv">{`selected-on-page=${selectedOnPage}`}</span>
-        <span className="kv">{fullTableHint}</span>
-      </div>
-
-      <div className={`results-table-wrap${isResizingColumn ? " dragging" : ""}`}>
-        <table className="table results-table" style={{ marginTop: 10, minWidth: tableMinWidth, tableLayout: "fixed" }}>
-          <colgroup>
-            <col style={{ width: RESULTS_SELECT_COLUMN_WIDTH }} />
-            {resolvedVisibleColumnDefinitions.map((column) => (
-              <col key={`results-col-${table}-${column.key}`} style={{ width: column.currentWidth }} />
-            ))}
-            <col style={{ width: RESULTS_OPERATION_COLUMN_WIDTH }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th className="results-th-cell" style={{ width: RESULTS_SELECT_COLUMN_WIDTH, minWidth: RESULTS_SELECT_COLUMN_WIDTH }}>
-                <label className="row">
-                  <input
-                    type="checkbox"
-                    aria-label={TEXT.selectPage}
-                    checked={allSelectedOnPage}
-                    onChange={toggleSelectAll}
-                  />
-                  <span>{TEXT.selectPage}</span>
-                </label>
-              </th>
-              {resolvedVisibleColumnDefinitions.map((column) => (
-                <th
-                  key={column.key}
-                  className="results-th-cell"
-                  style={{ width: column.currentWidth, minWidth: column.currentWidth }}
-                >
-                  <div className="results-th">
-                    <span className="results-th-label">{column.label}</span>
-                    {renderSortButtons(column.key, sortBy, sortDir, (field, direction) => {
-                      void handleSort(field, direction);
-                    })}
-                  </div>
-                  <div
-                    className={`results-column-resizer${resizingColumnId === `${table}:${column.key}` ? " dragging" : ""}`}
-                    role="separator"
-                    aria-orientation="vertical"
-                    aria-label={`resize-column-${column.key}`}
-                    onPointerDown={(event) => {
-                      startColumnResize(column, event.clientX);
-                      event.preventDefault();
-                    }}
-                    onMouseDown={(event) => {
-                      startColumnResize(column, event.clientX);
-                      event.preventDefault();
-                    }}
-                  />
-                </th>
-              ))}
-              <th className="results-th-cell" style={{ width: RESULTS_OPERATION_COLUMN_WIDTH, minWidth: RESULTS_OPERATION_COLUMN_WIDTH }}>
-                {TEXT.operation}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr key={item.id}>
-                <td>
-                  <input
-                    type="checkbox"
-                    aria-label={`select-item-${item.id}`}
-                    checked={allMatchingSelected || selectedIds.includes(item.id)}
-                    onChange={() => toggleSelected(item.id)}
-                  />
-                </td>
+          <div className={`results-table-wrap${isResizingColumn ? " dragging" : ""}`} data-testid="results-table-wrap">
+            <table className="table results-table" style={{ minWidth: tableMinWidth, tableLayout: "fixed" }}>
+              <colgroup>
+                <col style={{ width: RESULTS_SELECT_COLUMN_WIDTH }} />
                 {resolvedVisibleColumnDefinitions.map((column) => (
-                  <td key={`${item.id}-${column.key}`}>{column.render(item)}</td>
+                  <col key={`results-col-${table}-${column.key}`} style={{ width: column.currentWidth }} />
                 ))}
-                <td>
-                  <div className="table-actions">
-                    <button
-                      type="button"
-                      className="danger"
-                      aria-label={`delete-item-${item.id}`}
-                      onClick={() => void handleDeleteOne(item)}
-                      disabled={loading}
+                <col style={{ width: RESULTS_OPERATION_COLUMN_WIDTH }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th className="results-th-cell" style={{ width: RESULTS_SELECT_COLUMN_WIDTH, minWidth: RESULTS_SELECT_COLUMN_WIDTH }}>
+                    <label className="row">
+                      <input
+                        type="checkbox"
+                        aria-label={TEXT.selectPage}
+                        checked={allSelectedOnPage}
+                        onChange={toggleSelectAll}
+                      />
+                      <span>{TEXT.selectPage}</span>
+                    </label>
+                  </th>
+                  {resolvedVisibleColumnDefinitions.map((column) => (
+                    <th
+                      key={column.key}
+                      className="results-th-cell"
+                      style={{ width: column.currentWidth, minWidth: column.currentWidth }}
                     >
-                      {TEXT.delete}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {total > 0 && (
-        <div className="jobs-pagination">
-          <span className="kv">{`\u5171 ${total} \u6761`}</span>
-          <div className="row">
-            <button
-              type="button"
-              className="ghost"
-              aria-label="results-prev-page"
-              disabled={loading || page <= 1}
-              onClick={() => void load({ table, page: page - 1 })}
-            >
-              {TEXT.prevPage}
-            </button>
-            <span className="kv">{`\u7b2c ${page} / ${totalPages} \u9875`}</span>
-            <button
-              type="button"
-              className="ghost"
-              aria-label="results-next-page"
-              disabled={loading || page >= totalPages}
-              onClick={() => void load({ table, page: page + 1 })}
-            >
-              {TEXT.nextPage}
-            </button>
+                      <div className="results-th">
+                        <span className="results-th-label">{column.label}</span>
+                        {renderSortButtons(column.key, sortBy, sortDir, (field, direction) => {
+                          void handleSort(field, direction);
+                        })}
+                      </div>
+                      <div
+                        className={`results-column-resizer${resizingColumnId === `${table}:${column.key}` ? " dragging" : ""}`}
+                        role="separator"
+                        aria-orientation="vertical"
+                        aria-label={`resize-column-${column.key}`}
+                        onPointerDown={(event) => {
+                          startColumnResize(column, event.clientX);
+                          event.preventDefault();
+                        }}
+                        onMouseDown={(event) => {
+                          startColumnResize(column, event.clientX);
+                          event.preventDefault();
+                        }}
+                      />
+                    </th>
+                  ))}
+                  <th className="results-th-cell" style={{ width: RESULTS_OPERATION_COLUMN_WIDTH, minWidth: RESULTS_OPERATION_COLUMN_WIDTH }}>
+                    {TEXT.operation}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr
+                    key={item.id}
+                    className={activeRowId === item.id ? "active" : ""}
+                    data-row-active={activeRowId === item.id ? "true" : "false"}
+                    onClick={() => setActiveRowId(item.id)}
+                  >
+                    <td onClick={(event) => event.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        aria-label={`select-item-${item.id}`}
+                        checked={allMatchingSelected || selectedIds.includes(item.id)}
+                        onChange={() => {
+                          setActiveRowId(item.id);
+                          toggleSelected(item.id);
+                        }}
+                      />
+                    </td>
+                    {resolvedVisibleColumnDefinitions.map((column) => (
+                      <td key={`${item.id}-${column.key}`}>
+                        <div className={getCellContentClass(column.key)}>{column.render(item)}</div>
+                      </td>
+                    ))}
+                    <td onClick={(event) => event.stopPropagation()}>
+                      <div className="table-actions">
+                        <button
+                          type="button"
+                          className="danger workbench-danger-action"
+                          aria-label={`delete-item-${item.id}`}
+                          onClick={() => void handleDeleteOne(item)}
+                          disabled={loading}
+                        >
+                          {TEXT.delete}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
-      )}
 
-      {loading && (
-        <div className="searching">
-          <span className="spinner" />
-          {TEXT.loading}
+          {loading && (
+            <div className="searching">
+              <span className="spinner" />
+              {TEXT.loading}
+            </div>
+          )}
+          {!loading && items.length === 0 && <div className="drawer-empty">{TEXT.empty}</div>}
         </div>
-      )}
-      {!loading && items.length === 0 && <div className="drawer-empty">{TEXT.empty}</div>}
+
+        <aside className="results-detail-rail workbench-layer" data-testid="results-detail-rail">
+          <ResultsDetailRail
+            item={activeItem}
+            table={table}
+            tableLabel={tableLabel}
+            total={total}
+          />
+        </aside>
+      </section>
     </div>
   );
 }

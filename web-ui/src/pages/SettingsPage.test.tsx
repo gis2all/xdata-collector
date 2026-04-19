@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SettingsPage } from "./SettingsPage";
@@ -24,6 +24,15 @@ const workspacePayload = {
   jobs: [],
 };
 
+const TEXT = {
+  title: "设置",
+  summaryTitle: "当前 workspace",
+  actionsTitle: "工作区操作",
+  editorTitle: "workspace.json 编辑器",
+  save: "保存 workspace.json",
+  note: "workspace 只保留 environment + jobs registry",
+} as const;
+
 describe("SettingsPage", () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -31,6 +40,28 @@ describe("SettingsPage", () => {
     exportWorkspaceMock.mockResolvedValue(workspacePayload as any);
     importWorkspaceMock.mockResolvedValue(workspacePayload as any);
     updateWorkspaceMock.mockResolvedValue(workspacePayload as any);
+  });
+
+  it("renders the settings workbench structure and workspace summary", async () => {
+    render(<SettingsPage />);
+
+    expect(await screen.findByTestId("settings-page-header")).toBeInTheDocument();
+    expect(screen.getByTestId("settings-summary")).toBeInTheDocument();
+    expect(screen.getByTestId("settings-actions")).toBeInTheDocument();
+    expect(screen.getByTestId("settings-editor-section")).toBeInTheDocument();
+
+    expect(screen.getByRole("heading", { name: TEXT.title })).toBeInTheDocument();
+    expect(within(screen.getByTestId("settings-summary")).getByText(TEXT.summaryTitle)).toBeInTheDocument();
+    expect(within(screen.getByTestId("settings-actions")).getByText(TEXT.actionsTitle)).toBeInTheDocument();
+    expect(within(screen.getByTestId("settings-editor-section")).getByText(TEXT.editorTitle)).toBeInTheDocument();
+    expect(screen.getByText("data/app.db")).toBeInTheDocument();
+    expect(screen.getByText("runtime")).toBeInTheDocument();
+    expect(screen.getByText(".env")).toBeInTheDocument();
+    expect(screen.getByText("0")).toBeInTheDocument();
+    expect(screen.getByDisplayValue(TEXT.note)).toBeInTheDocument();
+    expect(screen.getByLabelText("save-workspace")).toHaveClass("workbench-primary-action");
+    expect(screen.getByLabelText("reload-workspace")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByLabelText("export-workspace")).toHaveClass("workbench-secondary-action");
   });
 
   it("loads workspace json and saves edited content", async () => {
@@ -68,9 +99,8 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     await screen.findByLabelText("workspace-json");
-    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement | null;
-    expect(fileInput).toBeTruthy();
-    const fileContent = `\uFEFF${JSON.stringify(workspacePayload)}`;
+    const fileInput = screen.getByLabelText("import-workspace-file") as HTMLInputElement;
+    const fileContent = `﻿${JSON.stringify(workspacePayload)}`;
     const file = new File([fileContent], "workspace.json", { type: "application/json" });
     Object.defineProperty(file, "text", { value: () => Promise.resolve(fileContent) });
 

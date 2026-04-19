@@ -20,12 +20,16 @@ runtime/logs/
 runtime/pids/
 runtime/tmp/
 runtime/tmp/tests/
+.superpowers/
 
 # Local dynamic config
 config/workspace.json
 config/packs/*.json
 !config/packs/default-rule-set.json
 artifacts/legacy/*.json
+
+# Local design / planning drafts
+artifacts/design/
 
 # Local data and test databases
 data/*.db

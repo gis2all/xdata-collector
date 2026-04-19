@@ -177,3 +177,11 @@
 **正确做法**：仓库里的 `config/` 只保留通用基线，例如 `config/README.md` 和 `config/packs/default-rule-set.json`；具体 job pack、manual preset pack 和本地 workspace 应作为本地动态配置忽略；旧的 `search_presets*.json` 不再作为仓库默认配置，也不再进入 bootstrap 主链路。
 **影响**：Git 噪音、clone 后默认状态、配置通用性、文档和 bootstrap 行为。
 **相关路径**：`.gitignore`、`config/README.md`、`config/workspace.json`、`config/packs/`、`backend/workspace_store.py`
+
+## PIT-018 临时方案文档和 Worktree 不要漂出默认边界
+
+**场景**：记录设计草稿、实现计划、临时 spec，或准备隔离一个短期前端/文档任务时。
+**错误做法**：把临时方案文档重新散落到根目录 `docs/`，或继续默认使用 `git worktree` 维护第二套本地工作副本。
+**正确做法**：临时 spec / plan / design 文档统一落在 `artifacts/design/{specs,plans}`，根目录 `docs/` 不再使用；默认只在当前主工作区工作，不再新建 `git worktree`，避免状态漂移和额外同步成本。
+**影响**：主目录结构稳定性、Git 边界清晰度、本地状态同步成本、临时资料查找效率。
+**相关路径**：`artifacts/README.md`、`artifacts/design/`、`CLAUDE.md`、`.gitignore`
