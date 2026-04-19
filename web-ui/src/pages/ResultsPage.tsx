@@ -798,44 +798,49 @@ export function ResultsPage() {
     <div className="card results-page" data-testid="results-page">
       <ResultsPageHeader title={TEXT.title} subtitle={TEXT.subtitle} />
 
-      <section className="results-filter-layer" data-testid="results-filter-layer">
-        <div className="results-filter-copy">
-          <div className="results-filter-title">当前浏览范围</div>
+      <section className="results-filter-layer workbench-layer" data-testid="results-filter-layer">
+        <div className="results-filter-copy workbench-section-copy">
+          <div className="workbench-section-eyebrow">浏览范围</div>
+          <div className="results-filter-title workbench-section-title">当前浏览范围</div>
           <div className="kv">切换结果表、输入关键词，并按当前视图刷新列表。</div>
         </div>
-        <div className="results-filter-summary" data-testid="results-filter-summary">
-          <div className="results-summary-pill">{`\u5f53\u524d\u8868\uff1a${tableLabel}`}</div>
-          <div className="results-summary-pill">{`\u5173\u952e\u8bcd\uff1a${activeKeywordLabel}`}</div>
+        <div className="results-filter-summary workbench-pill-row" data-testid="results-filter-summary">
+          <div className="results-summary-pill workbench-pill">{`\u5f53\u524d\u8868\uff1a${tableLabel}`}</div>
+          <div className="results-summary-pill workbench-pill">{`\u5173\u952e\u8bcd\uff1a${activeKeywordLabel}`}</div>
         </div>
-        <div className="results-filter-controls">
-          <div className="segmented-control" role="tablist" aria-label="results-table-switcher">
-            <button
-              type="button"
-              className={table === "curated" ? "active" : "ghost"}
-              onClick={() => void handleTableSwitch("curated")}
-            >
-              {TEXT.curatedTab}
-            </button>
-            <button
-              type="button"
-              className={table === "raw" ? "active" : "ghost"}
-              onClick={() => void handleTableSwitch("raw")}
-            >
-              {TEXT.rawTab}
+        <div className="results-filter-controls results-filter-toolbar" data-testid="results-filter-toolbar">
+          <div className="results-filter-browse" data-testid="results-filter-browse">
+            <div className="segmented-control" role="tablist" aria-label="results-table-switcher">
+              <button
+                type="button"
+                className={table === "curated" ? "active" : "ghost"}
+                onClick={() => void handleTableSwitch("curated")}
+              >
+                {TEXT.curatedTab}
+              </button>
+              <button
+                type="button"
+                className={table === "raw" ? "active" : "ghost"}
+                onClick={() => void handleTableSwitch("raw")}
+              >
+                {TEXT.rawTab}
+              </button>
+            </div>
+            <label className="field results-filter-keyword-field">
+              <span>{TEXT.keywordLabel}</span>
+              <input
+                placeholder={TEXT.keywordPlaceholder}
+                value={keywordInput}
+                onChange={(event) => setKeywordInput(event.target.value)}
+                aria-label={TEXT.keywordLabel}
+              />
+            </label>
+          </div>
+          <div className="results-filter-primary" data-testid="results-filter-primary">
+            <button type="button" className="workbench-primary-action" onClick={() => void handleRefresh()} disabled={loading}>
+              {TEXT.refresh}
             </button>
           </div>
-          <label className="field results-filter-keyword-field">
-            <span>{TEXT.keywordLabel}</span>
-            <input
-              placeholder={TEXT.keywordPlaceholder}
-              value={keywordInput}
-              onChange={(event) => setKeywordInput(event.target.value)}
-              aria-label={TEXT.keywordLabel}
-            />
-          </label>
-          <button type="button" onClick={() => void handleRefresh()} disabled={loading}>
-            {TEXT.refresh}
-          </button>
         </div>
       </section>
 
@@ -895,12 +900,12 @@ export function ResultsPage() {
             </div>
           )}
 
-          <div className="results-table-status" data-testid="results-table-status">
-            <span className="results-summary-pill">{`\u5f53\u524d\u7b2c ${page} / ${totalPages} \u9875`}</span>
-            <span className="results-summary-pill">{`\u672c\u9875 ${items.length} \u6761`}</span>
-            <span className="results-summary-pill">{`\u672c\u9875\u5df2\u9009 ${selectedOnPage} \u6761`}</span>
-            <span className="results-summary-pill">{`\u6392\u5e8f\uff1a${sortBy} \u00b7 ${sortDirectionLabel}`}</span>
-            <span className="results-summary-pill">{`\u6bcf\u9875 ${pageSize} \u6761`}</span>
+          <div className="results-table-status workbench-pill-row" data-testid="results-table-status">
+            <span className="results-summary-pill workbench-pill">{`\u5f53\u524d\u7b2c ${page} / ${totalPages} \u9875`}</span>
+            <span className="results-summary-pill workbench-pill">{`\u672c\u9875 ${items.length} \u6761`}</span>
+            <span className="results-summary-pill workbench-pill">{`\u672c\u9875\u5df2\u9009 ${selectedOnPage} \u6761`}</span>
+            <span className="results-summary-pill workbench-pill">{`\u6392\u5e8f\uff1a${sortBy} \u00b7 ${sortDirectionLabel}`}</span>
+            <span className="results-summary-pill workbench-pill">{`\u6bcf\u9875 ${pageSize} \u6761`}</span>
           </div>
 
           <div className={`results-table-wrap${isResizingColumn ? " dragging" : ""}`}>
@@ -1035,7 +1040,7 @@ export function ResultsPage() {
           {!loading && items.length === 0 && <div className="drawer-empty">{TEXT.empty}</div>}
         </div>
 
-        <aside className="results-detail-rail" data-testid="results-detail-rail">
+        <aside className="results-detail-rail workbench-layer" data-testid="results-detail-rail">
           <ResultsDetailRail item={activeItem} table={table} />
         </aside>
       </section>

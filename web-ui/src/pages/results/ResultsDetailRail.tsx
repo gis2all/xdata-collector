@@ -22,7 +22,7 @@ function renderCuratedItem(item: CuratedItemRecord) {
 
   return (
     <div className="results-detail-body">
-      <div className="results-detail-hero">
+      <div className="results-detail-hero workbench-summary-panel">
         <div className="results-detail-eyebrow">{"\u7cbe\u9009\u7ed3\u679c\u5224\u8bfb"}</div>
         <h4 className="results-detail-title">{title}</h4>
         <div className="results-detail-meta">
@@ -45,7 +45,7 @@ function renderCuratedItem(item: CuratedItemRecord) {
 
       <section className="results-detail-section">
         <div className="results-detail-section-title">{"\u7ed3\u679c\u4fe1\u606f"}</div>
-        <div className="results-detail-fact-grid">
+        <div className="results-detail-fact-grid workbench-summary-grid">
           {renderFact("state", item.state || "--")}
           {renderFact("level", item.level || "--")}
           {renderFact("source_url", item.source_url || "--")}
@@ -59,7 +59,7 @@ function renderCuratedItem(item: CuratedItemRecord) {
 function renderRawItem(item: RawItemRecord) {
   return (
     <div className="results-detail-body">
-      <div className="results-detail-hero">
+      <div className="results-detail-hero workbench-summary-panel">
         <div className="results-detail-eyebrow">{"\u539f\u59cb\u8bb0\u5f55\u8be6\u60c5"}</div>
         <h4 className="results-detail-title">{item.author || item.tweet_id || "--"}</h4>
         <div className="results-detail-meta">
@@ -75,7 +75,7 @@ function renderRawItem(item: RawItemRecord) {
 
       <section className="results-detail-section">
         <div className="results-detail-section-title">{"\u91c7\u96c6\u4fe1\u606f"}</div>
-        <div className="results-detail-fact-grid">
+        <div className="results-detail-fact-grid workbench-summary-grid">
           {renderFact("query_name", item.query_name || "--")}
           {renderFact("run_id", String(item.run_id ?? "--"))}
           {renderFact("tweet_id", item.tweet_id || "--")}
@@ -103,11 +103,11 @@ export function ResultsDetailRail({ item, table }: ResultsDetailRailProps) {
         <div className="results-detail-eyebrow">{"\u53f3\u4fa7\u8be6\u60c5\u5224\u8bfb\u8f68"}</div>
         <h4 className="results-detail-title">{"\u5c1a\u672a\u9009\u62e9\u8bb0\u5f55"}</h4>
         <p>{"\u9009\u62e9\u4e00\u6761\u8bb0\u5f55\u540e\uff0c\u53ef\u5728\u53f3\u4fa7\u5feb\u901f\u5224\u8bfb\u8be6\u60c5\u3002"}</p>
-        <div className="results-detail-guide">
+        <div className="results-detail-guide workbench-layer">
           <div className="results-detail-guide-title">{"\u5224\u8bfb\u65b9\u5f0f"}</div>
           <div className="results-detail-guide-pills">
-            <span className="results-summary-pill">{"\u5148\u626b\u8868\u683c"}</span>
-            <span className="results-summary-pill">{"\u518d\u770b\u53f3\u4fa7"}</span>
+            <span className="results-summary-pill workbench-pill">{"\u5148\u626b\u8868\u683c"}</span>
+            <span className="results-summary-pill workbench-pill">{"\u518d\u770b\u53f3\u4fa7"}</span>
           </div>
         </div>
       </div>

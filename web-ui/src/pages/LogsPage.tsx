@@ -129,12 +129,12 @@ export function LogsPage() {
 
   return (
     <div className="logs-page" data-testid="logs-page">
-      <section className="card logs-page-header" data-testid="logs-page-header">
-        <div className="logs-header-copy">
+      <section className="card logs-page-header workbench-page-header" data-testid="logs-page-header">
+        <div className="logs-header-copy workbench-page-header-copy">
           <h3>{UI_TEXT.title}</h3>
           <p className="kv">{UI_TEXT.subtitle}</p>
         </div>
-        <div className="logs-header-actions">
+        <div className="logs-header-actions workbench-page-header-actions">
           <button type="button" onClick={() => load()}>
             {loading ? UI_TEXT.refreshing : UI_TEXT.refresh}
           </button>
@@ -148,17 +148,17 @@ export function LogsPage() {
         </div>
       )}
 
-      <section className="card logs-section logs-runtime-section" data-testid="logs-runtime-section">
-        <div className="logs-section-header logs-section-header-workbench">
-          <div className="logs-section-copy">
-            <div className="logs-section-eyebrow">{UI_TEXT.runtimeSnapshot}</div>
-            <h4>{UI_TEXT.runtimeTitle}</h4>
+      <section className="card logs-section logs-runtime-section workbench-layer" data-testid="logs-runtime-section">
+        <div className="logs-section-header logs-section-header-workbench workbench-section-header">
+          <div className="logs-section-copy workbench-section-copy">
+            <div className="logs-section-eyebrow workbench-section-eyebrow">{UI_TEXT.runtimeSnapshot}</div>
+            <h4 className="workbench-section-title">{UI_TEXT.runtimeTitle}</h4>
             <p className="kv">{UI_TEXT.runtimeHint}</p>
           </div>
-          <div className="logs-summary-pills">
-            <span className="dashboard-summary-pill neutral">{`${UI_TEXT.groups}：${SERVICE_GROUPS.length}`}</span>
-            <span className={`dashboard-summary-pill ${runtimeGroupsWithContent ? "success" : "neutral"}`}>{`${UI_TEXT.contentReady}：${runtimeGroupsWithContent}`}</span>
-            <span className={`dashboard-summary-pill ${runtimeErrorCount ? "danger" : "neutral"}`}>{`${UI_TEXT.readErrors}：${runtimeErrorCount}`}</span>
+          <div className="logs-summary-pills workbench-pill-row">
+            <span className="dashboard-summary-pill workbench-pill neutral">{`${UI_TEXT.groups}：${SERVICE_GROUPS.length}`}</span>
+            <span className={`dashboard-summary-pill workbench-pill ${runtimeGroupsWithContent ? "success" : "neutral"}`}>{`${UI_TEXT.contentReady}：${runtimeGroupsWithContent}`}</span>
+            <span className={`dashboard-summary-pill workbench-pill ${runtimeErrorCount ? "danger" : "neutral"}`}>{`${UI_TEXT.readErrors}：${runtimeErrorCount}`}</span>
           </div>
         </div>
 
@@ -174,7 +174,7 @@ export function LogsPage() {
                     <h5>{group.label}</h5>
                     <p className="kv">{latest ? `最近更新：${formatUtcPlus8Time(latest)}` : UI_TEXT.runtimeNoSnapshot}</p>
                   </div>
-                  <span className={`dashboard-summary-pill ${tone}`}>{serviceGroupStatus(files)}</span>
+                  <span className={`dashboard-summary-pill workbench-pill ${tone}`}>{serviceGroupStatus(files)}</span>
                 </div>
 
                 <div className="logs-service-stack">
@@ -205,16 +205,16 @@ export function LogsPage() {
         </div>
       </section>
 
-      <section className="card logs-section logs-runs-section" data-testid="logs-runs-section">
-        <div className="logs-section-header logs-section-header-workbench">
-          <div className="logs-section-copy">
-            <div className="logs-section-eyebrow">{UI_TEXT.runsWorkbench}</div>
-            <h4>{UI_TEXT.runsTitle}</h4>
+      <section className="card logs-section logs-runs-section workbench-layer" data-testid="logs-runs-section">
+        <div className="logs-section-header logs-section-header-workbench workbench-section-header">
+          <div className="logs-section-copy workbench-section-copy">
+            <div className="logs-section-eyebrow workbench-section-eyebrow">{UI_TEXT.runsWorkbench}</div>
+            <h4 className="workbench-section-title">{UI_TEXT.runsTitle}</h4>
             <p className="kv">{UI_TEXT.runsHint}</p>
           </div>
-          <div className="logs-summary-pills">
-            <span className="dashboard-summary-pill neutral">{`${UI_TEXT.runRecords}：${runs.length}`}</span>
-            <span className={`dashboard-summary-pill ${selectedRun ? statusClass(selectedRun.status) : "neutral"}`}>
+          <div className="logs-summary-pills workbench-pill-row">
+            <span className="dashboard-summary-pill workbench-pill neutral">{`${UI_TEXT.runRecords}：${runs.length}`}</span>
+            <span className={`dashboard-summary-pill workbench-pill ${selectedRun ? statusClass(selectedRun.status) : "neutral"}`}>
               {selectedRun ? `${UI_TEXT.selectedRun}：#${selectedRun.id}` : `${UI_TEXT.selectedRun}：--`}
             </span>
           </div>
@@ -225,10 +225,10 @@ export function LogsPage() {
         ) : (
           <div className="logs-runs-layout">
             <div className="logs-runs-list">
-              <div className="logs-runs-manager">
-                <span className="dashboard-summary-pill neutral">{`${UI_TEXT.triggerType}：${selectedRun?.trigger_type || "--"}`}</span>
-                <span className={`dashboard-summary-pill ${selectedRun ? statusClass(selectedRun.status) : "neutral"}`}>{`${UI_TEXT.status}：${selectedRun?.status || "--"}`}</span>
-                <span className="dashboard-summary-pill neutral">{`${UI_TEXT.statsSummary}：${selectedRun ? summarizeStats(selectedRun.stats_json) : "--"}`}</span>
+              <div className="logs-runs-manager workbench-pill-row">
+                <span className="dashboard-summary-pill workbench-pill neutral">{`${UI_TEXT.triggerType}：${selectedRun?.trigger_type || "--"}`}</span>
+                <span className={`dashboard-summary-pill workbench-pill ${selectedRun ? statusClass(selectedRun.status) : "neutral"}`}>{`${UI_TEXT.status}：${selectedRun?.status || "--"}`}</span>
+                <span className="dashboard-summary-pill workbench-pill neutral">{`${UI_TEXT.statsSummary}：${selectedRun ? summarizeStats(selectedRun.stats_json) : "--"}`}</span>
               </div>
 
               <div className="logs-table-wrap">
@@ -268,13 +268,13 @@ export function LogsPage() {
             {selectedRun ? (
               <aside className="drawer-section logs-run-detail" data-testid="logs-run-rail">
                 <div className="logs-run-hero">
-                  <div className="logs-section-eyebrow">{UI_TEXT.runWorkbench}</div>
+                  <div className="logs-section-eyebrow workbench-section-eyebrow">{UI_TEXT.runWorkbench}</div>
                   <h5 className="logs-run-title">{selectedRun.job_id ? `任务 #${selectedRun.job_id}` : `运行 #${selectedRun.id}`}</h5>
                   <p className="kv">{UI_TEXT.runWorkbenchHint}</p>
-                  <div className="logs-run-pills">
-                    <span className={`dashboard-summary-pill ${statusClass(selectedRun.status)}`}>{selectedRun.status}</span>
-                    <span className="dashboard-summary-pill neutral">{selectedRun.trigger_type}</span>
-                    <span className="dashboard-summary-pill neutral">{summarizeStats(selectedRun.stats_json)}</span>
+                  <div className="logs-run-pills workbench-pill-row">
+                    <span className={`dashboard-summary-pill workbench-pill ${statusClass(selectedRun.status)}`}>{selectedRun.status}</span>
+                    <span className="dashboard-summary-pill workbench-pill neutral">{selectedRun.trigger_type}</span>
+                    <span className="dashboard-summary-pill workbench-pill neutral">{summarizeStats(selectedRun.stats_json)}</span>
                   </div>
                 </div>
 

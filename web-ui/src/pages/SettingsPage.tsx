@@ -110,12 +110,12 @@ export function SettingsPage() {
 
   return (
     <div className="settings-page" data-testid="settings-page">
-      <section className="card settings-page-header" data-testid="settings-page-header">
-        <div className="settings-page-header-copy">
+      <section className="card settings-page-header workbench-page-header" data-testid="settings-page-header">
+        <div className="settings-page-header-copy workbench-page-header-copy">
           <h3>{"\u8bbe\u7f6e"}</h3>
           <p className="kv">{"\u8fd9\u91cc\u53ea\u7ef4\u62a4\u8f7b\u91cf config/workspace.json\uff1aenvironment \u53c2\u6570\u3001\u8fd0\u884c\u8def\u5f84\u548c\u81ea\u52a8\u4efb\u52a1 registry\u3002\u4efb\u52a1\u6b63\u6587\u4ecd\u7136\u5728 config/packs/*.json \u4e2d\u7ba1\u7406\u3002"}</p>
         </div>
-        <div className="settings-page-header-actions">
+        <div className="settings-page-header-actions workbench-page-header-actions">
           <button type="button" aria-label="save-workspace" onClick={handleSave} disabled={loading || saving}>
             {saving ? "\u4fdd\u5b58\u4e2d..." : "\u4fdd\u5b58 workspace.json"}
           </button>
@@ -125,17 +125,17 @@ export function SettingsPage() {
       {error && <div className="alert error">{error}</div>}
       {message && <div className="alert success">{message}</div>}
 
-      <section className="card settings-summary" data-testid="settings-summary">
-        <div className="settings-section-header">
-          <div className="settings-section-copy">
-            <div className="settings-section-eyebrow">{"workspace \u6458\u8981"}</div>
-            <h4>{"\u5f53\u524d workspace"}</h4>
+      <section className="card settings-summary workbench-layer" data-testid="settings-summary">
+        <div className="settings-section-header workbench-section-header">
+          <div className="settings-section-copy workbench-section-copy">
+            <div className="settings-section-eyebrow workbench-section-eyebrow">{"workspace \u6458\u8981"}</div>
+            <h4 className="workbench-section-title">{"\u5f53\u524d workspace"}</h4>
             <p className="kv">{"\u5148\u786e\u8ba4 environment \u8def\u5f84\u3001jobs registry \u6570\u91cf\u548c\u8349\u7a3f\u89e3\u6790\u72b6\u6001\uff0c\u518d\u8fdb\u5165 JSON \u7f16\u8f91\u3002"}</p>
           </div>
-          <div className="settings-summary-pills">
-            <span className="dashboard-summary-pill neutral">{`version\uff1a${draftWorkspace?.version ?? "--"}`}</span>
-            <span className="dashboard-summary-pill neutral">{`jobs\uff1a${jobCount}`}</span>
-            <span className={`dashboard-summary-pill ${workspaceSummary.tone}`}>{`\u8349\u7a3f\u72b6\u6001\uff1a${workspaceSummary.status}`}</span>
+          <div className="settings-summary-pills workbench-pill-row">
+            <span className="dashboard-summary-pill workbench-pill neutral">{`version\uff1a${draftWorkspace?.version ?? "--"}`}</span>
+            <span className="dashboard-summary-pill workbench-pill neutral">{`jobs\uff1a${jobCount}`}</span>
+            <span className={`dashboard-summary-pill workbench-pill ${workspaceSummary.tone}`}>{`\u8349\u7a3f\u72b6\u6001\uff1a${workspaceSummary.status}`}</span>
           </div>
         </div>
 
@@ -167,11 +167,11 @@ export function SettingsPage() {
         </div>
       </section>
 
-      <section className="card settings-actions" data-testid="settings-actions">
-        <div className="settings-section-header">
-          <div className="settings-section-copy">
-            <div className="settings-section-eyebrow">{"\u8f7b\u91cf\u914d\u7f6e"}</div>
-            <h4>{"\u5de5\u4f5c\u533a\u64cd\u4f5c"}</h4>
+      <section className="card settings-actions workbench-layer" data-testid="settings-actions">
+        <div className="settings-section-header workbench-section-header">
+          <div className="settings-section-copy workbench-section-copy">
+            <div className="settings-section-eyebrow workbench-section-eyebrow">{"\u8f7b\u91cf\u914d\u7f6e"}</div>
+            <h4 className="workbench-section-title">{"\u5de5\u4f5c\u533a\u64cd\u4f5c"}</h4>
             <p className="kv">{"\u91cd\u65b0\u52a0\u8f7d\u7528\u4e8e\u53d6\u56de\u5f53\u524d workspace\uff0c\u5bfc\u51fa\u5237\u65b0\u7528\u4e8e\u540c\u6b65\u670d\u52a1\u7aef\u5f53\u524d\u89c6\u56fe\uff0c\u5bfc\u5165\u5219\u4f1a\u76f4\u63a5\u66ff\u6362\u5f53\u524d\u7f16\u8f91\u5668\u8349\u7a3f\u3002"}</p>
           </div>
         </div>
@@ -203,11 +203,11 @@ export function SettingsPage() {
         </div>
       </section>
 
-      <section className="card settings-editor-section" data-testid="settings-editor-section">
-        <div className="settings-section-header">
-          <div className="settings-section-copy">
-            <div className="settings-section-eyebrow">{"JSON \u7f16\u8f91"}</div>
-            <h4>{"workspace.json \u7f16\u8f91\u5668"}</h4>
+      <section className="card settings-editor-section workbench-layer" data-testid="settings-editor-section">
+        <div className="settings-section-header workbench-section-header">
+          <div className="settings-section-copy workbench-section-copy">
+            <div className="settings-section-eyebrow workbench-section-eyebrow">{"JSON \u7f16\u8f91"}</div>
+            <h4 className="workbench-section-title">{"workspace.json \u7f16\u8f91\u5668"}</h4>
             <p className="kv">{"\u8fd9\u91cc\u7ef4\u6301\u5b8c\u6574 JSON \u7f16\u8f91\u80fd\u529b\uff0c\u4f46\u9875\u9762\u4e0a\u65b9\u7684\u6458\u8981\u533a\u4f1a\u5e2e\u4f60\u5148\u786e\u8ba4\u5f53\u524d workspace \u8fb9\u754c\u662f\u5426\u6b63\u786e\u3002"}</p>
           </div>
         </div>

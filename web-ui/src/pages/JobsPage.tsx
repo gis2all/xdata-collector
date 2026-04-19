@@ -182,9 +182,9 @@ function statusScopeLabel(status: JobStatusFilter) {
 
 function JobsSectionHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
   return (
-    <div className="jobs-section-header">
-      <div>
-        <h5>{title}</h5>
+    <div className="jobs-section-header workbench-section-header">
+      <div className="workbench-section-copy">
+        <h5 className="workbench-section-title">{title}</h5>
         {description ? <p className="kv jobs-section-description">{description}</p> : null}
       </div>
       {actions ? <div className="jobs-section-actions">{actions}</div> : null}
@@ -899,13 +899,13 @@ export function JobsPage() {
 
   return (
     <div className="jobs-page" data-testid="jobs-page">
-      <section className="card jobs-page-header">
-        <div>
+      <section className="card jobs-page-header workbench-page-header">
+        <div className="workbench-page-header-copy">
           <h3>{"自动任务"}</h3>
           <p className="kv">{"自动任务负责调度；任务正文来自当前绑定任务包，包含搜索条件和规则。"}</p>
         </div>
-        <div className="jobs-page-header-actions">
-          <button type="button" data-testid="create-job-button" onClick={openCreate}>{"新建任务"}</button>
+        <div className="jobs-page-header-actions workbench-page-header-actions">
+          <button type="button" className="workbench-primary-action" data-testid="create-job-button" onClick={openCreate}>{"新建任务"}</button>
         </div>
       </section>
 
@@ -918,7 +918,7 @@ export function JobsPage() {
         data-testid="jobs-layout"
       >
         <section className="jobs-list-pane">
-          <div className="card jobs-list-tools">
+          <div className="card jobs-list-tools workbench-layer">
             <div className="jobs-list-filterbar" data-testid="jobs-filter-bar">
               <label className="field jobs-filter-field">
                 <span>{"搜索任务"}</span>
@@ -947,10 +947,10 @@ export function JobsPage() {
             </div>
 
             <div className="jobs-managebar" data-testid="jobs-manage-bar">
-              <div className="jobs-managebar-summary">
-                <span className="jobs-summary-pill">{`已选 ${selectedCount} 项`}</span>
-                <span className="jobs-summary-pill">{`共 ${total} 项任务`}</span>
-                <span className="jobs-summary-pill">{`当前范围：${manageScopeLabel}`}</span>
+              <div className="jobs-managebar-summary workbench-pill-row">
+                <span className="jobs-summary-pill workbench-pill">{`已选 ${selectedCount} 项`}</span>
+                <span className="jobs-summary-pill workbench-pill">{`共 ${total} 项任务`}</span>
+                <span className="jobs-summary-pill workbench-pill">{`当前范围：${manageScopeLabel}`}</span>
               </div>
               <div className="jobs-managebar-actions">
                 {showSelectAllMatching && (
@@ -1083,32 +1083,32 @@ export function JobsPage() {
                 </div>
               </div>
 
-              <div className="drawer-section jobs-current-task-section">
+              <div className="drawer-section jobs-current-task-section workbench-layer">
                 <JobsSectionHeader
                   title="当前任务"
                   description="先确认调度状态和基础设置，再继续调整任务正文。"
                   actions={showTopSaveButton ? (
-                    <button type="button" aria-label="submit-job-top" onClick={handleSave} disabled={saving}>
+                    <button type="button" className="workbench-primary-action" aria-label="submit-job-top" onClick={handleSave} disabled={saving}>
                       {saving ? "保存中..." : "保存任务"}
                     </button>
                   ) : undefined}
                 />
-                <div className="jobs-current-task-hero">
+                <div className="jobs-current-task-hero workbench-summary-panel">
                   <div className="jobs-current-task-copy">
                     <div className="jobs-current-task-eyebrow">{currentTaskEyebrow}</div>
                     <div className="jobs-current-task-name">{currentTaskHeroTitle}</div>
                     <p className="kv jobs-current-task-note">{currentTaskHeroDescription}</p>
                   </div>
-                  <div className="jobs-current-task-pills">
-                    <span className="jobs-summary-pill">{`当前状态：${currentStatusLabel}`}</span>
-                    <span className="jobs-summary-pill">{`下次运行：${nextRunLabel}`}</span>
-                    <span className="jobs-summary-pill">{`最近运行：${lastRunLabel}`}</span>
+                  <div className="jobs-current-task-pills workbench-pill-row">
+                    <span className="jobs-summary-pill workbench-pill">{`当前状态：${currentStatusLabel}`}</span>
+                    <span className="jobs-summary-pill workbench-pill">{`下次运行：${nextRunLabel}`}</span>
+                    <span className="jobs-summary-pill workbench-pill">{`最近运行：${lastRunLabel}`}</span>
                   </div>
                   <div className="jobs-current-task-meta">
                     <span>{`最近运行时间：${lastRunTimeLabel}`}</span>
                     {selectedJob?.deleted_at ? <span>{`删除时间：${formatUtcPlus8Time(selectedJob.deleted_at)}`}</span> : null}
                   </div>
-                  <div className="collector-grid collector-grid-4 jobs-current-task-summary-grid">
+                  <div className="collector-grid collector-grid-4 jobs-current-task-summary-grid workbench-summary-grid">
                     <div className="dashboard-detail-item">
                       <span>{"工作区模式"}</span>
                       <strong>{selectedJob ? "编辑已保存任务" : "新建任务草稿"}</strong>
@@ -1147,7 +1147,7 @@ export function JobsPage() {
                 </div>
               </div>
 
-              <div className="drawer-section">
+              <div className="drawer-section workbench-layer">
                 <JobsSectionHeader
                   title="当前绑定任务包"
                   description="任务包负责承载当前任务的搜索条件和规则正文。"
@@ -1160,7 +1160,7 @@ export function JobsPage() {
                       <div className="kv" style={{ marginTop: 8 }}>{`pack_name=${currentTaskPack?.pack_name || "--"}`}</div>
                       <div className="kv">{`pack_path=${currentTaskPack?.pack_path || "--"}`}</div>
                     </div>
-                    <div className="collector-grid collector-grid-3 jobs-pack-state-grid">
+                    <div className="collector-grid collector-grid-3 jobs-pack-state-grid workbench-summary-grid">
                       <div className="dashboard-detail-item">
                         <span>{"绑定状态"}</span>
                         <strong>{currentTaskPack ? "已绑定本地任务包" : "未绑定"}</strong>
@@ -1178,7 +1178,7 @@ export function JobsPage() {
                 </div>
               </div>
 
-              <div className="drawer-section">
+              <div className="drawer-section workbench-layer">
                 <JobsSectionHeader
                   title="任务包操作"
                   description="先把任务包载入到当前草稿，再决定另存为新任务包、保存回当前任务包，或删除当前任务包。"
@@ -1218,7 +1218,7 @@ export function JobsPage() {
                     <div className="kv" style={{ marginTop: 6 }}>{"把当前草稿另存为新任务包，或保存回当前绑定任务包。"}</div>
                     <div className="collector-toolbar" style={{ marginTop: 12, flexWrap: "wrap" }}>
                       <button type="button" className="ghost" aria-label="job-save-as-pack" onClick={() => handleSavePack("create").catch(() => undefined)} disabled={drawerDisabled || savingPack}>{"另存为新任务包"}</button>
-                      <button type="button" aria-label="job-save-current-pack" onClick={() => handleSavePack("overwrite").catch(() => undefined)} disabled={drawerDisabled || savingPack || !form.pack_name}>{"保存到当前任务包"}</button>
+                      <button type="button" className="workbench-primary-action" aria-label="job-save-current-pack" onClick={() => handleSavePack("overwrite").catch(() => undefined)} disabled={drawerDisabled || savingPack || !form.pack_name}>{"保存到当前任务包"}</button>
                       <button
                         type="button"
                         className="danger"
@@ -1233,7 +1233,7 @@ export function JobsPage() {
                 </div>
               </div>
 
-              <div className="drawer-section">
+              <div className="drawer-section workbench-layer">
                 <JobsSectionHeader
                   title="任务正文摘要"
                   description="这里先快速预览当前草稿会形成的搜索表达，再继续深入编辑搜索条件和规则。"
@@ -1243,7 +1243,7 @@ export function JobsPage() {
                     <div className="collector-subtitle">{"查询摘要"}</div>
                     <code>{buildQueryPreview(form.search_spec) || "--"}</code>
                   </div>
-                  <div className="dashboard-detail-grid jobs-task-body-grid">
+                  <div className="dashboard-detail-grid jobs-task-body-grid workbench-summary-grid">
                     <div className="dashboard-detail-item">
                       <span>{"关键词片段"}</span>
                       <strong>{`${taskKeywordCount} 项`}</strong>
@@ -1272,7 +1272,7 @@ export function JobsPage() {
                 </div>
               </div>
 
-              <div className="drawer-section">
+              <div className="drawer-section workbench-layer">
                 <JobsSectionHeader
                   title="搜索条件"
                   description="这里定义自动任务具体要去搜什么。"
@@ -1280,7 +1280,7 @@ export function JobsPage() {
                 <SearchSpecEditor value={form.search_spec} onChange={(next) => updateForm("search_spec", next)} disabled={drawerDisabled} />
               </div>
 
-              <div className="drawer-section">
+              <div className="drawer-section workbench-layer">
                 <JobsSectionHeader
                   title="规则"
                   description="这里定义原始结果如何筛选、打分和分级。"
@@ -1327,7 +1327,7 @@ export function JobsPage() {
               </div>
 
               {selectedJob?.last_run_stats && (
-                <div className="drawer-section">
+                <div className="drawer-section workbench-layer">
                   <JobsSectionHeader title="最近运行统计" description="保留最近一次任务执行的统计输出，便于快速复盘。" />
                   <pre className="drawer-json">{JSON.stringify(selectedJob.last_run_stats, null, 2)}</pre>
                 </div>

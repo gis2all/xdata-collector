@@ -119,9 +119,9 @@ function executionStatusTone(status: ExecutionStatus) {
 
 function ManualSectionHeader(props: { title: string; description: string; aside?: ReactNode }) {
   return (
-    <div className="manual-section-header">
-      <div className="manual-section-copy">
-        <h4>{props.title}</h4>
+    <div className="manual-section-header workbench-section-header">
+      <div className="manual-section-copy workbench-section-copy">
+        <h4 className="workbench-section-title">{props.title}</h4>
         <p className="kv manual-section-description">{props.description}</p>
       </div>
       {props.aside ? <div className="manual-section-aside">{props.aside}</div> : null}
@@ -431,13 +431,13 @@ export function ManualSearchPage() {
 
   return (
     <div className="collector-workbench manual-page" data-testid="manual-search-page">
-      <header className="card collector-hero manual-page-header" data-testid="manual-page-header">
-        <div className="manual-page-header-copy">
+      <header className="card collector-hero manual-page-header workbench-page-header" data-testid="manual-page-header">
+        <div className="manual-page-header-copy workbench-page-header-copy">
           <h3>手动执行任务</h3>
           <p className="kv">当前页面编辑的是任务草稿。你可以直接执行草稿，不需要先保存为任务包。</p>
         </div>
-        <div className="manual-page-header-actions">
-          <button type="button" onClick={onRun} data-testid="manual-run-button" disabled={loading}>
+        <div className="manual-page-header-actions workbench-page-header-actions">
+          <button type="button" className="workbench-primary-action" onClick={onRun} data-testid="manual-run-button" disabled={loading}>
             {loading ? "执行中..." : "立即执行任务"}
           </button>
         </div>
@@ -452,12 +452,12 @@ export function ManualSearchPage() {
 
       <div className="manual-layout">
         <div className="manual-editor-pane">
-          <section className="card manual-section-card manual-section-card-hero">
+          <section className="card manual-section-card manual-section-card-hero workbench-layer">
             <ManualSectionHeader
               title="当前任务包"
               description="任务包是当前草稿的绑定对象，只展示任务包身份和草稿来源，不在这里直接编辑正文。"
             />
-            <div className="manual-pack-hero">
+            <div className="manual-pack-hero workbench-summary-panel">
               <div className="manual-pack-hero-copy">
                 <div className="manual-pack-eyebrow">{packHeroEyebrow}</div>
                 <div className="manual-pack-name">{packHeroTitle}</div>
@@ -465,15 +465,15 @@ export function ManualSearchPage() {
                 <div className="kv manual-pack-path">{`pack_name=${currentPack?.pack_name || "--"}`}</div>
                 <div className="kv manual-pack-path">{`pack_path=${currentPack?.pack_path || "--"}`}</div>
               </div>
-              <div className="manual-pack-pill-row">
-                <span className="jobs-summary-pill">{`绑定状态：${packBindingLabel}`}</span>
-                <span className="jobs-summary-pill">{`草稿状态：${packDraftLabel}`}</span>
-                <span className="jobs-summary-pill">{`草稿来源：${packSourceLabel}`}</span>
+              <div className="manual-pack-pill-row workbench-pill-row">
+                <span className="jobs-summary-pill workbench-pill">{`绑定状态：${packBindingLabel}`}</span>
+                <span className="jobs-summary-pill workbench-pill">{`草稿状态：${packDraftLabel}`}</span>
+                <span className="jobs-summary-pill workbench-pill">{`草稿来源：${packSourceLabel}`}</span>
               </div>
             </div>
           </section>
 
-          <section className="card manual-section-card manual-section-card-muted">
+          <section className="card manual-section-card manual-section-card-muted workbench-layer">
             <ManualSectionHeader
               title="任务包操作"
               description="先决定当前草稿从哪里来，再决定是否保存成受管任务包。任务包操作不会替代右上角的执行主按钮。"
@@ -574,6 +574,7 @@ export function ManualSearchPage() {
                   </button>
                   <button
                     type="button"
+                    className="workbench-primary-action"
                     aria-label="manual-save-current-pack"
                     onClick={() => savePack("overwrite").catch(() => undefined)}
                     disabled={savingPack || !currentPack?.pack_name}
@@ -594,7 +595,7 @@ export function ManualSearchPage() {
             </div>
           </section>
 
-          <section className="card manual-section-card">
+          <section className="card manual-section-card workbench-layer">
             <ManualSectionHeader
               title="任务正文摘要"
               description="任务正文由搜索条件和规则组成，这里先给出当前草稿的查询摘要，再进入详细编辑。"
@@ -609,7 +610,7 @@ export function ManualSearchPage() {
                 <div className="collector-subtitle">查询摘要</div>
                 <code>{queryPreview}</code>
               </div>
-              <div className="dashboard-detail-grid manual-body-detail-grid">
+              <div className="dashboard-detail-grid manual-body-detail-grid workbench-summary-grid">
                 <div className="dashboard-detail-item">
                   <span>关键词片段</span>
                   <strong>{`${keywordCount} 项`}</strong>
@@ -638,14 +639,14 @@ export function ManualSearchPage() {
             </div>
           </section>
 
-          <section className="card manual-section-card">
+          <section className="card manual-section-card workbench-layer">
             <ManualSectionHeader title="搜索条件" description="这里定义这个任务要去搜什么。" />
             <div className="collector-panel">
               <SearchSpecEditor value={searchSpec} onChange={setSearchSpec} disabled={loading} />
             </div>
           </section>
 
-          <section className="card manual-section-card">
+          <section className="card manual-section-card workbench-layer">
             <ManualSectionHeader title="规则" description="这里定义原始结果如何筛选、打分和分级。" />
             <div className="collector-grid collector-grid-2" style={{ marginTop: 12, marginBottom: 12 }}>
               <label className="field">
@@ -666,16 +667,16 @@ export function ManualSearchPage() {
           </section>
         </div>
 
-        <aside className="card manual-execution-rail" data-testid="manual-execution-rail">
+        <aside className="card manual-execution-rail workbench-layer" data-testid="manual-execution-rail">
           <ManualSectionHeader
             title="执行上下文"
             description="这里只展示当前草稿状态和最近一次主动执行的摘要，不承载第二套主操作。"
           />
-          <div className="manual-rail-hero">
-            <div className="manual-rail-pills">
-              <span className="jobs-summary-pill">{`当前草稿：${currentDraftStatusLabel}`}</span>
-              <span className="jobs-summary-pill">{`最近状态：${lastExecutionStatusLabel}`}</span>
-              <span className="jobs-summary-pill">{`最近执行：${lastExecutionTimeLabel}`}</span>
+          <div className="manual-rail-hero workbench-summary-panel">
+            <div className="manual-rail-pills workbench-pill-row">
+              <span className="jobs-summary-pill workbench-pill">{`当前草稿：${currentDraftStatusLabel}`}</span>
+              <span className="jobs-summary-pill workbench-pill">{`最近状态：${lastExecutionStatusLabel}`}</span>
+              <span className="jobs-summary-pill workbench-pill">{`最近执行：${lastExecutionTimeLabel}`}</span>
             </div>
             <div className={`manual-execution-note ${lastExecution.status === "failed" ? "failed" : ""}`}>
               {lastExecution.status === "idle"
@@ -685,7 +686,7 @@ export function ManualSearchPage() {
                   : "最近一次执行已完成，可继续查看下方完整结果。"}
             </div>
           </div>
-          <div className="collector-grid collector-grid-2 manual-rail-grid">
+          <div className="collector-grid collector-grid-2 manual-rail-grid workbench-summary-grid">
             <div className="dashboard-detail-item">
               <span>草稿状态</span>
               <strong>
@@ -726,7 +727,7 @@ export function ManualSearchPage() {
         </aside>
       </div>
 
-      <section ref={resultsRef} className="card manual-results-section">
+      <section ref={resultsRef} className="card manual-results-section workbench-layer">
         <ManualSectionHeader
           title="执行结果"
           description="完整执行输出仍放在页面下方全宽区域，包含最终查询、原始结果和命中结果。"

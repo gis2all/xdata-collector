@@ -101,12 +101,17 @@ describe("ResultsPage", () => {
       expect(screen.getByTestId("results-page-header")).toBeInTheDocument();
     });
 
-    expect(screen.getByTestId("results-filter-layer")).toBeInTheDocument();
-    expect(screen.getByTestId("results-manager-layer")).toBeInTheDocument();
+    expect(screen.getByTestId("results-page-header")).toHaveClass("workbench-page-header");
+    expect(screen.getByTestId("results-filter-layer")).toHaveClass("workbench-layer");
+    expect(screen.getByTestId("results-manager-layer")).toHaveClass("workbench-layer");
     expect(screen.getByTestId("results-main-workspace")).toBeInTheDocument();
     expect(screen.getByTestId("results-table-pane")).toBeInTheDocument();
-    expect(screen.getByTestId("results-detail-rail")).toBeInTheDocument();
+    expect(screen.getByTestId("results-detail-rail")).toHaveClass("workbench-layer");
     expect(screen.getByTestId("results-table-status")).toBeInTheDocument();
+    expect(screen.getByTestId("results-filter-toolbar")).toBeInTheDocument();
+    expect(screen.getByTestId("results-manager-toolbar")).toBeInTheDocument();
+    expect(screen.getByTestId("results-manager-summary-panel")).toHaveClass("workbench-summary-panel");
+    expect(screen.getByRole("button", { name: TEXT.refresh })).toHaveClass("workbench-primary-action");
     expect(screen.getByText("当前浏览范围")).toBeInTheDocument();
     expect(screen.getByText("表格管理")).toBeInTheDocument();
   });
@@ -143,6 +148,8 @@ describe("ResultsPage", () => {
     expect(infoHeading).toBeTruthy();
     expect(summaryHeading.compareDocumentPosition(cluesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(cluesHeading.compareDocumentPosition(infoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(detailRail.querySelector(".results-detail-hero")).toHaveClass("workbench-summary-panel");
+    expect(detailRail.querySelector(".results-detail-fact-grid")).toHaveClass("workbench-summary-grid");
     expect(within(detailRail).getByText("author-2")).toBeInTheDocument();
     expect(within(detailRail).getByText(/rule-2/)).toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).getByText("Item 2").closest("tr")).toHaveAttribute("data-row-active", "true");
@@ -178,14 +185,20 @@ describe("ResultsPage", () => {
 
     const filter = screen.getByTestId("results-filter-layer");
     const manager = screen.getByTestId("results-manager-layer");
-    const buttons = within(manager).getAllByRole("button").map((button) => button.textContent);
+    const filterToolbar = within(filter).getByTestId("results-filter-toolbar");
+    const filterBrowse = within(filterToolbar).getByTestId("results-filter-browse");
+    const filterPrimary = within(filterToolbar).getByTestId("results-filter-primary");
+    const managerToolbar = within(manager).getByTestId("results-manager-toolbar");
+    const managerViewActions = within(managerToolbar).getByTestId("results-manager-view-actions");
+    const managerDataActions = within(managerToolbar).getByTestId("results-manager-data-actions");
 
-    expect(buttons).toEqual(["字段", "恢复默认", "批量删除", "全表去重"]);
-    expect(within(filter).getByRole("tablist", { name: "results-table-switcher" })).toBeInTheDocument();
-    expect(within(filter).getByRole("button", { name: TEXT.refresh })).toBeInTheDocument();
+    expect(within(filterBrowse).getByRole("tablist", { name: "results-table-switcher" })).toBeInTheDocument();
+    expect(within(filterPrimary).getByRole("button", { name: TEXT.refresh })).toBeInTheDocument();
     expect(within(filter).getByTestId("results-filter-summary")).toBeInTheDocument();
+    expect(within(managerViewActions).getAllByRole("button").map((button) => button.textContent)).toEqual(["字段", "恢复默认"]);
+    expect(within(managerDataActions).getAllByRole("button").map((button) => button.textContent)).toEqual(["批量删除", "全表去重"]);
     expect(within(manager).queryByLabelText(TEXT.keywordLabel)).not.toBeInTheDocument();
-    expect(within(filter).getByLabelText(TEXT.keywordLabel)).toBeInTheDocument();
+    expect(within(filterBrowse).getByLabelText(TEXT.keywordLabel)).toBeInTheDocument();
     expect(within(filter).getByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
     expect(within(filter).getByText("\u5173\u952e\u8bcd\uff1a\u5168\u90e8")).toBeInTheDocument();
     expect(within(manager).queryByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).not.toBeInTheDocument();
@@ -220,6 +233,8 @@ describe("ResultsPage", () => {
     expect(bodyHeading).toBeTruthy();
     expect(collectHeading).toBeTruthy();
     expect(bodyHeading.compareDocumentPosition(collectHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(detailRail.querySelector(".results-detail-hero")).toHaveClass("workbench-summary-panel");
+    expect(detailRail.querySelector(".results-detail-fact-grid")).toHaveClass("workbench-summary-grid");
     expect(within(detailRail).getAllByText("raw-author-2").length).toBeGreaterThan(0);
     expect(within(detailRail).getByText("102")).toBeInTheDocument();
     expect(within(detailRail).getByText("manual:2")).toBeInTheDocument();

@@ -136,12 +136,12 @@ export function DashboardPage() {
 
   return (
     <div className="dashboard-page" data-testid="dashboard-page">
-      <section className="card dashboard-page-header" data-testid="dashboard-page-header">
-        <div className="dashboard-page-header-copy">
+      <section className="card dashboard-page-header workbench-page-header" data-testid="dashboard-page-header">
+        <div className="dashboard-page-header-copy workbench-page-header-copy">
           <h3>{"运行总览"}</h3>
           <p className="kv">{"快速查看本地数据库与 X 会话的上次已知状态，只有点击“重新加载”才会主动重新校验。"}</p>
         </div>
-        <div className="dashboard-page-header-actions">
+        <div className="dashboard-page-header-actions workbench-page-header-actions">
           <button type="button" onClick={loadHealth} disabled={loading}>
             {loading ? "重新加载中..." : "重新加载"}
           </button>
@@ -150,43 +150,43 @@ export function DashboardPage() {
 
       {error && <div className="alert error">{`错误: ${error}`}</div>}
 
-      <section className="card dashboard-summary" data-testid="dashboard-summary">
+      <section className="card dashboard-summary workbench-layer" data-testid="dashboard-summary">
         <div className="dashboard-summary-hero">
           <div className="dashboard-summary-copy">
             <div className="dashboard-summary-eyebrow">{"当前状态"}</div>
             <h4 className="dashboard-summary-title">{summaryTitle}</h4>
             <p className="kv">{summaryDescription}</p>
           </div>
-          <div className="dashboard-summary-pills">
-            <span className={`dashboard-summary-pill ${dbStatusTone}`}>{`本地数据库：${dbStatusLabel}`}</span>
-            <span className={`dashboard-summary-pill ${xStatusTone}`}>{`X 会话：${xStatusLabel}`}</span>
-            <span className="dashboard-summary-pill neutral">{updatedAtValue}</span>
+          <div className="dashboard-summary-pills workbench-pill-row">
+            <span className={`dashboard-summary-pill workbench-pill ${dbStatusTone}`}>{`本地数据库：${dbStatusLabel}`}</span>
+            <span className={`dashboard-summary-pill workbench-pill ${xStatusTone}`}>{`X 会话：${xStatusLabel}`}</span>
+            <span className="dashboard-summary-pill workbench-pill neutral">{updatedAtValue}</span>
           </div>
         </div>
       </section>
 
       {state && (
         <section className="dashboard-panels" data-testid="dashboard-panels">
-          <section className="card dashboard-status-card" data-testid="dashboard-db-info">
-            <div className="dashboard-status-card-hero">
-              <div className="dashboard-status-card-copy">
-                <div className="dashboard-status-eyebrow">{"本地数据库"}</div>
-                <h4>{"DB 连接与运行数据"}</h4>
+          <section className="card dashboard-status-card workbench-layer" data-testid="dashboard-db-info">
+            <div className="dashboard-status-card-hero workbench-section-header">
+              <div className="dashboard-status-card-copy workbench-section-copy">
+                <div className="dashboard-status-eyebrow workbench-section-eyebrow">{"本地数据库"}</div>
+                <h4 className="workbench-section-title">{"DB 连接与运行数据"}</h4>
                 <p className="kv">{"聚合路径、文件存在、任务数、运行数和最近校验结果。"}</p>
               </div>
-              <span className={`dashboard-summary-pill ${dbStatusTone}`}>{dbStatusLabel}</span>
+              <span className={`dashboard-summary-pill workbench-pill ${dbStatusTone}`}>{dbStatusLabel}</span>
             </div>
             {renderDatabaseInfo(state.db)}
           </section>
 
-          <section className="card dashboard-status-card" data-testid="dashboard-x-info">
-            <div className="dashboard-status-card-hero">
-              <div className="dashboard-status-card-copy">
-                <div className="dashboard-status-eyebrow">{"X 会话"}</div>
-                <h4>{"认证与会话状态"}</h4>
+          <section className="card dashboard-status-card workbench-layer" data-testid="dashboard-x-info">
+            <div className="dashboard-status-card-hero workbench-section-header">
+              <div className="dashboard-status-card-copy workbench-section-copy">
+                <div className="dashboard-status-eyebrow workbench-section-eyebrow">{"X 会话"}</div>
+                <h4 className="workbench-section-title">{"认证与会话状态"}</h4>
                 <p className="kv">{"聚合认证来源、账号摘要、浏览器提示与最近校验结果。"}</p>
               </div>
-              <span className={`dashboard-summary-pill ${xStatusTone}`}>{xStatusLabel}</span>
+              <span className={`dashboard-summary-pill workbench-pill ${xStatusTone}`}>{xStatusLabel}</span>
             </div>
             {renderXInfo(state.x)}
           </section>

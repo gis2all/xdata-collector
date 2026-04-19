@@ -237,6 +237,7 @@ describe("JobsPage", () => {
       expect(listTaskPacksMock).toHaveBeenCalled();
     });
 
+    expect(screen.getByRole("heading", { name: "自动任务" }).closest("section")).toHaveClass("workbench-page-header");
     expect(screen.getByRole("columnheader", { name: "任务包" })).toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "规则集" })).not.toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "查询摘要" })).not.toBeInTheDocument();
@@ -258,6 +259,14 @@ describe("JobsPage", () => {
     expect(screen.getByRole("heading", { name: "搜索条件" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "规则" })).toBeInTheDocument();
     expect(screen.getByText("已绑定本地任务包")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "当前任务" }).closest(".jobs-section-header")).toHaveClass("workbench-section-header");
+    expect(screen.getByRole("heading", { name: "当前任务" }).closest(".drawer-section")).toHaveClass("workbench-layer");
+    expect(screen.getByTestId("create-job-button")).toHaveClass("workbench-primary-action");
+    expect(screen.getByLabelText("submit-job-top")).toHaveClass("workbench-primary-action");
+    expect(screen.getByText("当前状态：已启用").closest(".jobs-current-task-hero")).toHaveClass("workbench-summary-panel");
+    expect(screen.getByText("工作区模式").closest(".jobs-current-task-summary-grid")).toHaveClass("workbench-summary-grid");
+    expect(screen.getByText("绑定状态").closest(".jobs-pack-state-grid")).toHaveClass("workbench-summary-grid");
+    expect(screen.getByText("关键词片段").closest(".jobs-task-body-grid")).toHaveClass("workbench-summary-grid");
     expect(screen.getByText("pack_name=alpha-watch")).toBeInTheDocument();
     expect(screen.getByText("pack_path=config/packs/alpha-watch.json")).toBeInTheDocument();
     expect(screen.getByText("规则可视化编辑器")).toBeInTheDocument();
@@ -316,6 +325,7 @@ describe("JobsPage", () => {
 
     expect(screen.getByLabelText("submit-job-top")).toBeInTheDocument();
     expect(screen.getByLabelText("submit-job")).toBeInTheDocument();
+    expect(screen.getByLabelText("submit-job-top")).toHaveClass("workbench-primary-action");
 
     fireEvent.click(screen.getByLabelText("submit-job-top"));
 

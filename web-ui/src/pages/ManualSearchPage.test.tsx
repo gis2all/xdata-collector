@@ -126,6 +126,7 @@ describe("ManualSearchPage", () => {
 
     const header = screen.getByTestId("manual-page-header");
     expect(screen.getByRole("heading", { name: "手动执行任务" })).toBeInTheDocument();
+    expect(header).toHaveClass("workbench-page-header");
     expect(screen.getByRole("heading", { name: "当前任务包" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务包操作" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务正文摘要" })).toBeInTheDocument();
@@ -134,9 +135,16 @@ describe("ManualSearchPage", () => {
     expect(screen.getByRole("heading", { name: "执行上下文" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "执行结果" })).toBeInTheDocument();
     expect(screen.getByTestId("manual-execution-rail")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "当前任务包" }).closest(".manual-section-header")).toHaveClass("workbench-section-header");
+    expect(screen.getByRole("heading", { name: "当前任务包" }).closest(".manual-section-card")).toHaveClass("workbench-layer");
+    expect(screen.getByTestId("manual-execution-rail")).toHaveClass("workbench-layer");
     expect(within(header).getByRole("button", { name: "立即执行任务" })).toBeInTheDocument();
+    expect(within(header).getByRole("button", { name: "立即执行任务" })).toHaveClass("workbench-primary-action");
     expect(within(header).queryByRole("button", { name: "清空当前草稿" })).not.toBeInTheDocument();
     expect(within(header).queryByRole("button", { name: "刷新任务包列表" })).not.toBeInTheDocument();
+    expect(screen.getByText("绑定状态：未绑定").closest(".manual-pack-hero")).toHaveClass("workbench-summary-panel");
+    expect(screen.getByText("当前草稿：未绑定草稿").closest(".manual-rail-hero")).toHaveClass("workbench-summary-panel");
+    expect(screen.getByText("草稿状态").closest(".manual-rail-grid")).toHaveClass("workbench-summary-grid");
     expect(screen.getByText("未绑定任务草稿")).toBeInTheDocument();
     expect(screen.getByText("绑定状态：未绑定")).toBeInTheDocument();
     expect(screen.getByText("草稿来源：默认空白")).toBeInTheDocument();
@@ -196,6 +204,8 @@ describe("ManualSearchPage", () => {
     expect(screen.getByLabelText("manual-load-pack")).toBeInTheDocument();
     expect(screen.getByLabelText("manual-save-as-pack")).toBeInTheDocument();
     expect(screen.getByLabelText("manual-save-current-pack")).toBeInTheDocument();
+    expect(screen.getByLabelText("manual-save-current-pack")).toHaveClass("workbench-primary-action");
+    expect(screen.getByText("关键词片段").closest(".manual-body-detail-grid")).toHaveClass("workbench-summary-grid");
     expect(screen.getByText(/只替换当前草稿/)).toBeInTheDocument();
     expect(screen.getByText(/会先导入文件，再立刻保存成新的本地任务包并绑定/)).toBeInTheDocument();
 
