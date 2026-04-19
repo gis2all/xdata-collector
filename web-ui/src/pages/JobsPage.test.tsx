@@ -333,7 +333,7 @@ describe("JobsPage", () => {
 
     fireEvent.click(screen.getByTestId("create-job-button"));
 
-    expect(screen.getByText("新建任务草稿")).toBeInTheDocument();
+    expect(screen.getAllByText("新建任务草稿").length).toBeGreaterThan(0);
     expect(screen.getByText("当前状态：已启用")).toBeInTheDocument();
     expect(screen.getByText("下次运行：保存后生成")).toBeInTheDocument();
     expect(screen.getByText("最近运行：尚未运行")).toBeInTheDocument();

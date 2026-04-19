@@ -174,6 +174,22 @@ export function ManualSearchPage() {
     return JSON.stringify(currentPackComparable) !== JSON.stringify(currentDraftComparable);
   }, [currentDraftComparable, currentPackComparable]);
   const queryPreview = useMemo(() => buildQueryPreview(searchSpec) || "--", [searchSpec]);
+  const keywordCount = useMemo(
+    () =>
+      [
+        searchSpec.all_keywords,
+        searchSpec.exact_phrases,
+        searchSpec.any_keywords,
+        searchSpec.exclude_keywords,
+      ].reduce((total, items) => total + items.length, 0),
+    [searchSpec],
+  );
+  const authorConstraintCount = useMemo(
+    () => searchSpec.authors_include.length + searchSpec.authors_exclude.length,
+    [searchSpec],
+  );
+  const ruleCount = useMemo(() => draftDefinition.rules?.length || 0, [draftDefinition]);
+  const levelCount = useMemo(() => draftDefinition.levels?.length || 0, [draftDefinition]);
   const resultQueries = useMemo(
     () => (result ? (result.final_queries?.length ? result.final_queries : [result.final_query]).filter(Boolean) : []),
     [result],
@@ -436,7 +452,7 @@ export function ManualSearchPage() {
 
       <div className="manual-layout">
         <div className="manual-editor-pane">
-          <section className="card">
+          <section className="card manual-section-card manual-section-card-hero">
             <ManualSectionHeader
               title="当前任务包"
               description="任务包是当前草稿的绑定对象，只展示任务包身份和草稿来源，不在这里直接编辑正文。"
@@ -457,7 +473,7 @@ export function ManualSearchPage() {
             </div>
           </section>
 
-          <section className="card">
+          <section className="card manual-section-card manual-section-card-muted">
             <ManualSectionHeader
               title="任务包操作"
               description="先决定当前草稿从哪里来，再决定是否保存成受管任务包。任务包操作不会替代右上角的执行主按钮。"
@@ -578,7 +594,7 @@ export function ManualSearchPage() {
             </div>
           </section>
 
-          <section className="card">
+          <section className="card manual-section-card">
             <ManualSectionHeader
               title="任务正文摘要"
               description="任务正文由搜索条件和规则组成，这里先给出当前草稿的查询摘要，再进入详细编辑。"
@@ -588,20 +604,48 @@ export function ManualSearchPage() {
                 </div>
               }
             />
-            <div className="collector-query-preview manual-body-preview">
-              <div className="collector-subtitle">查询摘要</div>
-              <code>{queryPreview}</code>
+            <div className="manual-body-overview">
+              <div className="collector-query-preview manual-body-preview">
+                <div className="collector-subtitle">查询摘要</div>
+                <code>{queryPreview}</code>
+              </div>
+              <div className="dashboard-detail-grid manual-body-detail-grid">
+                <div className="dashboard-detail-item">
+                  <span>关键词片段</span>
+                  <strong>{`${keywordCount} 项`}</strong>
+                </div>
+                <div className="dashboard-detail-item">
+                  <span>作者约束</span>
+                  <strong>{`${authorConstraintCount} 项`}</strong>
+                </div>
+                <div className="dashboard-detail-item">
+                  <span>规则条数</span>
+                  <strong>{`${ruleCount} 条`}</strong>
+                </div>
+                <div className="dashboard-detail-item">
+                  <span>等级数</span>
+                  <strong>{`${levelCount} 层`}</strong>
+                </div>
+                <div className="dashboard-detail-item dashboard-detail-item-wide">
+                  <span>规则名称</span>
+                  <strong>{draftRuleName || "--"}</strong>
+                </div>
+                <div className="dashboard-detail-item dashboard-detail-item-wide">
+                  <span>规则说明</span>
+                  <strong>{draftRuleDescription || "未填写规则说明"}</strong>
+                </div>
+              </div>
             </div>
           </section>
 
-          <section className="card">
+          <section className="card manual-section-card">
             <ManualSectionHeader title="搜索条件" description="这里定义这个任务要去搜什么。" />
             <div className="collector-panel">
               <SearchSpecEditor value={searchSpec} onChange={setSearchSpec} disabled={loading} />
             </div>
           </section>
 
-          <section className="card">
+          <section className="card manual-section-card">
             <ManualSectionHeader title="规则" description="这里定义原始结果如何筛选、打分和分级。" />
             <div className="collector-grid collector-grid-2" style={{ marginTop: 12, marginBottom: 12 }}>
               <label className="field">
@@ -673,9 +717,12 @@ export function ManualSearchPage() {
               <strong>{lastExecution.status === "idle" ? "--" : `${lastExecution.errorCount} 条`}</strong>
             </div>
           </div>
-          <button type="button" className="ghost manual-results-link" onClick={scrollToResults}>
-            查看执行结果
-          </button>
+          <div className="manual-rail-footer">
+            <div className="kv manual-rail-caption">完整执行输出会在下方全宽结果区展开，不会挤压右侧执行轨。</div>
+            <button type="button" className="ghost manual-results-link" onClick={scrollToResults}>
+              查看执行结果
+            </button>
+          </div>
         </aside>
       </div>
 

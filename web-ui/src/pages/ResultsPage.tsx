@@ -597,7 +597,12 @@ export function ResultsPage() {
       setItems(nextItems);
       setTotal(totalItems);
       setPage(currentPage);
-      setActiveRowId((current) => (current != null && nextItems.some((item) => item.id === current) ? current : null));
+      setActiveRowId((current) => {
+        if (current != null && nextItems.some((item) => item.id === current)) {
+          return current;
+        }
+        return nextItems[0]?.id ?? null;
+      });
       setSelectedIds((current) => {
         if (shouldClearSelection) {
           return [];

@@ -245,6 +245,22 @@ export function JobsPage() {
     [currentTaskPack],
   );
   const currentJobDraftComparable = useMemo(() => buildJobDraftComparable(form), [form]);
+  const taskKeywordCount = useMemo(
+    () =>
+      [
+        form.search_spec.all_keywords,
+        form.search_spec.exact_phrases,
+        form.search_spec.any_keywords,
+        form.search_spec.exclude_keywords,
+      ].reduce((total, items) => total + items.length, 0),
+    [form.search_spec],
+  );
+  const taskAuthorConstraintCount = useMemo(
+    () => form.search_spec.authors_include.length + form.search_spec.authors_exclude.length,
+    [form.search_spec],
+  );
+  const taskRuleCount = useMemo(() => form.rule_set.definition.rules?.length || 0, [form.rule_set.definition]);
+  const taskLevelCount = useMemo(() => form.rule_set.definition.levels?.length || 0, [form.rule_set.definition]);
   const taskPackDirty = useMemo(() => {
     if (!currentTaskPackComparable) return false;
     return JSON.stringify(currentTaskPackComparable) !== JSON.stringify(currentJobDraftComparable);
@@ -1004,12 +1020,12 @@ export function JobsPage() {
                           />
                         </td>
                         <td>
-                          <div className="job-name">{job.name}</div>
-                          <div className="kv">#{job.id}</div>
+                          <div className="job-name jobs-row-title">{job.name}</div>
+                          <div className="kv jobs-row-meta">#{job.id}</div>
                         </td>
                         <td>
-                          <div className="job-name">{job.pack_meta?.name || job.pack_name || "--"}</div>
-                          <div className="kv">{job.pack_name || "--"}</div>
+                          <div className="job-name jobs-row-title">{job.pack_meta?.name || job.pack_name || "--"}</div>
+                          <div className="kv jobs-row-meta">{job.pack_name || "--"}</div>
                         </td>
                         <td>{job.interval_minutes} {"分钟"}</td>
                         <td><span className={`badge ${job.deleted_at ? "b" : job.enabled ? "a" : ""}`}>{jobState(job)}</span></td>
@@ -1091,6 +1107,24 @@ export function JobsPage() {
                   <div className="jobs-current-task-meta">
                     <span>{`最近运行时间：${lastRunTimeLabel}`}</span>
                     {selectedJob?.deleted_at ? <span>{`删除时间：${formatUtcPlus8Time(selectedJob.deleted_at)}`}</span> : null}
+                  </div>
+                  <div className="collector-grid collector-grid-4 jobs-current-task-summary-grid">
+                    <div className="dashboard-detail-item">
+                      <span>{"工作区模式"}</span>
+                      <strong>{selectedJob ? "编辑已保存任务" : "新建任务草稿"}</strong>
+                    </div>
+                    <div className="dashboard-detail-item">
+                      <span>{"任务包绑定"}</span>
+                      <strong>{currentTaskPack?.pack_name || "未绑定"}</strong>
+                    </div>
+                    <div className="dashboard-detail-item">
+                      <span>{"最近运行状态"}</span>
+                      <strong>{lastRunLabel}</strong>
+                    </div>
+                    <div className="dashboard-detail-item">
+                      <span>{"最近运行时间"}</span>
+                      <strong>{lastRunTimeLabel}</strong>
+                    </div>
                   </div>
                 </div>
                 <div className="collector-grid collector-grid-2 jobs-current-task-form">
@@ -1204,8 +1238,37 @@ export function JobsPage() {
                   title="任务正文摘要"
                   description="这里先快速预览当前草稿会形成的搜索表达，再继续深入编辑搜索条件和规则。"
                 />
-                <div className="collector-query-preview jobs-pack-query-preview">
-                  <code>{buildQueryPreview(form.search_spec) || "--"}</code>
+                <div className="jobs-task-body-summary">
+                  <div className="collector-query-preview jobs-pack-query-preview">
+                    <div className="collector-subtitle">{"查询摘要"}</div>
+                    <code>{buildQueryPreview(form.search_spec) || "--"}</code>
+                  </div>
+                  <div className="dashboard-detail-grid jobs-task-body-grid">
+                    <div className="dashboard-detail-item">
+                      <span>{"关键词片段"}</span>
+                      <strong>{`${taskKeywordCount} 项`}</strong>
+                    </div>
+                    <div className="dashboard-detail-item">
+                      <span>{"作者约束"}</span>
+                      <strong>{`${taskAuthorConstraintCount} 项`}</strong>
+                    </div>
+                    <div className="dashboard-detail-item">
+                      <span>{"规则条数"}</span>
+                      <strong>{`${taskRuleCount} 条`}</strong>
+                    </div>
+                    <div className="dashboard-detail-item">
+                      <span>{"等级数"}</span>
+                      <strong>{`${taskLevelCount} 层`}</strong>
+                    </div>
+                    <div className="dashboard-detail-item dashboard-detail-item-wide">
+                      <span>{"规则名称"}</span>
+                      <strong>{form.rule_set.name || "--"}</strong>
+                    </div>
+                    <div className="dashboard-detail-item dashboard-detail-item-wide">
+                      <span>{"规则说明"}</span>
+                      <strong>{form.rule_set.description || "未填写规则说明"}</strong>
+                    </div>
+                  </div>
                 </div>
               </div>
 

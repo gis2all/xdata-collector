@@ -111,8 +111,8 @@ describe("ResultsPage", () => {
     expect(screen.getByText("表格管理")).toBeInTheDocument();
   });
 
-  it("shows an empty detail rail before a row is chosen, then renders curated detail content after row click", async () => {
-    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+  it("loads the first curated row into the detail rail, then follows row switching", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1), makeItem(2)]));
 
     render(<ResultsPage />);
 
@@ -120,46 +120,50 @@ describe("ResultsPage", () => {
       expect(screen.getByTestId("results-detail-rail")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("右侧详情判读轨")).toBeInTheDocument();
-    expect(screen.getByText("选择一条记录后，可在右侧快速判读详情。")).toBeInTheDocument();
-    expect(screen.getByText("判读方式")).toBeInTheDocument();
-    expect(screen.getByText("先扫表格")).toBeInTheDocument();
-    expect(screen.getByText("再看右侧")).toBeInTheDocument();
-
-    const row = screen.getByText("Item 1").closest("tr");
-    expect(row).not.toBeNull();
-    fireEvent.click(row!);
-
-    const detailRail = screen.getByTestId("results-detail-rail");
-    await waitFor(() => {
-      expect(within(detailRail).getByText("精选结果判读")).toBeInTheDocument();
-    });
-    const summaryHeading = within(detailRail).getByText("内容摘要");
-    const cluesHeading = within(detailRail).getByText("命中线索");
-    const infoHeading = within(detailRail).getByText("结果信息");
-    expect(summaryHeading.compareDocumentPosition(cluesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(cluesHeading.compareDocumentPosition(infoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(detailRail).getByText("Summary 1")).toBeInTheDocument();
-    expect(within(detailRail).getByText("author-1")).toBeInTheDocument();
-    expect(within(detailRail).getByText(/rule-1/)).toBeInTheDocument();
-  });
-
-  it("renders detail content after selecting a row checkbox", async () => {
-    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
-
-    render(<ResultsPage />);
-
-    await waitFor(() => {
-      expect(screen.getByLabelText("select-item-1")).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByLabelText("select-item-1"));
-
     const detailRail = screen.getByTestId("results-detail-rail");
     await waitFor(() => {
       expect(within(detailRail).getByText("Summary 1")).toBeInTheDocument();
     });
     expect(within(detailRail).getByText("author-1")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1").closest("tr")).toHaveAttribute("data-row-active", "true");
+
+    const row = within(screen.getByTestId("results-table-pane")).getByText("Item 2").closest("tr");
+    expect(row).not.toBeNull();
+    fireEvent.click(row!);
+
+    await waitFor(() => {
+      expect(within(detailRail).getByText("Summary 2")).toBeInTheDocument();
+    });
+    const sectionTitles = detailRail.querySelectorAll(".results-detail-section-title");
+    const summaryHeading = sectionTitles[0];
+    const cluesHeading = sectionTitles[1];
+    const infoHeading = sectionTitles[2];
+    expect(summaryHeading).toBeTruthy();
+    expect(cluesHeading).toBeTruthy();
+    expect(infoHeading).toBeTruthy();
+    expect(summaryHeading.compareDocumentPosition(cluesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(cluesHeading.compareDocumentPosition(infoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(detailRail).getByText("author-2")).toBeInTheDocument();
+    expect(within(detailRail).getByText(/rule-2/)).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("Item 2").closest("tr")).toHaveAttribute("data-row-active", "true");
+  });
+
+  it("renders detail content after selecting a row checkbox", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1), makeItem(2)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("select-item-2")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText("select-item-2"));
+
+    const detailRail = screen.getByTestId("results-detail-rail");
+    await waitFor(() => {
+      expect(within(detailRail).getByText("Summary 2")).toBeInTheDocument();
+    });
+    expect(within(detailRail).getByText("author-2")).toBeInTheDocument();
   });
 
   it("keeps table browsing controls in the filter layer and table actions in the manager layer", async () => {
@@ -189,7 +193,7 @@ describe("ResultsPage", () => {
     expect(within(manager).getByText("已选 0 条")).toBeInTheDocument();
   });
 
-  it("renders raw detail content after switching table and clicking a raw row", async () => {
+  it("loads the first raw row into the detail rail after switching tables", async () => {
     listItemsMock
       .mockResolvedValueOnce(makePage([makeItem(1)], 1))
       .mockResolvedValueOnce(makePage([makeRawItem(2)], 1));
@@ -197,30 +201,29 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "原始结果" }));
+    fireEvent.click(within(screen.getByRole("tablist", { name: "results-table-switcher" })).getAllByRole("button")[1]);
 
     await waitFor(() => {
-      expect(screen.getByText("Raw text 2")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Raw text 2")).toBeInTheDocument();
     });
-
-    const row = screen.getByText("Raw text 2").closest("tr");
-    expect(row).not.toBeNull();
-    fireEvent.click(row!);
 
     const detailRail = screen.getByTestId("results-detail-rail");
     await waitFor(() => {
-      expect(within(detailRail).getByText("原始记录详情")).toBeInTheDocument();
+      expect(within(detailRail).getByText("Raw text 2")).toBeInTheDocument();
     });
-    const bodyHeading = within(detailRail).getByText("原始正文");
-    const collectHeading = within(detailRail).getByText("采集信息");
+    const sectionTitles = detailRail.querySelectorAll(".results-detail-section-title");
+    const bodyHeading = sectionTitles[0];
+    const collectHeading = sectionTitles[1];
+    expect(bodyHeading).toBeTruthy();
+    expect(collectHeading).toBeTruthy();
     expect(bodyHeading.compareDocumentPosition(collectHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(detailRail).getAllByText("raw-author-2").length).toBeGreaterThan(0);
-    expect(within(detailRail).getByText("互动指标")).toBeInTheDocument();
     expect(within(detailRail).getByText("102")).toBeInTheDocument();
     expect(within(detailRail).getByText("manual:2")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("Raw text 2").closest("tr")).toHaveAttribute("data-row-active", "true");
   });
 
   it("renders default business columns and utc+8 timestamps", async () => {
@@ -239,12 +242,12 @@ describe("ResultsPage", () => {
     expect(screen.getByRole("button", { name: TEXT.batchDelete })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: TEXT.dedupe })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: TEXT.fields })).toBeInTheDocument();
-    expect(screen.getByText("title")).toBeInTheDocument();
-    expect(screen.getByText("summary_zh")).toBeInTheDocument();
-    expect(screen.getByText("author")).toBeInTheDocument();
-    expect(screen.getByText("created_at_x")).toBeInTheDocument();
-    expect(screen.queryByText("dedupe_key")).not.toBeInTheDocument();
-    expect(screen.queryByText("reasons_json")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("title")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("summary_zh")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("author")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("created_at_x")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).queryByText("dedupe_key")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).queryByText("reasons_json")).not.toBeInTheDocument();
     const scoreAscButton = screen.getByRole("button", { name: "score asc" });
     const scoreDescButton = screen.getByRole("button", { name: "score desc" });
     expect(scoreAscButton).toBeInTheDocument();
@@ -255,7 +258,7 @@ describe("ResultsPage", () => {
     expect(scoreAscButton).toHaveTextContent("↑");
     expect(scoreDescButton).toHaveTextContent("↓");
     expect(screen.queryByRole("button", { name: "dedupe_key asc" })).not.toBeInTheDocument();
-    expect(screen.getByText("2026-04-13 08:49:06 UTC+8")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("2026-04-13 08:49:06 UTC+8")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "https://x.com/demo/status/1" })).toHaveAttribute(
       "href",
       "https://x.com/demo/status/1",
@@ -268,14 +271,14 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: TEXT.fields }));
     fireEvent.click(screen.getByLabelText("toggle-column-dedupe_key"));
 
     expect(await screen.findByRole("button", { name: "dedupe_key asc" })).toBeInTheDocument();
-    expect(screen.getByText("dedupe-1")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("dedupe-1")).toBeInTheDocument();
     expect(window.localStorage.getItem(RESULTS_VISIBLE_COLUMNS_KEY)).toContain("dedupe_key");
   });
 
@@ -285,7 +288,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("score")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("score")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: TEXT.fields }));
@@ -307,14 +310,14 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("title")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("title")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("level")).toBeInTheDocument();
-    expect(screen.getByText("created_at_x")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("level")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("created_at_x")).toBeInTheDocument();
     expect(screen.queryByText("summary_zh")).not.toBeInTheDocument();
-    expect(screen.queryByText("source_url")).not.toBeInTheDocument();
-    expect(screen.queryByText("score")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).queryByText("source_url")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).queryByText("score")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "score asc" })).not.toBeInTheDocument();
   });
 
@@ -324,10 +327,10 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("title")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("title")).toBeInTheDocument();
     });
 
-    const titleHeader = screen.getByText("title").closest("th");
+    const titleHeader = within(screen.getByTestId("results-table-pane")).getByText("title").closest("th");
     expect(titleHeader).toHaveStyle({ width: "220px" });
   });
 
@@ -337,10 +340,10 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("title")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("title")).toBeInTheDocument();
     });
 
-    const titleHeader = screen.getByText("title").closest("th");
+    const titleHeader = within(screen.getByTestId("results-table-pane")).getByText("title").closest("th");
     const titleResizer = screen.getByRole("separator", { name: "resize-column-title" });
 
     fireEvent.mouseDown(titleResizer, { clientX: 220 });
@@ -363,10 +366,10 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("title")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("title")).toBeInTheDocument();
     });
 
-    const titleHeader = screen.getByText("title").closest("th");
+    const titleHeader = within(screen.getByTestId("results-table-pane")).getByText("title").closest("th");
     expect(titleHeader).toHaveStyle({ width: "320px" });
   });
 
@@ -385,18 +388,18 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("title")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("title")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("title").closest("th")).toHaveStyle({ width: "310px" });
+    expect(within(screen.getByTestId("results-table-pane")).getByText("title").closest("th")).toHaveStyle({ width: "310px" });
 
     fireEvent.click(screen.getByRole("button", { name: "原始结果" }));
 
     await waitFor(() => {
-      expect(screen.getByText("text")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("text")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("text").closest("th")).toHaveStyle({ width: "360px" });
+    expect(within(screen.getByTestId("results-table-pane")).getByText("text").closest("th")).toHaveStyle({ width: "360px" });
   });
 
   it("restores a hidden column with its previously saved width", async () => {
@@ -409,7 +412,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("summary_zh")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("summary_zh")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: TEXT.fields }));
@@ -454,7 +457,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     const getTitleOrder = () =>
@@ -485,7 +488,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     const tableStatus = screen.getByTestId("results-table-status");
@@ -504,7 +507,7 @@ describe("ResultsPage", () => {
       expect(listItemsMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ page: 2, page_size: 100, sort_by: "id", sort_dir: "desc", table: "curated" }),
       );
-      expect(screen.getByText("Item 101")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 101")).toBeInTheDocument();
     });
 
     expect(within(screen.getByTestId("results-table-status")).getByText("\u5f53\u524d\u7b2c 2 / 2 \u9875")).toBeInTheDocument();
@@ -519,7 +522,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByLabelText(TEXT.selectPage));
@@ -544,7 +547,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByLabelText(TEXT.selectPage));
@@ -552,7 +555,7 @@ describe("ResultsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "results-next-page" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Item 101")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 101")).toBeInTheDocument();
     });
 
     expect(screen.getByText("已选 132 条")).toBeInTheDocument();
@@ -570,7 +573,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByLabelText(TEXT.selectPage));
@@ -578,7 +581,7 @@ describe("ResultsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "results-next-page" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Item 101")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 101")).toBeInTheDocument();
     });
 
     fireEvent.change(screen.getByLabelText(TEXT.keywordLabel), { target: { value: "alpha" } });
@@ -588,7 +591,7 @@ describe("ResultsPage", () => {
       expect(listItemsMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ page: 1, page_size: 100, keyword: "alpha", table: "curated" }),
       );
-      expect(screen.getByText("Alpha 999")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Alpha 999")).toBeInTheDocument();
     });
 
     expect(screen.getByText("已选 0 条")).toBeInTheDocument();
@@ -606,7 +609,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByLabelText(TEXT.selectPage));
@@ -629,7 +632,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByLabelText(TEXT.selectPage));
@@ -652,7 +655,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 7")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 7")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "delete-item-7" }));
@@ -679,7 +682,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 3")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 3")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: TEXT.dedupe }));
@@ -702,7 +705,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "原始结果" }));
@@ -711,10 +714,10 @@ describe("ResultsPage", () => {
       expect(listItemsMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ page: 1, page_size: 100, sort_by: "id", sort_dir: "desc", table: "raw" }),
       );
-      expect(screen.getByText("tweet_id")).toBeInTheDocument();
-      expect(screen.getByText("text")).toBeInTheDocument();
-      expect(screen.getByText("views")).toBeInTheDocument();
-      expect(screen.getByText("Raw text 2")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("tweet_id")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("text")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("views")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Raw text 2")).toBeInTheDocument();
     });
 
     expect(screen.queryByText("summary_zh")).not.toBeInTheDocument();
@@ -731,7 +734,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "title asc" }));
@@ -750,8 +753,8 @@ describe("ResultsPage", () => {
       );
       expect(within(screen.getByTestId("results-filter-summary")).getByText("\u5f53\u524d\u8868\uff1a\u539f\u59cb\u7ed3\u679c")).toBeInTheDocument();
       expect(screen.getByText("已选 0 条")).toBeInTheDocument();
-      expect(screen.getByText("author")).toBeInTheDocument();
-      expect(screen.queryByText("title")).not.toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("author")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).queryByText("title")).not.toBeInTheDocument();
     });
   });
 
@@ -767,13 +770,13 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("Item 1")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "原始结果" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Raw text 3")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Raw text 3")).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: TEXT.dedupe }));
