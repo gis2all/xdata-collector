@@ -267,7 +267,7 @@ export function JobsPage() {
   }, [currentTaskPackComparable, currentJobDraftComparable]);
   const manageSelectionSummary = selectedCount > 0
     ? `当前已选 ${selectedCount} 项，可继续清空选择或直接执行批量操作。`
-    : "先在表格中勾选任务，再选择全部匹配结果或执行批量操作。";
+    : "先在表格中勾选任务，再执行批量操作。";
   const currentRuleSetPreview = useMemo<RuleSet | null>(
     () => ({
       id: Number(form.rule_set.id ?? 0) || 0,
@@ -923,7 +923,7 @@ export function JobsPage() {
       <section className="card jobs-page-header workbench-page-header">
         <div className="workbench-page-header-copy">
           <h3>{"自动任务"}</h3>
-          <p className="kv">{"自动任务负责调度；任务正文来自当前绑定任务包，包含搜索条件和规则。"}</p>
+          <p className="kv">{"自动任务负责调度，任务正文来自当前绑定任务包。"}</p>
         </div>
         <div className="jobs-page-header-actions workbench-page-header-actions">
           <button type="button" className="workbench-primary-action" data-testid="create-job-button" onClick={openCreate}>{"新建任务"}</button>
@@ -947,7 +947,7 @@ export function JobsPage() {
               <div className="jobs-list-tools-copy workbench-section-copy">
                 <div className="workbench-section-eyebrow">任务列表</div>
                 <div className="workbench-section-title jobs-list-tools-title">筛选与批量管理</div>
-                <div className="kv">先按名称和状态收口列表，再进入表格管理层完成全选、清空选择和批量操作。</div>
+                <div className="kv">先筛选列表，再在表格里批量操作。</div>
               </div>
               <div className="jobs-list-tools-pills workbench-pill-row">
                 <span className="jobs-summary-pill workbench-pill">{`当前范围：${manageScopeLabel}`}</span>
@@ -1215,7 +1215,7 @@ export function JobsPage() {
               <div className="drawer-section workbench-layer">
                 <JobsSectionHeader
                   title="任务包操作"
-                  description="先把任务包载入到当前草稿，再决定另存为新任务包、保存回当前任务包，或删除当前任务包。"
+                  description="载入、导入或保存当前任务包。"
                 />
                 <div className="jobs-pack-context-hint workbench-subsurface workbench-subsurface-muted" data-testid="jobs-pack-context-hint">
                   <div className="workbench-pill-row">
@@ -1227,7 +1227,7 @@ export function JobsPage() {
                 <div className="collector-grid collector-grid-2 jobs-pack-manager-grid jobs-pack-actions-grid">
                   <div className="collector-card">
                     <div className="collector-subtitle">{"载入到当前草稿"}</div>
-                    <div className="kv" style={{ marginTop: 6 }}>{"可以从任务包列表载入，也可以直接从本地 JSON 文件导入。"}</div>
+                    <div className="kv" style={{ marginTop: 6 }}>{"可从任务包列表载入，或从本地 JSON 导入。"}</div>
                     <div className="collector-toolbar" style={{ marginTop: 12, flexWrap: "wrap" }}>
                       <select aria-label="job-pack-select" value={form.import_pack_name} onChange={(e) => updateForm("import_pack_name", e.target.value)} disabled={drawerDisabled}>
                         <option value="">{"选择任务包"}</option>
@@ -1275,12 +1275,12 @@ export function JobsPage() {
                         }}
                       />
                     </div>
-                    <div className="kv jobs-pack-note">{"从文件导入：只替换当前草稿，不会创建任务包。"}</div>
-                    <div className="kv jobs-pack-note">{"导入并保存为新任务包：会先导入文件，再立刻保存成新的本地任务包并绑定。"}</div>
+                    <div className="kv jobs-pack-note">{"从文件导入只替换当前草稿。"}</div>
+                    <div className="kv jobs-pack-note">{"导入并保存会新建并绑定任务包。"}</div>
                   </div>
                   <div className="collector-card">
                     <div className="collector-subtitle">{"保存当前草稿"}</div>
-                    <div className="kv" style={{ marginTop: 6 }}>{"把当前草稿另存为新任务包，或保存回当前绑定任务包。"}</div>
+                    <div className="kv" style={{ marginTop: 6 }}>{"可另存为新任务包，或保存回当前任务包。"}</div>
                     <div className="collector-toolbar" style={{ marginTop: 12, flexWrap: "wrap" }}>
                       <button
                         type="button"
@@ -1429,8 +1429,8 @@ export function JobsPage() {
               <div className="jobs-empty-hero workbench-summary-panel">
                 <div>
                   <div className="jobs-empty-eyebrow">{"任务工作区"}</div>
-                  <h4>{"先从一个任务开始"}</h4>
-                  <p>{"左侧负责收口任务列表并打开任务，右侧工作区负责绑定任务包、编辑搜索条件与规则，并完成保存或立即运行。"}</p>
+                  <h4>{"选择或新建任务"}</h4>
+                  <p>{"从左侧选择任务，或新建后继续编辑调度、搜索条件和规则。"}</p>
                 </div>
                 <div className="workbench-pill-row">
                   <span className="jobs-summary-pill workbench-pill">{`可用任务包：${taskPacks.length}`}</span>
@@ -1449,29 +1449,6 @@ export function JobsPage() {
                 </div>
               </div>
 
-              <div className="collector-grid jobs-empty-grid workbench-summary-grid">
-                <div className="dashboard-detail-item">
-                  <span>{"1. 打开或新建任务"}</span>
-                  <strong>{"从左侧选择已有任务，或直接创建新的调度任务草稿。"}</strong>
-                </div>
-                <div className="dashboard-detail-item">
-                  <span>{"2. 绑定任务包"}</span>
-                  <strong>{"载入已有任务包，或从本地 JSON 导入到当前草稿后继续编辑。"}</strong>
-                </div>
-                <div className="dashboard-detail-item">
-                  <span>{"3. 完成编辑并保存"}</span>
-                  <strong>{"确认调度、搜索条件和规则后保存任务，必要时直接立即运行。"}</strong>
-                </div>
-              </div>
-
-              <div className="jobs-empty-guide">
-                <div className="jobs-empty-guide-title">{"这个工作区会承接的操作"}</div>
-                <ul className="jobs-empty-guide-list">
-                  <li>{"载入任务包、从文件导入、导入并保存为新任务包"}</li>
-                  <li>{"编辑调度设置、任务正文摘要、搜索条件和规则"}</li>
-                  <li>{"保存任务、立即运行、启停任务和批量操作"}</li>
-                </ul>
-              </div>
             </div>
           )}
         </aside>

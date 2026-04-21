@@ -435,7 +435,7 @@ export function ManualSearchPage() {
       <header className="card collector-hero manual-page-header workbench-page-header" data-testid="manual-page-header">
         <div className="manual-page-header-copy workbench-page-header-copy">
           <h3>手动执行任务</h3>
-          <p className="kv">当前页面编辑的是任务草稿。你可以直接执行草稿，不需要先保存为任务包。</p>
+          <p className="kv">当前页面编辑的是任务草稿，可直接执行，不需要先保存为任务包。</p>
         </div>
         <div className="manual-page-header-actions workbench-page-header-actions">
           <button type="button" className="workbench-primary-action" onClick={onRun} data-testid="manual-run-button" disabled={loading}>
@@ -456,7 +456,7 @@ export function ManualSearchPage() {
           <section className="card manual-section-card manual-section-card-muted workbench-layer">
             <ManualSectionHeader
               title="任务包操作"
-              description="先决定当前草稿从哪里来，再决定是否保存成受管任务包。任务包操作不会替代右上角的执行主按钮。"
+              description="先确定草稿来源，再决定是否保存为任务包。"
               aside={
                 <div className="collector-toolbar">
                   <button
@@ -496,9 +496,7 @@ export function ManualSearchPage() {
                     <div className="collector-subtitle">载入到当前草稿</div>
                   </div>
                 </div>
-                <div className="kv manual-pack-note">
-                  可以从任务包列表载入，也可以直接从本地 JSON 文件导入到当前草稿。
-                </div>
+                <div className="kv manual-pack-note">可从任务包列表载入，或从本地 JSON 导入。</div>
                 <div className="manual-action-group">
                   <div className="manual-action-group-label">载入已有任务包</div>
                   <div className="collector-toolbar manual-pack-toolbar manual-action-toolbar">
@@ -564,10 +562,8 @@ export function ManualSearchPage() {
                       }}
                     />
                   </div>
-                  <div className="kv manual-pack-note">从文件导入：只替换当前草稿，不会创建任务包。</div>
-                  <div className="kv manual-pack-note">
-                    导入并保存为新任务包：会先导入文件，再立刻保存成新的本地任务包并绑定。
-                  </div>
+                  <div className="kv manual-pack-note">从文件导入只替换当前草稿。</div>
+                  <div className="kv manual-pack-note">导入并保存会新建并绑定任务包。</div>
                 </div>
               </div>
               <div className="collector-card manual-action-card" data-testid="manual-pack-save-card">
@@ -577,9 +573,7 @@ export function ManualSearchPage() {
                     <div className="collector-subtitle">保存当前草稿</div>
                   </div>
                 </div>
-                <div className="kv manual-pack-note">
-                  把当前草稿另存为新任务包，或保存回当前绑定任务包。
-                </div>
+                <div className="kv manual-pack-note">可另存为新任务包，或保存回当前任务包。</div>
                 <div className="manual-action-group">
                   <div className="manual-action-group-label">创建或覆盖</div>
                   <div className="collector-toolbar manual-pack-toolbar manual-action-toolbar">
@@ -605,7 +599,7 @@ export function ManualSearchPage() {
                 </div>
                 <div className="manual-action-group manual-action-group-danger">
                   <div className="manual-action-group-label">删除当前绑定任务包</div>
-                  <div className="kv manual-pack-note">默认任务包和仍被自动任务引用的任务包不会在这里被直接删除。</div>
+                  <div className="kv manual-pack-note">默认任务包和仍被引用的任务包不能在此删除。</div>
                   <div className="collector-toolbar manual-pack-toolbar manual-action-toolbar">
                     <button
                       type="button"
@@ -730,8 +724,8 @@ export function ManualSearchPage() {
 
         <aside className="card manual-execution-rail workbench-layer" data-testid="manual-execution-rail">
           <ManualSectionHeader
-            title="执行上下文"
-            description="这里只展示当前草稿状态和最近一次主动执行的摘要，不承载第二套主操作。"
+            title="执行摘要"
+            description="这里只展示草稿状态和最近一次执行结果。"
           />
           <div className="manual-rail-hero workbench-summary-panel">
             <div className="manual-rail-pills workbench-pill-row">
@@ -743,8 +737,8 @@ export function ManualSearchPage() {
               {lastExecution.status === "idle"
                 ? "尚未执行"
                 : lastExecution.status === "failed"
-                  ? lastExecution.errorText || "最近一次执行失败，请检查任务正文后重试。"
-                  : "最近一次执行已完成，可继续查看下方完整结果。"}
+                  ? lastExecution.errorText || "最近执行失败，请检查任务正文后重试。"
+                  : "最近执行完成，可查看下方结果。"}
             </div>
           </div>
           <div className="collector-grid collector-grid-2 manual-rail-grid workbench-summary-grid">
@@ -955,8 +949,8 @@ export function ManualSearchPage() {
             <strong>{lastExecution.status === "failed" ? "最近一次执行失败" : "等待执行"}</strong>
             <p className="kv">
               {lastExecution.status === "failed"
-                ? lastExecution.errorText || "最近一次执行失败，请修正任务正文后重试。"
-                : "点击顶部“立即执行任务”后，这里会展示 final_queries、原始结果和命中结果。"}
+                ? lastExecution.errorText || "最近执行失败，请修正任务正文后重试。"
+                : "执行后，这里会展示最终查询、原始结果和命中结果。"}
             </p>
           </div>
         )}

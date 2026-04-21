@@ -18,10 +18,10 @@ const TEXT = {
   runsTitle: "采集运行日志",
   runDetail: "运行详情",
   noRuns: "暂无采集运行记录",
-  noLogContent: "当前无日志内容",
+  noLogContent: "暂无内容",
   refresh: "刷新",
   runtimeSnapshot: "服务快照",
-  runWorkbench: "运行判读区",
+  runWorkbench: "当前运行",
 } as const;
 
 describe("LogsPage", () => {
@@ -80,7 +80,7 @@ describe("LogsPage", () => {
     expect(screen.getByTestId("logs-runs-manager")).toHaveClass("workbench-summary-panel");
     expect(within(screen.getByTestId("logs-runtime-section")).getByText(TEXT.runtimeSnapshot)).toBeInTheDocument();
     expect(within(screen.getByTestId("logs-run-rail")).getByText(TEXT.runWorkbench)).toBeInTheDocument();
-    expect(screen.getByText(/读取失败/).closest(".logs-file-state")).toHaveClass("logs-file-state-error");
+    expect(screen.getByText("读取失败：read failed").closest(".logs-file-state")).toHaveClass("logs-file-state-error");
     expect(screen.getByText("boom")).toBeInTheDocument();
     expect(screen.getByText("api.current.out.log")).toBeInTheDocument();
     expect(screen.getByText("ready!")).toBeInTheDocument();
@@ -148,7 +148,7 @@ describe("LogsPage", () => {
     expect(screen.queryByTestId("logs-run-rail")).not.toBeInTheDocument();
     const apiGroup = screen.getByRole("heading", { name: "API" }).closest(".logs-service-group");
     expect(apiGroup).not.toBeNull();
-    expect(within(apiGroup as HTMLElement).getByText(TEXT.noLogContent).closest(".logs-file-state")).toHaveClass("logs-file-state-empty");
+    expect(within(apiGroup as HTMLElement).getByText("稍后刷新再看。").closest(".logs-file-state")).toHaveClass("logs-file-state-empty");
     expect(screen.getAllByText(TEXT.noLogContent).length).toBeGreaterThanOrEqual(3);
   });
 

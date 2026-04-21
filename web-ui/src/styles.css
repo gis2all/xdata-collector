@@ -1095,7 +1095,7 @@ textarea::placeholder {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  min-height: min(720px, calc(100vh - 160px));
+  min-height: 0;
   padding: 18px;
   border-style: solid;
   border-color: #e2e8f0;
@@ -1531,6 +1531,7 @@ textarea::placeholder {
 }
 .manual-results-link { align-self: flex-start; }
 .manual-results-section { display: flex; flex-direction: column; gap: 16px; }
+.manual-results-section .manual-section-description { white-space: nowrap; }
 .manual-results-hero {
   display: flex;
   justify-content: space-between;
@@ -1712,10 +1713,16 @@ textarea::placeholder {
 .logs-runs-list { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 .logs-runs-manager {
   display: flex;
+  flex-direction: row;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-start;
+  overflow-x: auto;
+}
+.logs-runs-manager .workbench-pill {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .logs-table-wrap { min-width: 0; overflow-x: auto; }
 .logs-table th,
@@ -1794,7 +1801,7 @@ textarea::placeholder {
 
 .settings-page-header-copy { min-width: 0; }
 .settings-page-header-copy h3 { margin: 0 0 8px; font-size: 28px; line-height: 1.15; }
-.settings-page-header-copy .kv { max-width: 64ch; line-height: 1.55; }
+.settings-page-header-copy .kv { max-width: 64ch; line-height: 1.55; white-space: nowrap; }
 .settings-page-header-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
 
 .settings-summary,
@@ -1823,6 +1830,7 @@ textarea::placeholder {
 .settings-section-copy { min-width: 0; }
 .settings-section-copy h4 { margin: 6px 0 8px; font-size: 22px; line-height: 1.2; color: #0f172a; }
 .settings-section-copy .kv { max-width: 60ch; line-height: 1.55; }
+.settings-actions .settings-section-copy .kv { white-space: nowrap; }
 .settings-section-eyebrow {
   font-size: 12px;
   font-weight: 700;

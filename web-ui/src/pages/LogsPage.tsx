@@ -17,14 +17,14 @@ const UI_TEXT = {
   loadError: "日志加载失败",
   runtimeSnapshot: "服务快照",
   runtimeTitle: "服务进程日志",
-  runtimeHint: "来自 runtime/logs 下的 current 文件，按 API、Scheduler 和 Web UI 分组展示。",
-  runtimeNoSnapshot: "当前暂无可用日志快照",
-  runsWorkbench: "运行工作台",
+  runtimeHint: "展示 runtime/logs/current 下的 API、Scheduler 和 Web UI 日志。",
+  runtimeNoSnapshot: "暂无快照",
+  runsWorkbench: "运行记录",
   runsTitle: "采集运行日志",
-  runsHint: "来自 runtime/history/search_runs.jsonl，左侧浏览最近记录，右侧集中判读当前选中运行。",
+  runsHint: "来自 runtime/history/search_runs.jsonl，左侧浏览记录，右侧查看当前运行详情。",
   noRuns: "暂无采集运行记录",
-  runWorkbench: "运行判读区",
-  runWorkbenchHint: "集中查看当前选中运行的触发方式、统计摘要和错误内容。",
+  runWorkbench: "当前运行",
+  runWorkbenchHint: "集中查看当前运行的触发方式、统计摘要和错误内容。",
   runDetail: "运行详情",
   triggerType: "触发方式",
   status: "状态",
@@ -36,7 +36,7 @@ const UI_TEXT = {
   noError: "无错误",
   selectRun: "请选择一条运行记录",
   readError: "读取失败：",
-  noLogContent: "当前无日志内容",
+  noLogContent: "暂无内容",
   groups: "服务分组",
   contentReady: "已有内容",
   readErrors: "读取异常",
@@ -91,7 +91,7 @@ function renderLogFileState(error: string | undefined, content: string | undefin
   if (error) {
     return (
       <div className="logs-file-state logs-file-state-error">
-        <div className="logs-file-state-eyebrow">读取反馈</div>
+        <div className="logs-file-state-eyebrow">读取失败</div>
         <strong>{`${UI_TEXT.readError}${error}`}</strong>
         <p>当前文件未能正常读取，可先查看同组其他日志或直接刷新重试。</p>
       </div>
@@ -106,7 +106,7 @@ function renderLogFileState(error: string | undefined, content: string | undefin
     <div className="logs-file-state logs-file-state-empty">
       <div className="logs-file-state-eyebrow">当前状态</div>
       <strong>{UI_TEXT.noLogContent}</strong>
-      <p>该文件已接入当前卡片，但此刻还没有可展示的新内容。</p>
+      <p>稍后刷新再看。</p>
     </div>
   );
 }
@@ -210,7 +210,7 @@ export function LogsPage() {
                 <div className="logs-service-group-hero">
                   <div className="logs-service-group-copy">
                     <h5>{group.label}</h5>
-                    <p className="kv">{latest ? `最近更新：${formatUtcPlus8Time(latest)}` : UI_TEXT.runtimeNoSnapshot}</p>
+                    <p className="kv">{latest ? `更新：${formatUtcPlus8Time(latest)}` : UI_TEXT.runtimeNoSnapshot}</p>
                   </div>
                   <span className={`dashboard-summary-pill workbench-pill ${tone}`}>{serviceGroupStatus(files)}</span>
                 </div>
@@ -222,7 +222,7 @@ export function LogsPage() {
                         <div>
                           <strong>{file.name}</strong>
                           <div className="kv">
-                            {logKind(file.name)} / {file.size} bytes / {formatUtcPlus8Time(file.updated_at)}
+                            {`${logKind(file.name)} · ${file.size} bytes · ${formatUtcPlus8Time(file.updated_at)}`}
                           </div>
                         </div>
                       </div>

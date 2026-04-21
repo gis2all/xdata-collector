@@ -247,14 +247,13 @@ describe("JobsPage", () => {
 
     const emptyWorkspace = screen.getByTestId("jobs-empty-workspace");
     expect(emptyWorkspace).toBeInTheDocument();
-    expect(within(emptyWorkspace).getByText("先从一个任务开始")).toBeInTheDocument();
-    expect(within(emptyWorkspace).getByText("这个工作区会承接的操作")).toBeInTheDocument();
+    expect(within(emptyWorkspace).getByText("选择或新建任务")).toBeInTheDocument();
+    expect(within(emptyWorkspace).getByText("从左侧选择任务，或新建后继续编辑调度、搜索条件和规则。")).toBeInTheDocument();
     expect(within(emptyWorkspace).getByRole("button", { name: "新建任务" })).toBeInTheDocument();
     expect(within(emptyWorkspace).getByRole("button", { name: "刷新列表" })).toBeInTheDocument();
     expect(within(emptyWorkspace).getByTestId("jobs-refresh-empty")).toHaveClass("workbench-secondary-action");
-    expect(within(emptyWorkspace).getByText("1. 打开或新建任务")).toBeInTheDocument();
-    expect(within(emptyWorkspace).getByText("2. 绑定任务包")).toBeInTheDocument();
-    expect(within(emptyWorkspace).getByText("3. 完成编辑并保存")).toBeInTheDocument();
+    expect(within(emptyWorkspace).queryByText("1. 打开或新建任务")).not.toBeInTheDocument();
+    expect(within(emptyWorkspace).queryByText("这个工作区会承接的操作")).not.toBeInTheDocument();
   });
 
   it("renders the reorganized editable workspace structure after loading a task pack", async () => {
@@ -316,7 +315,7 @@ describe("JobsPage", () => {
     expect(screen.getByLabelText("job-import-and-save-pack")).toHaveClass("workbench-secondary-action");
     expect(screen.getByLabelText("job-save-as-pack")).toHaveClass("workbench-secondary-action");
     expect(screen.getByText(/只替换当前草稿/)).toBeInTheDocument();
-    expect(screen.getByText(/会先导入文件，再立刻保存成新的本地任务包并绑定/)).toBeInTheDocument();
+    expect(screen.getByText(/导入并保存会新建并绑定任务包/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("submit-job"));
 
@@ -339,7 +338,7 @@ describe("JobsPage", () => {
     });
 
     expect(screen.getByRole("heading", { name: "自动任务" })).toBeInTheDocument();
-    expect(screen.getByText("自动任务负责调度；任务正文来自当前绑定任务包，包含搜索条件和规则。")).toBeInTheDocument();
+    expect(screen.getByText("自动任务负责调度，任务正文来自当前绑定任务包。")).toBeInTheDocument();
     expect(screen.getByTestId("create-job-button")).toBeInTheDocument();
     const listToolsSummary = screen.getByTestId("jobs-list-tools-summary");
     expect(listToolsSummary).toBeInTheDocument();
@@ -353,7 +352,7 @@ describe("JobsPage", () => {
     expect(screen.getByRole("button", { name: "批量删除" })).toHaveClass("workbench-danger-action");
     expect(within(listToolsSummary).getByText("\u5171 0 \u9879\u4efb\u52a1")).toBeInTheDocument();
     expect(within(listToolsSummary).getByText("\u5f53\u524d\u8303\u56f4\uff1a\u542f\u7528\u4e2d")).toBeInTheDocument();
-    expect(within(manageBar).getByText("\u5148\u5728\u8868\u683c\u4e2d\u52fe\u9009\u4efb\u52a1\uff0c\u518d\u9009\u62e9\u5168\u90e8\u5339\u914d\u7ed3\u679c\u6216\u6267\u884c\u6279\u91cf\u64cd\u4f5c\u3002")).toBeInTheDocument();
+    expect(within(manageBar).getByText("\u5148\u5728\u8868\u683c\u4e2d\u52fe\u9009\u4efb\u52a1\uff0c\u518d\u6267\u884c\u6279\u91cf\u64cd\u4f5c\u3002")).toBeInTheDocument();
   });
 
   it("shows a top save button for create mode and keeps the footer save button", async () => {

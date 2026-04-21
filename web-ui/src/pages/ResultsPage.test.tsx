@@ -190,7 +190,7 @@ describe("ResultsPage", () => {
 
     expect(within(detailRail).getByText("\u5f53\u524d\u8868\u6682\u65e0\u8bb0\u5f55")).toBeInTheDocument();
     expect(within(detailRail).queryByTestId("results-detail-context-grid")).not.toBeInTheDocument();
-    expect(within(detailRail).getByText("\u4e0b\u4e00\u6b65\u5efa\u8bae")).toBeInTheDocument();
+    expect(within(detailRail).queryByText("\u4e0b\u4e00\u6b65\u5efa\u8bae")).not.toBeInTheDocument();
   });
 
   it("renders detail content after selecting a row checkbox", async () => {
