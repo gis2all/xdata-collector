@@ -7,6 +7,10 @@ describe("formatUtcPlus8Time", () => {
     expect(formatUtcPlus8Time("2026-04-13T00:49:06.123456+00:00")).toBe("2026-04-13 08:49:06 UTC+8");
   });
 
+  it("converts x native timestamps to utc+8 with second precision", () => {
+    expect(formatUtcPlus8Time("Wed Apr 22 15:00:56 +0000 2026")).toBe("2026-04-22 23:00:56 UTC+8");
+  });
+
   it("returns the provided fallback for empty values", () => {
     expect(formatUtcPlus8Time(undefined, "PENDING")).toBe("PENDING");
     expect(formatUtcPlus8Time("", "PENDING")).toBe("PENDING");
