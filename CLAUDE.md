@@ -25,7 +25,7 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 
 - `web-ui/`：前端单页工作台
 - `backend/`：核心业务编排、规则系统、X 搜索适配与存储
-- `run/`：运行入口和开发主链路总控
+- `run/`：底层运行脚本目录
 - `config/`：通用基线配置 + 本地动态配置
 - `runtime/`：运行态文件、快照、日志、PID 与临时产物
 - `data/`：正式只保留 `app.db` 和 `data/README.md`
@@ -36,13 +36,12 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 - Dev UI：`127.0.0.1:5177`
 - Static UI：`127.0.0.1:5178`
 - Scheduler：无端口，默认 `tick-seconds=30`
-- `run/services.py` 默认只管理 API、Scheduler、Dev UI，不包含 `run/static_web_server.py`
+- `services.py` 默认只管理 API、Scheduler、Dev UI，不包含 `run/static_web_server.py`
 
 ### 4. X 认证依赖
 
 - `TWITTER_AUTH_TOKEN`
 - `TWITTER_CT0`
-- `TWITTER_BROWSER` 和 `TWITTER_CHROME_PROFILE` 只是辅助提示，不能代替 cookie
 
 ## 配置与存储模型
 
@@ -109,10 +108,11 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 
 ## 核心架构
 
-### `run/` 层
+### 入口层
 
-- `run/bootstrap.py`：本机依赖准备
-- `run/services.py`：开发主链路总控
+- `install.py`：推荐首次安装入口
+- `services.py`：开发主链路总控
+- `run/bootstrap.py`：底层依赖准备
 - `run/api.py`：HTTP API 门面
 - `run/scheduler.py`：固定 tick 调度器
 - `run/static_web_server.py`：构建产物预览
@@ -209,12 +209,12 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 
 - 当前端设计、样式调整、页面布局重构或组件视觉变更发生时，优先遵循根目录 `DESIGN.md`；如果当前实现已经改变了页面真相，应在同一轮同步更新 `DESIGN.md`，避免规范继续落后。
 - 如果 `DESIGN.md` 与现有实现临时冲突，先保证信息清晰、操作顺手和工作台效率，再把规范补齐到当前真相。
-- 文档、路径、启动命令默认以 `run/` 下主入口为准
+- 文档、路径、启动命令默认以根目录 `install.py` / `services.py` 为准
 - 临时 spec / plan / design 文档统一落在 `artifacts/design/{specs,plans}`；根目录 `docs/` 不再作为方案文档入口
 - 不要把 `workspace.json` 重新做成“搜索草稿 + presets + rule sets + jobs 全内联快照”
 - 不要把 `config/` 默认绑定到具体业务任务；仓库基线只保留通用配置
 - 不要让 `data/` 回流日志、导出、测试临时文件
-- 不要让 `run/services.py` 默认管到 `run/static_web_server.py`
+- 不要让 `services.py` 默认管到 `run/static_web_server.py`
 - 改 X 采集链路时，先检查 `.env` 和 `/health`
 - 默认只在当前主工作区工作，不使用 `git worktree`；若未来需要恢复，必须由用户明确放开
 - 写中文 Markdown / TSX / JSON 时，注意 Windows PowerShell 的乱码和 BOM 风险
@@ -262,7 +262,7 @@ cd web-ui && npm run build
 
 如果改了运行入口、services、端口说明或健康相关逻辑，额外检查：
 
-- `python run/services.py status`
+- `python services.py status`
 - `http://127.0.0.1:8765/health`
 - `http://127.0.0.1:5177/`
 

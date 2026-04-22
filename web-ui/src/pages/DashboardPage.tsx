@@ -61,10 +61,6 @@ function renderXInfo(info: XHealth) {
           <strong>{info.auth_source || "unknown"}</strong>
         </div>
         <div className="dashboard-detail-item">
-          <span>{"浏览器提示"}</span>
-          <strong>{info.browser_hint || "unknown"}</strong>
-        </div>
-        <div className="dashboard-detail-item">
           <span>{"账号摘要"}</span>
           <strong>{info.account_hint || "unknown"}</strong>
         </div>
@@ -123,16 +119,16 @@ export function DashboardPage() {
     }
   }
 
-  const summaryTitle = state ? "运行总览快照" : "尚未校验";
+  const summaryTitle = state ? "最近状态" : "尚未校验";
   const summaryDescription = state
-    ? "当前页面保持上一次主动“重新加载”后的展示状态，页面刷新不会自动重新校验。"
-    : "页面刷新不会自动重新校验，只有点击“重新加载”后才会更新当前展示状态。";
+    ? "这里展示上一次手动重新加载后的状态。"
+    : "点击“重新加载”获取最新状态。";
   const updatedAtLabel = state?.summary.source === "runtime_snapshot"
     ? "运行快照更新"
     : "当前展示更新";
   const updatedAtValue = state
     ? `${updatedAtLabel}：${formatUtcPlus8Time(state.summary.updated_at, "尚未校验")}`
-    : "页面刷新不会自动重新校验";
+    : "等待手动刷新";
   const dbStatusLabel = state ? healthStatus(state.db) : "尚未校验";
   const xStatusLabel = state ? healthStatus(state.x) : "尚未校验";
   const dbStatusTone = state ? healthTone(state.db) : "neutral";
@@ -143,7 +139,7 @@ export function DashboardPage() {
       <section className="card dashboard-page-header workbench-page-header" data-testid="dashboard-page-header">
         <div className="dashboard-page-header-copy workbench-page-header-copy">
           <h3>{"运行总览"}</h3>
-          <p className="kv">{"快速查看本地数据库与 X 会话的上次已知状态，只有点击“重新加载”才会主动重新校验。"}</p>
+          <p className="kv">{"查看本地数据库与 X 会话的最近状态，点击“重新加载”才会更新。"}</p>
         </div>
         <div className="dashboard-page-header-actions workbench-page-header-actions">
           <button type="button" className="workbench-primary-action" onClick={loadHealth} disabled={loading}>
@@ -183,8 +179,8 @@ export function DashboardPage() {
             <div className="dashboard-status-card-hero workbench-section-header">
               <div className="dashboard-status-card-copy workbench-section-copy">
                 <div className="dashboard-status-eyebrow workbench-section-eyebrow">{"本地数据库"}</div>
-                <h4 className="workbench-section-title">{"DB 连接与运行数据"}</h4>
-                <p className="kv">{"聚合路径、文件存在、任务数、运行数和最近校验结果。"}</p>
+                <h4 className="workbench-section-title">{"数据库状态"}</h4>
+                <p className="kv">{"显示路径、文件状态、任务数、运行数和最近校验结果。"}</p>
               </div>
               <span className={`dashboard-summary-pill workbench-pill ${dbStatusTone}`}>{dbStatusLabel}</span>
             </div>
@@ -195,8 +191,8 @@ export function DashboardPage() {
             <div className="dashboard-status-card-hero workbench-section-header">
               <div className="dashboard-status-card-copy workbench-section-copy">
                 <div className="dashboard-status-eyebrow workbench-section-eyebrow">{"X 会话"}</div>
-                <h4 className="workbench-section-title">{"认证与会话状态"}</h4>
-                <p className="kv">{"聚合认证来源、账号摘要、浏览器提示与最近校验结果。"}</p>
+                <h4 className="workbench-section-title">{"X 会话状态"}</h4>
+                <p className="kv">{"显示认证来源、账号摘要和最近校验结果。"}</p>
               </div>
               <span className={`dashboard-summary-pill workbench-pill ${xStatusTone}`}>{xStatusLabel}</span>
             </div>

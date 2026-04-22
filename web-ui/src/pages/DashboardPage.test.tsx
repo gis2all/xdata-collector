@@ -33,7 +33,6 @@ const healthySnapshot = {
     configured: true,
     connected: true,
     auth_source: "twitter-cli",
-    browser_hint: "default",
     account_hint: "unknown",
     last_checked_at: "2026-04-18T00:00:00+00:00",
     last_error: "",
@@ -75,7 +74,7 @@ describe("DashboardPage", () => {
     expect(screen.getByTestId("dashboard-panels")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-db-info")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-x-info")).toBeInTheDocument();
-    expect(within(screen.getByTestId("dashboard-summary")).getByText("\u8fd0\u884c\u603b\u89c8\u5feb\u7167")).toBeInTheDocument();
+    expect(within(screen.getByTestId("dashboard-summary")).getByText("\u6700\u8fd1\u72b6\u6001")).toBeInTheDocument();
     expect(screen.getAllByText("\u5df2\u8fde\u63a5").length).toBeGreaterThan(0);
     expect(healthMock).not.toHaveBeenCalled();
     expect(healthSnapshotMock).not.toHaveBeenCalled();
@@ -88,7 +87,7 @@ describe("DashboardPage", () => {
     expect(screen.getByTestId("dashboard-summary")).toBeInTheDocument();
     expect(screen.queryByTestId("dashboard-panels")).not.toBeInTheDocument();
     expect(within(screen.getByTestId("dashboard-summary")).getByText("\u5c1a\u672a\u6821\u9a8c")).toBeInTheDocument();
-    expect(screen.getByText("\u9875\u9762\u5237\u65b0\u4e0d\u4f1a\u81ea\u52a8\u91cd\u65b0\u6821\u9a8c")).toBeInTheDocument();
+    expect(screen.getByText("\u70b9\u51fb\u201c\u91cd\u65b0\u52a0\u8f7d\u201d\u83b7\u53d6\u6700\u65b0\u72b6\u6001\u3002")).toBeInTheDocument();
     expect(healthMock).not.toHaveBeenCalled();
     expect(healthSnapshotMock).not.toHaveBeenCalled();
   });

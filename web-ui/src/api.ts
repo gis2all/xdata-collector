@@ -30,7 +30,6 @@ export type DatabaseHealth = HealthTarget & {
 };
 export type XHealth = HealthTarget & {
   auth_source: string;
-  browser_hint: string;
   account_hint: string;
 };
 export type HealthSnapshot = {
@@ -146,8 +145,6 @@ export type WorkspaceEnvironment = {
   db_path: string;
   runtime_dir: string;
   env_file: string;
-  twitter_browser: string;
-  twitter_chrome_profile: string;
 };
 
 export type JobRegistryRecord = {

@@ -49,7 +49,7 @@ export function ResultsTableManager({
         <div className="results-manager-copy workbench-section-copy">
           <div className="workbench-section-eyebrow">结果管理</div>
           <div className="results-manager-title workbench-section-title">表格管理</div>
-          <div className="kv">围绕当前结果表执行字段控制、批量选择和整表操作。</div>
+          <div className="kv">管理当前结果表的字段、选择和整表操作。</div>
         </div>
 
         <div className="results-manager-summary workbench-pill-row">

@@ -8,7 +8,7 @@
 - `state/runtime_health_snapshot.json`：后端最近一次 DB / X 健康快照
 - `state/sequences.json`：运行态序号
 - `logs/`：服务日志
-- `pids/`：`run/services.py` 维护的 PID 文件
+- `pids/`：`services.py` 维护的 PID 文件
 - `tmp/`：临时产物，测试临时文件统一放在 `runtime/tmp/tests/`
 
 ## 健康状态边界

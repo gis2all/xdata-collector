@@ -132,7 +132,7 @@ describe("ManualSearchPage", () => {
     expect(screen.getByRole("heading", { name: "任务正文摘要" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "搜索条件" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "规则" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "执行上下文" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "执行摘要" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "执行结果" })).toBeInTheDocument();
     expect(screen.queryByTestId("manual-pack-state-grid")).not.toBeInTheDocument();
     expect(screen.getByTestId("manual-pack-context-hint")).toHaveClass("workbench-subsurface");
@@ -230,7 +230,7 @@ describe("ManualSearchPage", () => {
     expect(screen.getByTestId("manual-search-editor-surface")).toBeInTheDocument();
     expect(screen.getByTestId("manual-rule-editor-surface")).toBeInTheDocument();
     expect(screen.getByText(/只替换当前草稿/)).toBeInTheDocument();
-    expect(screen.getByText(/会先导入文件，再立刻保存成新的本地任务包并绑定/)).toBeInTheDocument();
+    expect(screen.getByText(/导入并保存会新建并绑定任务包/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("manual-save-as-pack"));
 

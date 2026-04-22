@@ -19,7 +19,7 @@ def find_twitter_cli() -> str:
     fallback = Path.home() / ".local" / "bin" / "twitter.exe"
     if fallback.exists():
         return str(fallback)
-    raise RuntimeError("twitter-cli not found. Run python run/bootstrap.py or install twitter-cli manually.")
+    raise RuntimeError("twitter-cli not found. Run python install.py or python run/bootstrap.py, or install twitter-cli manually.")
 
 
 def find_xreach_cli() -> str:
@@ -92,15 +92,8 @@ def run_xreach_search(query: str, max_results: int, timeout_seconds: int = 60) -
 
     auth_token = os.getenv("TWITTER_AUTH_TOKEN", "").strip()
     ct0 = os.getenv("TWITTER_CT0", "").strip()
-    cookie_source = os.getenv("TWITTER_BROWSER", "").strip().lower()
-    chrome_profile = os.getenv("TWITTER_CHROME_PROFILE", "").strip()
-
     if auth_token and ct0:
         command.extend(["--auth-token", auth_token, "--ct0", ct0])
-    elif cookie_source in {"chrome", "edge", "arc", "brave", "firefox", "safari"}:
-        command.extend(["--cookie-source", cookie_source])
-        if chrome_profile:
-            command.extend(["--chrome-profile", chrome_profile])
 
     env = os.environ.copy()
     env.setdefault("PYTHONIOENCODING", "utf-8")

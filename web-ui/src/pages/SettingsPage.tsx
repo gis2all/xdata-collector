@@ -113,7 +113,7 @@ export function SettingsPage() {
       <section className="card settings-page-header workbench-page-header" data-testid="settings-page-header">
         <div className="settings-page-header-copy workbench-page-header-copy">
           <h3>{"\u8bbe\u7f6e"}</h3>
-          <p className="kv">{"\u8fd9\u91cc\u53ea\u7ef4\u62a4\u8f7b\u91cf config/workspace.json\uff1aenvironment \u53c2\u6570\u3001\u8fd0\u884c\u8def\u5f84\u548c\u81ea\u52a8\u4efb\u52a1 registry\u3002\u4efb\u52a1\u6b63\u6587\u4ecd\u7136\u5728 config/packs/*.json \u4e2d\u7ba1\u7406\u3002"}</p>
+          <p className="kv">{"\u8fd9\u91cc\u53ea\u7ef4\u62a4 config/workspace.json\uff0c\u4e3b\u8981\u5305\u542b\u73af\u5883\u53c2\u6570\u3001\u8fd0\u884c\u8def\u5f84\u548c\u81ea\u52a8\u4efb\u52a1\u5217\u8868\u3002"}</p>
         </div>
         <div className="settings-page-header-actions workbench-page-header-actions">
           <button
@@ -142,7 +142,7 @@ export function SettingsPage() {
           <div className="workbench-feedback-copy">
             <div className="workbench-feedback-eyebrow">配置反馈</div>
             <strong>{message}</strong>
-            <p>workspace 摘要和编辑器内容已同步到当前最新状态。</p>
+            <p>配置摘要和编辑器内容已更新。</p>
           </div>
         </div>
       )}
@@ -150,28 +150,28 @@ export function SettingsPage() {
       <section className="card settings-summary workbench-layer" data-testid="settings-summary">
         <div className="settings-section-header workbench-section-header">
           <div className="settings-section-copy workbench-section-copy">
-            <div className="settings-section-eyebrow workbench-section-eyebrow">{"workspace \u6458\u8981"}</div>
-            <h4 className="workbench-section-title">{"\u5f53\u524d workspace"}</h4>
-            <p className="kv">{"\u5148\u786e\u8ba4 environment \u8def\u5f84\u3001jobs registry \u6570\u91cf\u548c\u8349\u7a3f\u89e3\u6790\u72b6\u6001\uff0c\u518d\u8fdb\u5165 JSON \u7f16\u8f91\u3002"}</p>
+            <div className="settings-section-eyebrow workbench-section-eyebrow">{"\u914d\u7f6e\u6458\u8981"}</div>
+            <h4 className="workbench-section-title">{"\u5f53\u524d\u914d\u7f6e"}</h4>
+            <p className="kv">{"\u5148\u786e\u8ba4\u4e3b\u8981\u8def\u5f84\u548c\u4efb\u52a1\u6570\u91cf\uff0c\u518d\u8fdb\u5165 JSON \u7f16\u8f91\u3002"}</p>
           </div>
           <div className="settings-summary-pills workbench-pill-row">
             <span className="dashboard-summary-pill workbench-pill neutral">{`version\uff1a${draftWorkspace?.version ?? "--"}`}</span>
             <span className="dashboard-summary-pill workbench-pill neutral">{`jobs\uff1a${jobCount}`}</span>
-            <span className={`dashboard-summary-pill workbench-pill ${workspaceSummary.tone}`}>{`\u8349\u7a3f\u72b6\u6001\uff1a${workspaceSummary.status}`}</span>
+            <span className={`dashboard-summary-pill workbench-pill ${workspaceSummary.tone}`}>{`\u914d\u7f6e\u72b6\u6001\uff1a${workspaceSummary.status}`}</span>
           </div>
         </div>
 
         <div className="dashboard-detail-grid settings-summary-grid">
           <div className="dashboard-detail-item">
-            <span>{"db_path"}</span>
+            <span>{"\u6570\u636e\u5e93\u8def\u5f84"}</span>
             <strong>{draftWorkspace?.environment.db_path || "--"}</strong>
           </div>
           <div className="dashboard-detail-item">
-            <span>{"runtime_dir"}</span>
+            <span>{"\u8fd0\u884c\u76ee\u5f55"}</span>
             <strong>{draftWorkspace?.environment.runtime_dir || "--"}</strong>
           </div>
           <div className="dashboard-detail-item">
-            <span>{"env_file"}</span>
+            <span>{".env \u6587\u4ef6"}</span>
             <strong>{draftWorkspace?.environment.env_file || "--"}</strong>
           </div>
           <div className="dashboard-detail-item">
@@ -179,7 +179,7 @@ export function SettingsPage() {
             <strong>{jobCount}</strong>
           </div>
           <div className="dashboard-detail-item">
-            <span>{"next_job_id"}</span>
+            <span>{"\u4e0b\u4e00\u4e2a\u4efb\u52a1 ID"}</span>
             <strong>{draftWorkspace?.meta.next_job_id ?? "--"}</strong>
           </div>
           <div className="dashboard-detail-item">
@@ -194,7 +194,7 @@ export function SettingsPage() {
           <div className="settings-section-copy workbench-section-copy">
             <div className="settings-section-eyebrow workbench-section-eyebrow">{"\u8f7b\u91cf\u914d\u7f6e"}</div>
             <h4 className="workbench-section-title">{"\u5de5\u4f5c\u533a\u64cd\u4f5c"}</h4>
-            <p className="kv">{"\u91cd\u65b0\u52a0\u8f7d\u7528\u4e8e\u53d6\u56de\u5f53\u524d workspace\uff0c\u5bfc\u51fa\u5237\u65b0\u7528\u4e8e\u540c\u6b65\u670d\u52a1\u7aef\u5f53\u524d\u89c6\u56fe\uff0c\u5bfc\u5165\u5219\u4f1a\u76f4\u63a5\u66ff\u6362\u5f53\u524d\u7f16\u8f91\u5668\u8349\u7a3f\u3002"}</p>
+            <p className="kv">{"\u91cd\u65b0\u52a0\u8f7d\u7528\u4e8e\u53d6\u56de\u5f53\u524d\u914d\u7f6e\uff0c\u5bfc\u51fa\u5237\u65b0\u7528\u4e8e\u540c\u6b65\u670d\u52a1\u7aef\u89c6\u56fe\uff0c\u5bfc\u5165\u4f1a\u76f4\u63a5\u66ff\u6362\u7f16\u8f91\u5668\u8349\u7a3f\u3002"}</p>
           </div>
         </div>
 
@@ -224,14 +224,10 @@ export function SettingsPage() {
           </div>
 
           <div className="collector-card settings-action-card workbench-subsurface workbench-subsurface-muted">
-            <div className="settings-card-title">{"\u5bfc\u5165\u65b0\u8349\u7a3f"}</div>
+            <div className="settings-card-title">{"\u5bfc\u5165\u914d\u7f6e"}</div>
             <label className="field">
-              <span>{"\u5bfc\u5165 workspace \u6587\u4ef6"}</span>
+              <span>{"\u5bfc\u5165\u914d\u7f6e\u6587\u4ef6"}</span>
               <input aria-label="import-workspace-file" type="file" accept="application/json,.json" onChange={handleImportFile} />
-            </label>
-            <label className="field">
-              <span>{"\u63d0\u793a"}</span>
-              <input value={"workspace \u53ea\u4fdd\u7559 environment + jobs registry"} readOnly />
             </label>
           </div>
         </div>
@@ -241,8 +237,8 @@ export function SettingsPage() {
         <div className="settings-section-header workbench-section-header">
           <div className="settings-section-copy workbench-section-copy">
             <div className="settings-section-eyebrow workbench-section-eyebrow">{"JSON \u7f16\u8f91"}</div>
-            <h4 className="workbench-section-title">{"workspace.json \u7f16\u8f91\u5668"}</h4>
-            <p className="kv">{"\u8fd9\u91cc\u7ef4\u6301\u5b8c\u6574 JSON \u7f16\u8f91\u80fd\u529b\uff0c\u4f46\u9875\u9762\u4e0a\u65b9\u7684\u6458\u8981\u533a\u4f1a\u5e2e\u4f60\u5148\u786e\u8ba4\u5f53\u524d workspace \u8fb9\u754c\u662f\u5426\u6b63\u786e\u3002"}</p>
+            <h4 className="workbench-section-title">{"\u914d\u7f6e JSON"}</h4>
+            <p className="kv">{"\u9700\u8981\u65f6\u53ef\u76f4\u63a5\u7f16\u8f91\u5b8c\u6574 JSON\u3002"}</p>
           </div>
         </div>
 

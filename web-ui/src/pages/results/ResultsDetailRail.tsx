@@ -42,7 +42,7 @@ function renderCuratedItem(item: CuratedItemRecord, tableLabel: string) {
         className="results-detail-hero results-detail-card results-detail-card-accent workbench-summary-panel"
         data-testid="results-detail-hero"
       >
-        <div className="results-detail-eyebrow">精选结果判读</div>
+        <div className="results-detail-eyebrow">筛选结果详情</div>
         <h4 className="results-detail-title">{title}</h4>
         <div className="results-detail-meta">
           <span className={`badge ${String(item.level || "").toLowerCase()}`}>{item.level || "--"}</span>
@@ -51,8 +51,8 @@ function renderCuratedItem(item: CuratedItemRecord, tableLabel: string) {
         <div className="results-detail-hero-pills workbench-pill-row" data-testid="results-detail-hero-pills">
           <span className="results-summary-pill workbench-pill">{tableLabel}</span>
           <span className="results-summary-pill workbench-pill">{`记录 #${item.id}`}</span>
-          <span className="results-summary-pill workbench-pill">{`level ${item.level || "--"}`}</span>
-          <span className="results-summary-pill workbench-pill">{`score ${item.score ?? "--"}`}</span>
+          <span className="results-summary-pill workbench-pill">{`等级 ${item.level || "--"}`}</span>
+          <span className="results-summary-pill workbench-pill">{`分数 ${item.score ?? "--"}`}</span>
         </div>
       </div>
 
@@ -69,12 +69,12 @@ function renderCuratedItem(item: CuratedItemRecord, tableLabel: string) {
       )}
 
       {renderSection(
-        "结果信息",
+        "记录信息",
         <div className="results-detail-fact-grid workbench-summary-grid">
-          {renderFact("state", item.state || "--")}
-          {renderFact("level", item.level || "--")}
-          {renderFact("source_url", item.source_url || "--")}
-          {renderFact("dedupe_key", item.dedupe_key || "--")}
+          {renderFact("状态", item.state || "--")}
+          {renderFact("等级", item.level || "--")}
+          {renderFact("来源链接", item.source_url || "--")}
+          {renderFact("去重键", item.dedupe_key || "--")}
         </div>,
         "results-detail-info-section",
       )}
@@ -101,7 +101,7 @@ function renderRawItem(item: RawItemRecord, tableLabel: string) {
         <div className="results-detail-hero-pills workbench-pill-row" data-testid="results-detail-hero-pills">
           <span className="results-summary-pill workbench-pill">{tableLabel}</span>
           <span className="results-summary-pill workbench-pill">{`记录 #${item.id}`}</span>
-          <span className="results-summary-pill workbench-pill">{`tweet ${item.tweet_id || "--"}`}</span>
+          <span className="results-summary-pill workbench-pill">{`推文 ${item.tweet_id || "--"}`}</span>
         </div>
       </div>
 
@@ -114,10 +114,10 @@ function renderRawItem(item: RawItemRecord, tableLabel: string) {
       {renderSection(
         "采集信息",
         <div className="results-detail-fact-grid workbench-summary-grid">
-          {renderFact("query_name", item.query_name || "--")}
-          {renderFact("run_id", String(item.run_id ?? "--"))}
-          {renderFact("tweet_id", item.tweet_id || "--")}
-          {renderFact("fetched_at", formatUtcPlus8Time(item.fetched_at))}
+          {renderFact("查询名称", item.query_name || "--")}
+          {renderFact("运行 ID", String(item.run_id ?? "--"))}
+          {renderFact("推文 ID", item.tweet_id || "--")}
+          {renderFact("采集时间", formatUtcPlus8Time(item.fetched_at))}
         </div>,
         "results-detail-collect-section",
       )}
@@ -125,10 +125,10 @@ function renderRawItem(item: RawItemRecord, tableLabel: string) {
       {renderSection(
         "互动指标",
         <div className="results-detail-fact-grid workbench-summary-grid">
-          {renderFact("views", String(item.views ?? "--"))}
-          {renderFact("likes", String(item.likes ?? "--"))}
-          {renderFact("replies", String(item.replies ?? "--"))}
-          {renderFact("retweets", String(item.retweets ?? "--"))}
+          {renderFact("浏览", String(item.views ?? "--"))}
+          {renderFact("点赞", String(item.likes ?? "--"))}
+          {renderFact("回复", String(item.replies ?? "--"))}
+          {renderFact("转推", String(item.retweets ?? "--"))}
         </div>,
         "results-detail-metrics-section",
       )}
@@ -141,8 +141,8 @@ export function ResultsDetailRail({ item, table, tableLabel, total }: ResultsDet
     const emptyTitle = total > 0 ? "尚未聚焦记录" : "当前表暂无记录";
     const emptyDescription =
       total > 0
-        ? "从左侧表格点击任意一条记录，右侧会立刻展示正文、线索和关键字段。"
-        : "当前浏览范围还没有可判读的记录，可先调整关键词或刷新列表。";
+        ? "从左侧选择记录后，这里会显示正文、线索和关键信息。"
+        : "当前范围内暂无可读记录，可先调整关键词或刷新列表。";
 
     return (
       <div className="results-detail-empty">
@@ -150,16 +150,9 @@ export function ResultsDetailRail({ item, table, tableLabel, total }: ResultsDet
           className="results-detail-hero results-detail-card results-detail-card-accent workbench-summary-panel"
           data-testid="results-detail-hero"
         >
-          <div className="results-detail-eyebrow">右侧详情判读轨</div>
+          <div className="results-detail-eyebrow">右侧详情</div>
           <h4 className="results-detail-title">{emptyTitle}</h4>
           <p className="results-detail-copy">{emptyDescription}</p>
-        </div>
-        <div className="results-detail-guide results-detail-card workbench-layer" data-testid="results-detail-guide">
-          <div className="results-detail-guide-title">下一步建议</div>
-          <ul className="results-detail-guide-list">
-            <li>{total > 0 ? "先在左侧表格选中一条记录" : "先调整浏览范围或刷新列表"}</li>
-            <li>再在右侧快速判读正文、线索和关键字段</li>
-          </ul>
         </div>
       </div>
     );

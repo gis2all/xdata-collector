@@ -20,17 +20,16 @@ const importWorkspaceMock = vi.mocked(importWorkspace);
 const workspacePayload = {
   version: 2,
   meta: { updated_at: "2026-04-14T00:00:00+00:00", next_job_id: 2 },
-  environment: { db_path: "data/app.db", runtime_dir: "runtime", env_file: ".env", twitter_browser: "", twitter_chrome_profile: "" },
+  environment: { db_path: "data/app.db", runtime_dir: "runtime", env_file: ".env" },
   jobs: [],
 };
 
 const TEXT = {
   title: "设置",
-  summaryTitle: "当前 workspace",
+  summaryTitle: "当前配置",
   actionsTitle: "工作区操作",
-  editorTitle: "workspace.json 编辑器",
+  editorTitle: "配置 JSON",
   save: "保存 workspace.json",
-  note: "workspace 只保留 environment + jobs registry",
 } as const;
 
 describe("SettingsPage", () => {
@@ -58,7 +57,6 @@ describe("SettingsPage", () => {
     expect(screen.getByText("runtime")).toBeInTheDocument();
     expect(screen.getByText(".env")).toBeInTheDocument();
     expect(screen.getByText("0")).toBeInTheDocument();
-    expect(screen.getByDisplayValue(TEXT.note)).toBeInTheDocument();
     expect(screen.getByLabelText("save-workspace")).toHaveClass("workbench-primary-action");
     expect(screen.getByLabelText("reload-workspace")).toHaveClass("workbench-secondary-action");
     expect(screen.getByLabelText("export-workspace")).toHaveClass("workbench-secondary-action");

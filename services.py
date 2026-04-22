@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -15,7 +15,7 @@ from typing import Iterable
 from urllib.error import URLError
 from urllib.request import urlopen
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parent
 RUNTIME_DIR = PROJECT_ROOT / "runtime"
 LOG_DIR = RUNTIME_DIR / "logs"
 PID_DIR = RUNTIME_DIR / "pids"
@@ -135,7 +135,7 @@ def warn_if_env_missing() -> None:
 def ensure_npm_for_dev_ui() -> None:
     npm = resolve_npm()
     if npm is None:
-        raise SystemExit("npm not found. Install Node.js before using run/services.py.")
+        raise SystemExit("npm not found. Install Node.js before using services.py.")
 
 
 def resolve_npm() -> str | None:

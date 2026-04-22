@@ -190,7 +190,7 @@ describe("ResultsPage", () => {
 
     expect(within(detailRail).getByText("\u5f53\u524d\u8868\u6682\u65e0\u8bb0\u5f55")).toBeInTheDocument();
     expect(within(detailRail).queryByTestId("results-detail-context-grid")).not.toBeInTheDocument();
-    expect(within(detailRail).getByText("\u4e0b\u4e00\u6b65\u5efa\u8bae")).toBeInTheDocument();
+    expect(within(detailRail).queryByText("\u4e0b\u4e00\u6b65\u5efa\u8bae")).not.toBeInTheDocument();
   });
 
   it("renders detail content after selecting a row checkbox", async () => {
@@ -343,6 +343,28 @@ describe("ResultsPage", () => {
       "href",
       "https://x.com/demo/status/1",
     );
+  });
+
+  it("renders x native created_at_x timestamps in utc+8 across table and detail rail", async () => {
+    listItemsMock.mockResolvedValue(
+      makePage([
+        makeItem(1, {
+          created_at_x: "Wed Apr 22 15:00:56 +0000 2026",
+        }),
+      ]),
+    );
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1")).toBeInTheDocument();
+    });
+
+    expect(within(screen.getByTestId("results-table-pane")).getByText("2026-04-22 23:00:56 UTC+8")).toBeInTheDocument();
+
+    const detailRail = screen.getByTestId("results-detail-rail");
+    expect(within(detailRail).getByText(/2026-04-22 23:00:56 UTC\+8/)).toBeInTheDocument();
+    expect(within(detailRail).queryByText(/Wed Apr 22 15:00:56 \+0000 2026 UTC\+8/)).not.toBeInTheDocument();
   });
 
   it("shows a hidden column after checking it in the field dropdown", async () => {

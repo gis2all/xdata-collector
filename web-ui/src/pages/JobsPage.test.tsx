@@ -21,7 +21,7 @@ vi.mock("../api", () => ({
   deleteTaskPack: vi.fn(),
 }));
 
-import { batchJobs, createJob, createTaskPack, deleteTaskPack, getJob, getTaskPack, listJobs, listTaskPacks, updateJob } from "../api";
+import { batchJobs, createJob, createTaskPack, deleteTaskPack, getJob, getTaskPack, listJobs, listTaskPacks, runJobNow, toggleJob, updateJob } from "../api";
 
 const listJobsMock = vi.mocked(listJobs);
 const listTaskPacksMock = vi.mocked(listTaskPacks);
@@ -31,6 +31,8 @@ const createJobMock = vi.mocked(createJob);
 const createTaskPackMock = vi.mocked(createTaskPack);
 const deleteTaskPackMock = vi.mocked(deleteTaskPack);
 const batchJobsMock = vi.mocked(batchJobs);
+const runJobNowMock = vi.mocked(runJobNow);
+const toggleJobMock = vi.mocked(toggleJob);
 const updateJobMock = vi.mocked(updateJob);
 
 const packFile = {
@@ -137,6 +139,8 @@ describe("JobsPage", () => {
       succeeded_ids: [],
       failed_items: [],
     } as any);
+    runJobNowMock.mockResolvedValue({} as any);
+    toggleJobMock.mockImplementation(async (id: number, enabled: boolean) => makeJob(id, { enabled: enabled ? 1 : 0 }) as any);
     createJobMock.mockResolvedValue({
       id: 10,
       name: "scheduled-alpha",
@@ -247,14 +251,13 @@ describe("JobsPage", () => {
 
     const emptyWorkspace = screen.getByTestId("jobs-empty-workspace");
     expect(emptyWorkspace).toBeInTheDocument();
-    expect(within(emptyWorkspace).getByText("先从一个任务开始")).toBeInTheDocument();
-    expect(within(emptyWorkspace).getByText("这个工作区会承接的操作")).toBeInTheDocument();
+    expect(within(emptyWorkspace).getByText("选择或新建任务")).toBeInTheDocument();
+    expect(within(emptyWorkspace).getByText("从左侧选择任务，或新建后继续编辑调度、搜索条件和规则。")).toBeInTheDocument();
     expect(within(emptyWorkspace).getByRole("button", { name: "新建任务" })).toBeInTheDocument();
     expect(within(emptyWorkspace).getByRole("button", { name: "刷新列表" })).toBeInTheDocument();
     expect(within(emptyWorkspace).getByTestId("jobs-refresh-empty")).toHaveClass("workbench-secondary-action");
-    expect(within(emptyWorkspace).getByText("1. 打开或新建任务")).toBeInTheDocument();
-    expect(within(emptyWorkspace).getByText("2. 绑定任务包")).toBeInTheDocument();
-    expect(within(emptyWorkspace).getByText("3. 完成编辑并保存")).toBeInTheDocument();
+    expect(within(emptyWorkspace).queryByText("1. 打开或新建任务")).not.toBeInTheDocument();
+    expect(within(emptyWorkspace).queryByText("这个工作区会承接的操作")).not.toBeInTheDocument();
   });
 
   it("renders the reorganized editable workspace structure after loading a task pack", async () => {
@@ -290,7 +293,7 @@ describe("JobsPage", () => {
     expect(screen.getByRole("heading", { name: "当前任务" }).closest(".jobs-section-header")).toHaveClass("workbench-section-header");
     expect(screen.getByRole("heading", { name: "当前任务" }).closest(".drawer-section")).toHaveClass("workbench-layer");
     expect(screen.getByTestId("create-job-button")).toHaveClass("workbench-primary-action");
-    expect(screen.getByLabelText("submit-job-top")).toHaveClass("workbench-primary-action");
+    expect(within(screen.getByTestId("jobs-primary-actions")).getByLabelText("submit-job")).toHaveClass("workbench-primary-action");
     expect(screen.getByText("当前状态：已启用").closest(".jobs-current-task-hero")).toHaveClass("workbench-summary-panel");
     expect(screen.queryByText("工作区模式")).not.toBeInTheDocument();
     expect(screen.queryByText("新建任务草稿")).not.toBeInTheDocument();
@@ -316,7 +319,7 @@ describe("JobsPage", () => {
     expect(screen.getByLabelText("job-import-and-save-pack")).toHaveClass("workbench-secondary-action");
     expect(screen.getByLabelText("job-save-as-pack")).toHaveClass("workbench-secondary-action");
     expect(screen.getByText(/只替换当前草稿/)).toBeInTheDocument();
-    expect(screen.getByText(/会先导入文件，再立刻保存成新的本地任务包并绑定/)).toBeInTheDocument();
+    expect(screen.getByText(/导入并保存会新建并绑定任务包/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("submit-job"));
 
@@ -339,7 +342,7 @@ describe("JobsPage", () => {
     });
 
     expect(screen.getByRole("heading", { name: "自动任务" })).toBeInTheDocument();
-    expect(screen.getByText("自动任务负责调度；任务正文来自当前绑定任务包，包含搜索条件和规则。")).toBeInTheDocument();
+    expect(screen.getByText("自动任务负责调度，任务正文来自当前绑定任务包。")).toBeInTheDocument();
     expect(screen.getByTestId("create-job-button")).toBeInTheDocument();
     const listToolsSummary = screen.getByTestId("jobs-list-tools-summary");
     expect(listToolsSummary).toBeInTheDocument();
@@ -353,10 +356,10 @@ describe("JobsPage", () => {
     expect(screen.getByRole("button", { name: "批量删除" })).toHaveClass("workbench-danger-action");
     expect(within(listToolsSummary).getByText("\u5171 0 \u9879\u4efb\u52a1")).toBeInTheDocument();
     expect(within(listToolsSummary).getByText("\u5f53\u524d\u8303\u56f4\uff1a\u542f\u7528\u4e2d")).toBeInTheDocument();
-    expect(within(manageBar).getByText("\u5148\u5728\u8868\u683c\u4e2d\u52fe\u9009\u4efb\u52a1\uff0c\u518d\u9009\u62e9\u5168\u90e8\u5339\u914d\u7ed3\u679c\u6216\u6267\u884c\u6279\u91cf\u64cd\u4f5c\u3002")).toBeInTheDocument();
+    expect(within(manageBar).getByText("\u5148\u5728\u8868\u683c\u4e2d\u52fe\u9009\u4efb\u52a1\uff0c\u518d\u6267\u884c\u6279\u91cf\u64cd\u4f5c\u3002")).toBeInTheDocument();
   });
 
-  it("shows a top save button for create mode and keeps the footer save button", async () => {
+  it("shows the primary action bar above current task in create mode", async () => {
     render(<JobsPage />);
 
     await waitFor(() => {
@@ -373,11 +376,17 @@ describe("JobsPage", () => {
       expect(getTaskPackMock).toHaveBeenCalledWith("alpha-watch");
     });
 
-    expect(screen.getByLabelText("submit-job-top")).toBeInTheDocument();
+    expect(screen.queryByLabelText("submit-job-top")).not.toBeInTheDocument();
     expect(screen.getByLabelText("submit-job")).toBeInTheDocument();
-    expect(screen.getByLabelText("submit-job-top")).toHaveClass("workbench-primary-action");
+    expect(within(screen.getByTestId("jobs-primary-actions")).getByLabelText("submit-job")).toHaveClass("workbench-primary-action");
+    expect(
+      screen.getByTestId("jobs-primary-actions").compareDocumentPosition(screen.getByRole("heading", { name: "当前任务" })),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(
+      screen.getByTestId("jobs-primary-actions").compareDocumentPosition(screen.getByRole("heading", { name: "任务包操作" })),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 
-    fireEvent.click(screen.getByLabelText("submit-job-top"));
+    fireEvent.click(screen.getByLabelText("submit-job"));
 
     await waitFor(() => {
       expect(createJobMock).toHaveBeenCalled();
@@ -423,10 +432,10 @@ describe("JobsPage", () => {
       expect(getTaskPackMock).toHaveBeenCalledWith("alpha-watch");
     });
 
-    fireEvent.click(screen.getByLabelText("submit-job-top"));
+    fireEvent.click(screen.getByLabelText("submit-job"));
 
-    expect(screen.getByLabelText("submit-job-top")).toBeDisabled();
-    expect(screen.getByLabelText("submit-job-top")).toHaveTextContent("保存中...");
+    expect(screen.getByLabelText("submit-job")).toBeDisabled();
+    expect(screen.getByLabelText("submit-job")).toHaveTextContent("保存中...");
 
     resolveCreate?.({
       id: 10,
@@ -451,8 +460,8 @@ describe("JobsPage", () => {
       expect(screen.getByText("已保存")).toBeInTheDocument();
     });
 
-    expect(screen.getByLabelText("submit-job-top")).toBeInTheDocument();
-    expect(screen.getByLabelText("submit-job-top")).not.toBeDisabled();
+    expect(within(screen.getByTestId("jobs-primary-actions")).getByRole("button", { name: "保存任务" })).toBeInTheDocument();
+    expect(within(screen.getByTestId("jobs-primary-actions")).getByRole("button", { name: "保存任务" })).not.toBeDisabled();
   });
 
   it("opens the unified workspace from row click and keeps a lightweight open action for active jobs", async () => {
@@ -474,7 +483,7 @@ describe("JobsPage", () => {
     fireEvent.click(row!);
 
     await waitFor(() => {
-      expect(screen.getByLabelText("submit-job-top")).toBeInTheDocument();
+      expect(screen.getByTestId("jobs-primary-actions")).toBeInTheDocument();
     });
 
     expect(screen.queryByRole("button", { name: "\u67e5\u770b" })).not.toBeInTheDocument();
@@ -486,8 +495,101 @@ describe("JobsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "\u6253\u5f00" }));
 
     await waitFor(() => {
-      expect(screen.getByLabelText("submit-job-top")).toBeInTheDocument();
+      expect(screen.getByTestId("jobs-primary-actions")).toBeInTheDocument();
     });
+  });
+
+  it("shows enabled row actions with run-now and stop label", async () => {
+    listJobsMock.mockResolvedValue({
+      page: 1,
+      page_size: 10,
+      total: 1,
+      items: [makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" } })],
+    } as any);
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("alpha-watch-job").length).toBeGreaterThan(0);
+    });
+
+    const row = screen.getAllByText("alpha-watch-job")[0]?.closest("tr");
+    expect(row).not.toBeNull();
+
+    const actionGroup = row?.querySelector(".jobs-row-actions") as HTMLElement | null;
+    expect(actionGroup).not.toBeNull();
+    expect(actionGroup).toHaveClass("table-actions", "jobs-row-actions");
+
+    const runButton = within(actionGroup as HTMLElement).getByRole("button", { name: "立即运行" });
+    const toggleButton = within(actionGroup as HTMLElement).getByRole("button", { name: "停用任务" });
+
+    expect(runButton).not.toBeDisabled();
+
+    fireEvent.click(runButton);
+    await waitFor(() => {
+      expect(runJobNowMock).toHaveBeenCalledWith(7);
+    });
+  });
+
+  it("shows disabled run-now and enable control for stopped jobs", async () => {
+    listJobsMock.mockResolvedValue({
+      page: 1,
+      page_size: 10,
+      total: 1,
+      items: [makeJob(8, { name: "stopped-job", enabled: 0, next_run_at: null })],
+    } as any);
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("stopped-job").length).toBeGreaterThan(0);
+    });
+
+    const row = screen.getAllByText("stopped-job")[0]?.closest("tr");
+    expect(row).not.toBeNull();
+
+    const actionGroup = row?.querySelector(".jobs-row-actions") as HTMLElement | null;
+    expect(actionGroup).not.toBeNull();
+
+    const runButton = within(actionGroup as HTMLElement).getByRole("button", { name: "立即运行" });
+    const toggleButton = within(actionGroup as HTMLElement).getByRole("button", { name: "启用任务" });
+
+    expect(runButton).toBeDisabled();
+
+    fireEvent.click(runButton);
+    expect(runJobNowMock).not.toHaveBeenCalled();
+
+    fireEvent.click(toggleButton);
+    await waitFor(() => {
+      expect(toggleJobMock).toHaveBeenCalledWith(8, true);
+    });
+  });
+
+  it("keeps deleted row actions limited to open and restore", async () => {
+    listJobsMock.mockResolvedValueOnce({
+      page: 1,
+      page_size: 10,
+      total: 1,
+      items: [makeJob(9, { name: "deleted-job", enabled: 0, deleted_at: "2026-04-14T00:00:00+00:00" })],
+    } as any);
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("deleted-job").length).toBeGreaterThan(0);
+    });
+
+    const row = screen.getAllByText("deleted-job")[0]?.closest("tr");
+    expect(row).not.toBeNull();
+
+    const actionGroup = row?.querySelector(".jobs-row-actions") as HTMLElement | null;
+    expect(actionGroup).not.toBeNull();
+
+    expect(within(actionGroup as HTMLElement).getByRole("button", { name: "打开" })).toBeInTheDocument();
+    expect(within(actionGroup as HTMLElement).getByRole("button", { name: "恢复" })).toBeInTheDocument();
+    expect(within(actionGroup as HTMLElement).queryByRole("button", { name: "立即运行" })).not.toBeInTheDocument();
+    expect(within(actionGroup as HTMLElement).queryByRole("button", { name: "启用任务" })).not.toBeInTheDocument();
+    expect(within(actionGroup as HTMLElement).queryByRole("button", { name: "停用任务" })).not.toBeInTheDocument();
   });
 
 
