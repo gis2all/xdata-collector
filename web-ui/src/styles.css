@@ -1006,7 +1006,8 @@ textarea::placeholder {
 }
 .table-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .table-actions button { padding: 6px 10px; }
-.jobs-row-actions { justify-content: flex-end; }
+.jobs-row-actions { justify-content: flex-start; align-items: center; }
+.jobs-row-actions button { white-space: nowrap; }
 .jobs-row-actions .ghost { background: #f8fafc; }
 .jobs-resizer { position: relative; align-self: stretch; cursor: col-resize; touch-action: none; user-select: none; }
 .jobs-resizer::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; transform: translateX(-50%); background: #cbd5e1; transition: background 0.16s ease, width 0.16s ease; }

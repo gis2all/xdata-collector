@@ -890,13 +890,22 @@ export function JobsPage() {
         >
           {"打开"}
         </button>
-        <button type="button" className="ghost workbench-secondary-action" onClick={() => handleRunNow(job)}>{"立即运行"}</button>
+        <button
+          type="button"
+          className="ghost workbench-secondary-action"
+          onClick={() => handleRunNow(job)}
+          disabled={!job.enabled}
+        >
+          {"立即运行"}
+        </button>
+        <button type="button" className="ghost workbench-secondary-action" onClick={() => handleToggle(job)}>
+          {job.enabled ? "停用任务" : "启用任务"}
+        </button>
       </div>
     );
   }
 
   const drawerDisabled = Boolean(selectedJob?.deleted_at) && drawerMode !== "create";
-  const showTopSaveButton = !selectedJob?.deleted_at;
   const workspaceTitle = selectedJob ? "当前任务工作区" : "新建任务工作区";
   const workspaceMeta = selectedJob ? `任务 #${selectedJob.id}` : "未保存新任务";
   const manageScopeLabel = statusScopeLabel(status);
@@ -917,6 +926,25 @@ export function JobsPage() {
   const currentTaskPackDraftLabel = hasCurrentTaskPackBinding
     ? (currentTaskPack ? (taskPackDirty ? "已修改未保存" : "未修改") : "已绑定")
     : "未绑定";
+  const workspaceActionBar = (
+    <div className="drawer-footer" data-testid="jobs-primary-actions">
+      {!selectedJob ? (
+        <button type="button" className="workbench-primary-action" aria-label="submit-job" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
+      ) : selectedJob.deleted_at ? (
+        <>
+          <button type="button" className="ghost workbench-secondary-action" onClick={() => handleRestore(selectedJob)}>{"恢复任务"}</button>
+          <button type="button" className="danger workbench-danger-action" onClick={() => handlePurge(selectedJob)}>{"彻底删除"}</button>
+        </>
+      ) : (
+        <>
+          <button type="button" className="workbench-primary-action" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
+          <button type="button" className="ghost workbench-secondary-action" onClick={() => handleRunNow(selectedJob)}>{"立即运行"}</button>
+          <button type="button" className="ghost workbench-secondary-action" onClick={() => handleToggle(selectedJob)}>{selectedJob.enabled ? "停用任务" : "启用任务"}</button>
+          <button type="button" className="danger workbench-danger-action" onClick={() => handleDelete(selectedJob)}>{"删除任务"}</button>
+        </>
+      )}
+    </div>
+  );
 
   return (
     <div className="jobs-page" data-testid="jobs-page">
@@ -1156,15 +1184,12 @@ export function JobsPage() {
                 </div>
               </div>
 
+              {workspaceActionBar}
+
               <div className="drawer-section jobs-current-task-section workbench-layer">
                 <JobsSectionHeader
                   title="当前任务"
                   description="先确认调度状态和基础设置，再继续调整任务正文。"
-                  actions={showTopSaveButton ? (
-                    <button type="button" className="workbench-primary-action" aria-label="submit-job-top" onClick={handleSave} disabled={saving}>
-                      {saving ? "保存中..." : "保存任务"}
-                    </button>
-                  ) : undefined}
                 />
                 <div className="jobs-current-task-hero workbench-summary-panel">
                   <div className="jobs-current-task-copy">
@@ -1211,7 +1236,6 @@ export function JobsPage() {
                   </label>
                 </div>
               </div>
-
               <div className="drawer-section workbench-layer">
                 <JobsSectionHeader
                   title="任务包操作"
@@ -1405,24 +1429,6 @@ export function JobsPage() {
                   <pre className="drawer-json">{JSON.stringify(selectedJob.last_run_stats, null, 2)}</pre>
                 </div>
               )}
-
-              <div className="drawer-footer">
-                {!selectedJob ? (
-                  <button type="button" className="workbench-primary-action" aria-label="submit-job" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
-                ) : selectedJob.deleted_at ? (
-                  <>
-                    <button type="button" className="ghost workbench-secondary-action" onClick={() => handleRestore(selectedJob)}>{"恢复任务"}</button>
-                    <button type="button" className="danger workbench-danger-action" onClick={() => handlePurge(selectedJob)}>{"彻底删除"}</button>
-                  </>
-                ) : (
-                  <>
-                    <button type="button" className="workbench-primary-action" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
-                    <button type="button" className="ghost workbench-secondary-action" onClick={() => handleRunNow(selectedJob)}>{"立即运行"}</button>
-                    <button type="button" className="ghost workbench-secondary-action" onClick={() => handleToggle(selectedJob)}>{selectedJob.enabled ? "停用任务" : "启用任务"}</button>
-                    <button type="button" className="danger workbench-danger-action" onClick={() => handleDelete(selectedJob)}>{"删除任务"}</button>
-                  </>
-                )}
-              </div>
             </div>
           ) : (
             <div className="drawer-empty jobs-empty-workspace" data-testid="jobs-empty-workspace">
