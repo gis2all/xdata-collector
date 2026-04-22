@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -10,14 +9,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 def _print_step(message: str) -> None:
     print(f"[bootstrap] {message}")
-
-
-def _resolve_command(*candidates: str) -> str | None:
-    for candidate in candidates:
-        resolved = shutil.which(candidate)
-        if resolved:
-            return resolved
-    return None
 
 
 def _run(command: list[str]) -> None:
@@ -46,32 +37,13 @@ def install_twitter_cli() -> None:
     _print_step("Installing twitter-cli via pipx...")
     _run([sys.executable, "-m", "pipx", "install", "--force", "twitter-cli"])
 
-
-def install_browser_tools() -> None:
-    npm = _resolve_command("npm.cmd", "npm")
-    if npm is None:
-        raise RuntimeError("npm not found. Install Node.js before running bootstrap.py.")
-
-    agent_browser = _resolve_command("agent-browser.cmd", "agent-browser")
-
-    _print_step("Installing agent-browser globally...")
-    _run([npm, "install", "-g", "agent-browser"])
-
-    if agent_browser is None:
-        agent_browser = "agent-browser.cmd" if sys.platform.startswith("win") else "agent-browser"
-
-    _print_step("Running agent-browser install...")
-    _run([agent_browser, "install"])
-
-
 def main() -> int:
     ensure_no_args()
     _print_step(f"platform={sys.platform} python={sys.executable}")
     ensure_pipx()
     install_twitter_cli()
-    install_browser_tools()
     _print_step("Bootstrap finished.")
-    _print_step("If PATH changed during setup, reopen your terminal before using twitter-cli or agent-browser.")
+    _print_step("If PATH changed during setup, reopen your terminal before using twitter-cli.")
     return 0
 
 

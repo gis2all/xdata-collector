@@ -263,7 +263,7 @@ class DesktopService:
                 continue
             key, value = line.split("=", 1)
             key = key.strip()
-            if key in {"TWITTER_AUTH_TOKEN", "TWITTER_CT0", "TWITTER_BROWSER", "TWITTER_CHROME_PROFILE"}:
+            if key in {"TWITTER_AUTH_TOKEN", "TWITTER_CT0"}:
                 os.environ[key] = value.strip().strip('"').strip("'")
 
     def _ensure_builtin_rule_set(self) -> dict[str, Any]:
@@ -1389,7 +1389,6 @@ class DesktopService:
                 "configured": x_snapshot["configured"],
                 "connected": x_snapshot["connected"],
                 "auth_source": x_snapshot["detail"].get("auth_source", "unknown"),
-                "browser_hint": x_snapshot["detail"].get("browser_hint", "unknown"),
                 "account_hint": x_snapshot["detail"].get("account_hint", "unknown"),
                 "last_checked_at": x_snapshot["last_checked_at"],
                 "last_error": x_snapshot["last_error"],
@@ -1409,7 +1408,7 @@ class DesktopService:
         previous = previous or {}
         previous_detail = previous.get("detail", {}) if isinstance(previous.get("detail"), dict) else {}
         resolved_connected = True if connected else bool(previous.get("connected")) and configured
-        resolved_detail = {**previous_detail, **detail}
+        resolved_detail = {key: detail.get(key, previous_detail.get(key)) for key in detail}
         snapshot = {
             "configured": configured,
             "connected": resolved_connected,
@@ -1435,7 +1434,6 @@ class DesktopService:
             return True, False, detail, str(exc)
 
     def _probe_x_health(self) -> tuple[bool, bool, dict[str, Any], str]:
-        browser_hint = os.getenv("TWITTER_BROWSER") or "default"
         has_env_auth = bool(os.getenv("TWITTER_AUTH_TOKEN") and os.getenv("TWITTER_CT0"))
         auth_source = "environment" if has_env_auth else "unknown"
         configured = has_env_auth
@@ -1447,7 +1445,6 @@ class DesktopService:
             pass
         detail = {
             "auth_source": auth_source,
-            "browser_hint": browser_hint if configured else "unknown",
             "account_hint": "unknown",
         }
         if not configured:

@@ -20,7 +20,7 @@ const importWorkspaceMock = vi.mocked(importWorkspace);
 const workspacePayload = {
   version: 2,
   meta: { updated_at: "2026-04-14T00:00:00+00:00", next_job_id: 2 },
-  environment: { db_path: "data/app.db", runtime_dir: "runtime", env_file: ".env", twitter_browser: "", twitter_chrome_profile: "" },
+  environment: { db_path: "data/app.db", runtime_dir: "runtime", env_file: ".env" },
   jobs: [],
 };
 

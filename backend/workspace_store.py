@@ -99,8 +99,6 @@ def default_environment() -> dict[str, Any]:
         "db_path": "data/app.db",
         "runtime_dir": "runtime",
         "env_file": ".env",
-        "twitter_browser": "",
-        "twitter_chrome_profile": "",
     }
 
 
@@ -581,8 +579,6 @@ class WorkspaceStore:
             "db_path": str(env_source.get("db_path") or base["environment"]["db_path"]).replace("\\", "/"),
             "runtime_dir": str(env_source.get("runtime_dir") or base["environment"]["runtime_dir"]).replace("\\", "/"),
             "env_file": str(env_source.get("env_file") or base["environment"]["env_file"]).replace("\\", "/"),
-            "twitter_browser": str(env_source.get("twitter_browser") or "").strip(),
-            "twitter_chrome_profile": str(env_source.get("twitter_chrome_profile") or "").strip(),
         }
         next_job_id = max([int(item["id"]) for item in jobs], default=0) + 1
         meta = {

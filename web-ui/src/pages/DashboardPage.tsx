@@ -61,10 +61,6 @@ function renderXInfo(info: XHealth) {
           <strong>{info.auth_source || "unknown"}</strong>
         </div>
         <div className="dashboard-detail-item">
-          <span>{"浏览器提示"}</span>
-          <strong>{info.browser_hint || "unknown"}</strong>
-        </div>
-        <div className="dashboard-detail-item">
           <span>{"账号摘要"}</span>
           <strong>{info.account_hint || "unknown"}</strong>
         </div>
@@ -196,7 +192,7 @@ export function DashboardPage() {
               <div className="dashboard-status-card-copy workbench-section-copy">
                 <div className="dashboard-status-eyebrow workbench-section-eyebrow">{"X 会话"}</div>
                 <h4 className="workbench-section-title">{"X 会话状态"}</h4>
-                <p className="kv">{"显示认证来源、账号摘要、浏览器提示和最近校验结果。"}</p>
+                <p className="kv">{"显示认证来源、账号摘要和最近校验结果。"}</p>
               </div>
               <span className={`dashboard-summary-pill workbench-pill ${xStatusTone}`}>{xStatusLabel}</span>
             </div>

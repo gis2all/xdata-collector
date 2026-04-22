@@ -17,7 +17,7 @@ class FakeService:
         return {
             "version": 2,
             "meta": {"updated_at": "2026-04-14T00:00:00+00:00", "next_job_id": 2},
-            "environment": {"db_path": "data/app.db", "runtime_dir": "runtime", "env_file": ".env", "twitter_browser": "", "twitter_chrome_profile": ""},
+            "environment": {"db_path": "data/app.db", "runtime_dir": "runtime", "env_file": ".env"},
             "jobs": [],
         }
 
@@ -34,7 +34,7 @@ class FakeService:
         return {
             "version": 2,
             "meta": {"updated_at": "2026-04-14T00:00:00+00:00", "next_job_id": 2},
-            "environment": {"db_path": "data/app.db", "runtime_dir": "runtime", "env_file": ".env", "twitter_browser": "", "twitter_chrome_profile": ""},
+            "environment": {"db_path": "data/app.db", "runtime_dir": "runtime", "env_file": ".env"},
             "jobs": [],
         }
 
@@ -71,7 +71,7 @@ class FakeService:
         return {
             "summary": {"updated_at": "2026-04-13T00:00:00+00:00", "source": "backend_snapshot"},
             "db": {"configured": True, "connected": True, "db_path": "data/app.db", "db_exists": True, "job_count": 1, "run_count": 2, "last_checked_at": "", "last_error": ""},
-            "x": {"configured": True, "connected": True, "auth_source": "twitter-cli", "browser_hint": "default", "account_hint": "unknown", "last_checked_at": "", "last_error": ""},
+            "x": {"configured": True, "connected": True, "auth_source": "twitter-cli", "account_hint": "unknown", "last_checked_at": "", "last_error": ""},
         }
 
     def health_snapshot(self) -> dict:
@@ -79,7 +79,7 @@ class FakeService:
         return {
             "summary": {"updated_at": "2026-04-12T00:00:00+00:00", "source": "runtime_snapshot"},
             "db": {"configured": True, "connected": True, "db_path": "data/app.db", "db_exists": True, "job_count": 1, "run_count": 2, "last_checked_at": "", "last_error": ""},
-            "x": {"configured": True, "connected": True, "auth_source": "twitter-cli", "browser_hint": "default", "account_hint": "unknown", "last_checked_at": "", "last_error": ""},
+            "x": {"configured": True, "connected": True, "auth_source": "twitter-cli", "account_hint": "unknown", "last_checked_at": "", "last_error": ""},
         }
 
     def list_jobs(self, **kwargs) -> dict:
@@ -391,7 +391,7 @@ class ApiHandlerTests(unittest.TestCase):
 
     def test_put_workspace_updates_workspace_payload(self) -> None:
         service = FakeService()
-        payload = {"version": 2, "meta": {"updated_at": "2026-04-14T00:00:00+00:00", "next_job_id": 2}, "environment": {"db_path": "data/app.db", "runtime_dir": "runtime", "env_file": ".env", "twitter_browser": "", "twitter_chrome_profile": ""}, "jobs": []}
+        payload = {"version": 2, "meta": {"updated_at": "2026-04-14T00:00:00+00:00", "next_job_id": 2}, "environment": {"db_path": "data/app.db", "runtime_dir": "runtime", "env_file": ".env"}, "jobs": []}
         with serve(service) as server:
             status, _, body = self.request(
                 server,
@@ -407,7 +407,7 @@ class ApiHandlerTests(unittest.TestCase):
 
     def test_post_workspace_import_dispatches_payload(self) -> None:
         service = FakeService()
-        payload = {"version": 2, "meta": {"updated_at": "2026-04-14T00:00:00+00:00", "next_job_id": 3}, "environment": {"db_path": "data/alt.db", "runtime_dir": "runtime", "env_file": ".env", "twitter_browser": "", "twitter_chrome_profile": ""}, "jobs": []}
+        payload = {"version": 2, "meta": {"updated_at": "2026-04-14T00:00:00+00:00", "next_job_id": 3}, "environment": {"db_path": "data/alt.db", "runtime_dir": "runtime", "env_file": ".env"}, "jobs": []}
         with serve(service) as server:
             status, _, body = self.request(
                 server,

@@ -33,7 +33,6 @@ const healthySnapshot = {
     configured: true,
     connected: true,
     auth_source: "twitter-cli",
-    browser_hint: "default",
     account_hint: "unknown",
     last_checked_at: "2026-04-18T00:00:00+00:00",
     last_error: "",
