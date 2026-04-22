@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from run import services
+import services
 
 
 class ServicesHelpersTests(unittest.TestCase):
@@ -31,8 +31,8 @@ class ServicesHelpersTests(unittest.TestCase):
                 command=("python", "run/scheduler.py"),
                 process_markers=("run/scheduler.py",),
             )
-            with patch("run.services.pid_exists", return_value=False), patch(
-                "run.services.discover_process_pids", return_value=[]
+            with patch("services.pid_exists", return_value=False), patch(
+                "services.discover_process_pids", return_value=[]
             ):
                 status = services.resolve_status(service)
 
@@ -54,10 +54,10 @@ class ServicesHelpersTests(unittest.TestCase):
                 health_url="http://127.0.0.1:8765/health",
                 process_markers=("run/api.py",),
             )
-            with patch("run.services.find_pids_by_port", return_value=[43210]), patch(
-                "run.services.pid_exists", return_value=True
-            ), patch("run.services.discover_process_pids", return_value=[]), patch(
-                "run.services.port_state", return_value=True
+            with patch("services.find_pids_by_port", return_value=[43210]), patch(
+                "services.pid_exists", return_value=True
+            ), patch("services.discover_process_pids", return_value=[]), patch(
+                "services.port_state", return_value=True
             ):
                 status = services.resolve_status(service)
 
@@ -86,10 +86,10 @@ class ServicesHelpersTests(unittest.TestCase):
             def _kill(pid: int) -> None:
                 killed.append(pid)
 
-            with patch("run.services.pid_exists", side_effect=lambda pid: pid in {123, 456}), patch(
-                "run.services.find_pids_by_port", return_value=[123, 456]
-            ), patch("run.services.terminate_pid_tree", side_effect=_kill), patch(
-                "run.services.resolve_status",
+            with patch("services.pid_exists", side_effect=lambda pid: pid in {123, 456}), patch(
+                "services.find_pids_by_port", return_value=[123, 456]
+            ), patch("services.terminate_pid_tree", side_effect=_kill), patch(
+                "services.resolve_status",
                 return_value=services.ServiceStatus(service=service, state="stopped", pid=None, port_ok=False),
             ):
                 status = services.stop_service(service)
