@@ -49,7 +49,7 @@ python run/services.py start
 
 - `config/`：`workspace.json` 和 `packs/*.json`
 - `runtime/`：运行记录、健康快照、日志、PID、临时文件
-- `data/app.db`：结果库，当前只保存 `x_items_raw` 和 `x_items_curated`
+- `data/app.db`：本地 SQLite 结果库，项目默认直接连接，首次启动会自动创建，当前只保存 `x_items_raw` 和 `x_items_curated`
 
 ## 最小排障顺序
 
