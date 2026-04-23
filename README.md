@@ -2,6 +2,8 @@
 
 本项目是一个本地运行的 X 数据采集、规则筛选、结果沉淀工作台，负责 X 搜索、本地 API、任务调度、SQLite 存储和 Web UI。
 
+![Workbench Screenshot](artifacts/screenshots/readme-workbench.png)
+
 ![image](artifacts/diagrams/workflow.png)
 
 ## 核心能力
@@ -22,8 +24,6 @@
 TWITTER_AUTH_TOKEN=你的 auth_token
 TWITTER_CT0=你的 ct0
 ```
-
-其中 `TWITTER_AUTH_TOKEN` 和 `TWITTER_CT0` 必填。
 
 ### 依赖与启动
 ```bash
