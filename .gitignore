@@ -30,6 +30,7 @@ artifacts/legacy/*.json
 
 # Local design / planning drafts
 artifacts/design/
+/.learnings/
 
 # Local data and test databases
 data/*.db
