@@ -1,5 +1,8 @@
 # X数据采集器
 
+[![CI](https://github.com/gis2all/xdata-collector/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gis2all/xdata-collector/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/gis2all/xdata-collector)](LICENSE)
+
 本项目是一个本地运行的 X 数据采集、规则筛选、结果沉淀工作台，负责 X 搜索、本地 API、任务调度、SQLite 存储和 Web UI。
 
 ![Workbench Screenshot](artifacts/screenshots/readme-workbench.png)
