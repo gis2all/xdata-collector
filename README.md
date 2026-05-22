@@ -36,6 +36,50 @@ python services.py start #一键启动所有服务
 
 默认访问：`http://127.0.0.1:5177`
 
+### Docker 启动
+
+如果希望用 Docker 隔离本地运行环境，先确保 `.env` 已写入 `TWITTER_AUTH_TOKEN` / `TWITTER_CT0`，并停止本机端口上的旧服务：
+
+```bash
+python services.py stop
+docker compose up --build
+```
+
+默认访问：`http://127.0.0.1:5177`。API 暴露在 `http://127.0.0.1:8765`。
+
+Docker Compose 会启动三个服务：
+
+- `api`：本地 HTTP API
+- `scheduler`：固定 tick 调度器
+- `web-ui`：Vite 开发态 Web UI
+
+容器内的 API 和 scheduler 默认通过 Windows 宿主机上的 Clash Verge 混合代理端口访问外网：
+
+```text
+http://host.docker.internal:7897
+```
+
+如果 Clash Verge 的端口不是 `7897`，可以在启动前覆盖：
+
+```bash
+DOCKER_PROXY_URL=http://host.docker.internal:7890 docker compose up --build
+```
+
+如果容器无法连接代理，先确认 Clash Verge 已开启并允许来自 Docker 的连接；Docker Desktop 下容器访问宿主机要使用 `host.docker.internal`，不要写 `127.0.0.1`。
+
+以下目录会挂载到容器中并保留在宿主机：
+
+- `config/`
+- `data/`
+- `runtime/`
+- `.env`
+
+停止 Docker 服务：
+
+```bash
+docker compose down
+```
+
 ## 运行入口与端口
 
 - `python install.py`：推荐首次安装入口，会调用 `run/bootstrap.py` 并安装前端依赖

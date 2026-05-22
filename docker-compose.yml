@@ -1,0 +1,57 @@
+x-proxy-env: &proxy-env
+  HTTP_PROXY: ${DOCKER_PROXY_URL:-http://host.docker.internal:7897}
+  HTTPS_PROXY: ${DOCKER_PROXY_URL:-http://host.docker.internal:7897}
+  ALL_PROXY: ${DOCKER_PROXY_URL:-http://host.docker.internal:7897}
+  http_proxy: ${DOCKER_PROXY_URL:-http://host.docker.internal:7897}
+  https_proxy: ${DOCKER_PROXY_URL:-http://host.docker.internal:7897}
+  all_proxy: ${DOCKER_PROXY_URL:-http://host.docker.internal:7897}
+  NO_PROXY: localhost,127.0.0.1,api,scheduler,web-ui
+  no_proxy: localhost,127.0.0.1,api,scheduler,web-ui
+
+services:
+  api:
+    build:
+      context: .
+    command: ["python", "run/api.py", "--host", "0.0.0.0", "--port", "8765"]
+    env_file:
+      - .env
+    environment:
+      <<: *proxy-env
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./runtime:/app/runtime
+      - ./.env:/app/.env:ro
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: .
+    command: ["python", "run/scheduler.py", "--tick-seconds", "30"]
+    env_file:
+      - .env
+    environment:
+      <<: *proxy-env
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./runtime:/app/runtime
+      - ./.env:/app/.env:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  web-ui:
+    build:
+      context: .
+    working_dir: /app/web-ui
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5177"]
+    environment:
+      VITE_API_BASE_URL: "http://127.0.0.1:8765"
+    ports:
+      - "5177:5177"
+    depends_on:
+      - api
+    restart: unless-stopped

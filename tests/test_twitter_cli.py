@@ -2,7 +2,7 @@
 from pathlib import PureWindowsPath
 from unittest.mock import patch
 
-from backend.twitter_cli import find_twitter_cli, normalize_search_payload, run_twitter_search
+from backend.twitter_cli import find_twitter_cli, find_xreach_cli, normalize_search_payload, run_twitter_search
 
 
 class NormalizeSearchPayloadTests(unittest.TestCase):
@@ -141,6 +141,14 @@ class TwitterCliRuntimeTests(unittest.TestCase):
             cli = find_twitter_cli()
 
         self.assertEqual(PureWindowsPath(cli), PureWindowsPath("C:/Users/tester/.local/bin/twitter.exe"))
+
+    def test_xreach_missing_message_names_npm_package(self) -> None:
+        with patch("backend.twitter_cli.shutil.which", return_value=None), patch(
+            "backend.twitter_cli.Path.exists",
+            return_value=False,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "npm i -g xreach-cli"):
+                find_xreach_cli()
 
     def test_search_runs_with_utf8_environment(self) -> None:
         with patch("backend.twitter_cli.find_twitter_cli", return_value="twitter.exe"), patch(

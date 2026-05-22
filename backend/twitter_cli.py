@@ -30,7 +30,7 @@ def find_xreach_cli() -> str:
     fallback = Path.home() / "AppData" / "Roaming" / "npm" / "xreach.cmd"
     if fallback.exists():
         return str(fallback)
-    raise RuntimeError("xreach not found. Install with `npm i -g xreach`.")
+    raise RuntimeError("xreach not found. Install with `npm i -g xreach-cli`.")
 
 
 def run_twitter_search(query: str, max_results: int, timeout_seconds: int = 60) -> dict[str, Any] | list[Any]:
