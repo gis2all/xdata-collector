@@ -161,28 +161,28 @@ export function SettingsPage() {
           </div>
         </div>
 
-        <div className="dashboard-detail-grid settings-summary-grid">
-          <div className="dashboard-detail-item">
+        <div className="flat-row-list settings-summary-grid" data-testid="settings-summary-list">
+          <div className="flat-row">
             <span>{"\u6570\u636e\u5e93\u8def\u5f84"}</span>
             <strong>{draftWorkspace?.environment.db_path || "--"}</strong>
           </div>
-          <div className="dashboard-detail-item">
+          <div className="flat-row">
             <span>{"\u8fd0\u884c\u76ee\u5f55"}</span>
             <strong>{draftWorkspace?.environment.runtime_dir || "--"}</strong>
           </div>
-          <div className="dashboard-detail-item">
+          <div className="flat-row">
             <span>{".env \u6587\u4ef6"}</span>
             <strong>{draftWorkspace?.environment.env_file || "--"}</strong>
           </div>
-          <div className="dashboard-detail-item">
+          <div className="flat-row">
             <span>{"\u4efb\u52a1\u6570\u91cf"}</span>
             <strong>{jobCount}</strong>
           </div>
-          <div className="dashboard-detail-item">
+          <div className="flat-row">
             <span>{"\u4e0b\u4e00\u4e2a\u4efb\u52a1 ID"}</span>
             <strong>{draftWorkspace?.meta.next_job_id ?? "--"}</strong>
           </div>
-          <div className="dashboard-detail-item">
+          <div className="flat-row">
             <span>{"\u6700\u8fd1\u66f4\u65b0"}</span>
             <strong>{draftWorkspace ? formatUtcPlus8Time(draftWorkspace.meta.updated_at, "--") : "--"}</strong>
           </div>
@@ -198,8 +198,8 @@ export function SettingsPage() {
           </div>
         </div>
 
-        <div className="collector-grid collector-grid-2 settings-actions-grid">
-          <div className="collector-card settings-action-card workbench-subsurface">
+        <div className="settings-actions-strip flat-actions" data-testid="settings-actions-strip">
+          <div className="settings-action-group">
             <div className="settings-card-title">{"\u5237\u65b0\u4e0e\u5bf9\u9f50"}</div>
             <div className="collector-toolbar settings-card-actions">
               <button
@@ -223,7 +223,7 @@ export function SettingsPage() {
             </div>
           </div>
 
-          <div className="collector-card settings-action-card workbench-subsurface workbench-subsurface-muted">
+          <div className="settings-action-group">
             <div className="settings-card-title">{"\u5bfc\u5165\u914d\u7f6e"}</div>
             <label className="field">
               <span>{"\u5bfc\u5165\u914d\u7f6e\u6587\u4ef6"}</span>
@@ -242,7 +242,7 @@ export function SettingsPage() {
           </div>
         </div>
 
-        <div className="workbench-subsurface settings-editor-surface">
+        <div className="flat-section settings-editor-surface" data-testid="settings-editor-surface">
           <label className="field">
             <span>workspace.json</span>
             <textarea

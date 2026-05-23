@@ -13,7 +13,12 @@ describe("SearchSpecEditor", () => {
     expect(screen.getByTestId("search-spec-section-scope")).toHaveClass("collector-editor-section");
     expect(screen.getByTestId("search-spec-section-metrics")).toHaveClass("collector-editor-section");
     expect(screen.getByTestId("search-spec-section-behavior")).toHaveClass("collector-editor-section");
-    expect(screen.getByTestId("search-spec-query-summary")).toHaveClass("workbench-summary-panel");
+    expect(screen.getByTestId("search-spec-section-keywords")).toHaveClass("flat-section");
+    expect(screen.getByTestId("search-spec-section-scope")).toHaveClass("flat-section");
+    expect(screen.getByTestId("search-spec-section-metrics")).toHaveClass("flat-section");
+    expect(screen.getByTestId("search-spec-section-behavior")).toHaveClass("flat-section");
+    expect(screen.getByTestId("search-spec-query-summary")).toHaveClass("flat-section");
+    expect(screen.getByTestId("search-spec-query-summary")).not.toHaveClass("workbench-summary-panel");
     expect(screen.getByText("QUERY SETUP")).toBeInTheDocument();
     expect(screen.getByText("PREVIEW")).toBeInTheDocument();
   });

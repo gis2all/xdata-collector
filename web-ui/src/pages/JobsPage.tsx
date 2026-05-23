@@ -969,7 +969,7 @@ export function JobsPage() {
         <section className="jobs-list-pane">
           <div className="card jobs-list-tools workbench-layer">
             <div
-              className="jobs-list-tools-summary workbench-summary-panel"
+              className="jobs-list-tools-summary flat-meta-strip"
               data-testid="jobs-list-tools-summary"
             >
               <div className="jobs-list-tools-copy workbench-section-copy">
@@ -984,7 +984,7 @@ export function JobsPage() {
             </div>
 
             <div
-              className="jobs-list-filterbar workbench-subsurface workbench-subsurface-muted"
+              className="jobs-list-filterbar flat-actions"
               data-testid="jobs-filter-bar"
             >
               <label className="field jobs-filter-field">
@@ -1186,12 +1186,12 @@ export function JobsPage() {
 
               {workspaceActionBar}
 
-              <div className="drawer-section jobs-current-task-section workbench-layer">
+              <div className="jobs-current-task-section flat-section workbench-layer">
                 <JobsSectionHeader
                   title="当前任务"
                   description="先确认调度状态和基础设置，再继续调整任务正文。"
                 />
-                <div className="jobs-current-task-hero workbench-summary-panel">
+                <div className="jobs-current-task-hero flat-section">
                   <div className="jobs-current-task-copy">
                     <div className="jobs-current-task-eyebrow">{currentTaskEyebrow}</div>
                     <div className="jobs-current-task-name">{currentTaskHeroTitle}</div>
@@ -1206,16 +1206,16 @@ export function JobsPage() {
                     <span>{`最近运行时间：${lastRunTimeLabel}`}</span>
                     {selectedJob?.deleted_at ? <span>{`删除时间：${formatUtcPlus8Time(selectedJob.deleted_at)}`}</span> : null}
                   </div>
-                  <div className="collector-grid collector-grid-3 jobs-current-task-summary-grid workbench-summary-grid">
-                    <div className="dashboard-detail-item">
+                  <div className="jobs-current-task-summary-grid flat-row-list">
+                    <div className="flat-row">
                       <span>{"当前状态"}</span>
                       <strong>{currentStatusLabel}</strong>
                     </div>
-                    <div className="dashboard-detail-item">
+                    <div className="flat-row">
                       <span>{"最近运行状态"}</span>
                       <strong>{lastRunLabel}</strong>
                     </div>
-                    <div className="dashboard-detail-item">
+                    <div className="flat-row">
                       <span>{"最近运行时间"}</span>
                       <strong>{lastRunTimeLabel}</strong>
                     </div>
@@ -1236,12 +1236,12 @@ export function JobsPage() {
                   </label>
                 </div>
               </div>
-              <div className="drawer-section workbench-layer">
+              <div className="flat-section workbench-layer">
                 <JobsSectionHeader
                   title="任务包操作"
                   description="载入、导入或保存当前任务包。"
                 />
-                <div className="jobs-pack-context-hint workbench-subsurface workbench-subsurface-muted" data-testid="jobs-pack-context-hint">
+                <div className="jobs-pack-context-hint flat-meta-strip" data-testid="jobs-pack-context-hint">
                   <div className="workbench-pill-row">
                     <span className="jobs-summary-pill workbench-pill">{`当前绑定：${currentTaskPackName || "--"}`}</span>
                     <span className="jobs-summary-pill workbench-pill">{`绑定状态：${currentTaskPackBindingLabel}`}</span>
@@ -1249,7 +1249,7 @@ export function JobsPage() {
                   </div>
                 </div>
                 <div className="collector-grid collector-grid-2 jobs-pack-manager-grid jobs-pack-actions-grid">
-                  <div className="collector-card">
+                  <div className="jobs-pack-action-group flat-section">
                     <div className="collector-subtitle">{"载入到当前草稿"}</div>
                     <div className="kv" style={{ marginTop: 6 }}>{"可从任务包列表载入，或从本地 JSON 导入。"}</div>
                     <div className="collector-toolbar" style={{ marginTop: 12, flexWrap: "wrap" }}>
@@ -1302,7 +1302,7 @@ export function JobsPage() {
                     <div className="kv jobs-pack-note">{"从文件导入只替换当前草稿。"}</div>
                     <div className="kv jobs-pack-note">{"导入并保存会新建并绑定任务包。"}</div>
                   </div>
-                  <div className="collector-card">
+                  <div className="jobs-pack-action-group flat-section">
                     <div className="collector-subtitle">{"保存当前草稿"}</div>
                     <div className="kv" style={{ marginTop: 6 }}>{"可另存为新任务包，或保存回当前任务包。"}</div>
                     <div className="collector-toolbar" style={{ marginTop: 12, flexWrap: "wrap" }}>
@@ -1330,7 +1330,7 @@ export function JobsPage() {
                 </div>
               </div>
 
-              <div className="drawer-section workbench-layer">
+              <div className="flat-section workbench-layer">
                 <JobsSectionHeader
                   title="任务正文摘要"
                   description="这里先快速预览当前草稿会形成的搜索表达，再继续深入编辑搜索条件和规则。"
@@ -1340,28 +1340,28 @@ export function JobsPage() {
                     <div className="collector-subtitle">{"查询摘要"}</div>
                     <code>{buildQueryPreview(form.search_spec) || "--"}</code>
                   </div>
-                  <div className="dashboard-detail-grid jobs-task-body-grid workbench-summary-grid">
-                    <div className="dashboard-detail-item">
+                  <div className="jobs-task-body-grid flat-row-list">
+                    <div className="flat-row">
                       <span>{"关键词片段"}</span>
                       <strong>{`${taskKeywordCount} 项`}</strong>
                     </div>
-                    <div className="dashboard-detail-item">
+                    <div className="flat-row">
                       <span>{"作者约束"}</span>
                       <strong>{`${taskAuthorConstraintCount} 项`}</strong>
                     </div>
-                    <div className="dashboard-detail-item">
+                    <div className="flat-row">
                       <span>{"规则条数"}</span>
                       <strong>{`${taskRuleCount} 条`}</strong>
                     </div>
-                    <div className="dashboard-detail-item">
+                    <div className="flat-row">
                       <span>{"等级数"}</span>
                       <strong>{`${taskLevelCount} 层`}</strong>
                     </div>
-                    <div className="dashboard-detail-item dashboard-detail-item-wide">
+                    <div className="flat-row flat-row-wide">
                       <span>{"规则名称"}</span>
                       <strong>{form.rule_set.name || "--"}</strong>
                     </div>
-                    <div className="dashboard-detail-item dashboard-detail-item-wide">
+                    <div className="flat-row flat-row-wide">
                       <span>{"规则说明"}</span>
                       <strong>{form.rule_set.description || "未填写规则说明"}</strong>
                     </div>
@@ -1369,7 +1369,7 @@ export function JobsPage() {
                 </div>
               </div>
 
-              <div className="drawer-section workbench-layer">
+              <div className="flat-section workbench-layer">
                 <JobsSectionHeader
                   title="搜索条件"
                   description="这里定义自动任务具体要去搜什么。"
@@ -1377,7 +1377,7 @@ export function JobsPage() {
                 <SearchSpecEditor value={form.search_spec} onChange={(next) => updateForm("search_spec", next)} disabled={drawerDisabled} />
               </div>
 
-              <div className="drawer-section workbench-layer">
+              <div className="flat-section workbench-layer">
                 <JobsSectionHeader
                   title="规则"
                   description="这里定义原始结果如何筛选、打分和分级。"
@@ -1424,7 +1424,7 @@ export function JobsPage() {
               </div>
 
               {selectedJob?.last_run_stats && (
-                <div className="drawer-section workbench-layer">
+                <div className="flat-section workbench-layer">
                   <JobsSectionHeader title="最近运行统计" description="保留最近一次任务执行的统计输出，便于快速复盘。" />
                   <pre className="drawer-json">{JSON.stringify(selectedJob.last_run_stats, null, 2)}</pre>
                 </div>
@@ -1432,7 +1432,7 @@ export function JobsPage() {
             </div>
           ) : (
             <div className="drawer-empty jobs-empty-workspace" data-testid="jobs-empty-workspace">
-              <div className="jobs-empty-hero workbench-summary-panel">
+              <div className="jobs-empty-hero flat-section">
                 <div>
                   <div className="jobs-empty-eyebrow">{"任务工作区"}</div>
                   <h4>{"选择或新建任务"}</h4>

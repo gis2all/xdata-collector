@@ -48,6 +48,9 @@ describe("SettingsPage", () => {
     expect(screen.getByTestId("settings-summary")).toBeInTheDocument();
     expect(screen.getByTestId("settings-actions")).toBeInTheDocument();
     expect(screen.getByTestId("settings-editor-section")).toBeInTheDocument();
+    expect(screen.getByTestId("settings-summary-list")).toHaveClass("flat-row-list");
+    expect(screen.getByTestId("settings-actions-strip")).toHaveClass("flat-actions");
+    expect(screen.getByTestId("settings-editor-surface")).toHaveClass("flat-section");
 
     expect(screen.getByRole("heading", { name: TEXT.title })).toBeInTheDocument();
     expect(within(screen.getByTestId("settings-summary")).getByText(TEXT.summaryTitle)).toBeInTheDocument();

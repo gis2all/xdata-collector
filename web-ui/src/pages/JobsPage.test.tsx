@@ -291,10 +291,10 @@ describe("JobsPage", () => {
     expect(screen.getByRole("heading", { name: "规则" })).toBeInTheDocument();
     expect(screen.getByText("绑定状态：已绑定本地任务包")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "当前任务" }).closest(".jobs-section-header")).toHaveClass("workbench-section-header");
-    expect(screen.getByRole("heading", { name: "当前任务" }).closest(".drawer-section")).toHaveClass("workbench-layer");
+    expect(screen.getByRole("heading", { name: "当前任务" }).closest(".jobs-current-task-section")).toHaveClass("workbench-layer");
     expect(screen.getByTestId("create-job-button")).toHaveClass("workbench-primary-action");
     expect(within(screen.getByTestId("jobs-primary-actions")).getByLabelText("submit-job")).toHaveClass("workbench-primary-action");
-    expect(screen.getByText("当前状态：已启用").closest(".jobs-current-task-hero")).toHaveClass("workbench-summary-panel");
+    expect(screen.getByText("当前状态：已启用").closest(".jobs-current-task-hero")).toHaveClass("flat-section");
     expect(screen.queryByText("工作区模式")).not.toBeInTheDocument();
     expect(screen.queryByText("新建任务草稿")).not.toBeInTheDocument();
     expect(screen.queryByText("编辑已保存任务")).not.toBeInTheDocument();
@@ -304,7 +304,7 @@ describe("JobsPage", () => {
         .getByRole("heading", { name: "任务包操作" })
         .compareDocumentPosition(screen.getByRole("heading", { name: "任务正文摘要" })),
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(screen.getByText("关键词片段").closest(".jobs-task-body-grid")).toHaveClass("workbench-summary-grid");
+    expect(screen.getByText("关键词片段").closest(".jobs-task-body-grid")).toHaveClass("flat-row-list");
     expect(screen.getByText("当前绑定：alpha-watch")).toBeInTheDocument();
     expect(screen.getByText("绑定状态：已绑定本地任务包")).toBeInTheDocument();
     expect(screen.getByText("草稿状态：未修改")).toBeInTheDocument();
@@ -351,6 +351,8 @@ describe("JobsPage", () => {
     const manageBar = screen.getByTestId("jobs-manage-bar");
     expect(manageBar).toBeInTheDocument();
     expect(manageBar).not.toHaveClass("workbench-subsurface");
+    expect(listToolsSummary).toHaveClass("flat-meta-strip");
+    expect(screen.getByTestId("jobs-filter-bar")).toHaveClass("flat-actions");
     expect(screen.getByTestId("jobs-search-button")).toHaveClass("workbench-secondary-action");
     expect(screen.getByRole("button", { name: "批量启用" })).toHaveClass("workbench-secondary-action");
     expect(screen.getByRole("button", { name: "批量删除" })).toHaveClass("workbench-danger-action");

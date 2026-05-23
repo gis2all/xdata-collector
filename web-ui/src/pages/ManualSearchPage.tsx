@@ -479,7 +479,7 @@ export function ManualSearchPage() {
               }
             />
             <div
-              className="manual-pack-context-hint workbench-subsurface workbench-subsurface-muted"
+              className="manual-pack-context-hint flat-meta-strip"
               data-testid="manual-pack-context-hint"
             >
               <div className="workbench-pill-row">
@@ -489,7 +489,7 @@ export function ManualSearchPage() {
               </div>
             </div>
             <div className="collector-grid collector-grid-2 manual-pack-actions-grid">
-              <div className="collector-card manual-action-card" data-testid="manual-pack-load-card">
+              <div className="manual-action-card flat-section" data-testid="manual-pack-load-card">
                 <div className="manual-action-card-head">
                   <div className="manual-action-card-copy">
                     <div className="manual-action-card-eyebrow">草稿来源</div>
@@ -566,7 +566,7 @@ export function ManualSearchPage() {
                   <div className="kv manual-pack-note">导入并保存会新建并绑定任务包。</div>
                 </div>
               </div>
-              <div className="collector-card manual-action-card" data-testid="manual-pack-save-card">
+              <div className="manual-action-card flat-section" data-testid="manual-pack-save-card">
                 <div className="manual-action-card-head">
                   <div className="manual-action-card-copy">
                     <div className="manual-action-card-eyebrow">草稿落盘</div>
@@ -631,28 +631,28 @@ export function ManualSearchPage() {
                 <div className="collector-subtitle">查询摘要</div>
                 <code>{queryPreview}</code>
               </div>
-              <div className="dashboard-detail-grid manual-body-detail-grid workbench-summary-grid">
-                <div className="dashboard-detail-item">
+              <div className="manual-body-detail-grid flat-row-list">
+                <div className="flat-row">
                   <span>关键词片段</span>
                   <strong>{`${keywordCount} 项`}</strong>
                 </div>
-                <div className="dashboard-detail-item">
+                <div className="flat-row">
                   <span>作者约束</span>
                   <strong>{`${authorConstraintCount} 项`}</strong>
                 </div>
-                <div className="dashboard-detail-item">
+                <div className="flat-row">
                   <span>规则条数</span>
                   <strong>{`${ruleCount} 条`}</strong>
                 </div>
-                <div className="dashboard-detail-item">
+                <div className="flat-row">
                   <span>等级数</span>
                   <strong>{`${levelCount} 层`}</strong>
                 </div>
-                <div className="dashboard-detail-item dashboard-detail-item-wide">
+                <div className="flat-row flat-row-wide">
                   <span>规则名称</span>
                   <strong>{draftRuleName || "--"}</strong>
                 </div>
-                <div className="dashboard-detail-item dashboard-detail-item-wide">
+                <div className="flat-row flat-row-wide">
                   <span>规则说明</span>
                   <strong>{draftRuleDescription || "未填写规则说明"}</strong>
                 </div>
@@ -727,7 +727,7 @@ export function ManualSearchPage() {
             title="执行摘要"
             description="这里只展示草稿状态和最近一次执行结果。"
           />
-          <div className="manual-rail-hero workbench-summary-panel">
+          <div className="manual-rail-hero flat-section">
             <div className="manual-rail-pills workbench-pill-row">
               <span className="jobs-summary-pill workbench-pill">{`当前草稿：${currentDraftStatusLabel}`}</span>
               <span className="jobs-summary-pill workbench-pill">{`最近状态：${lastExecutionStatusLabel}`}</span>
@@ -741,18 +741,18 @@ export function ManualSearchPage() {
                   : "最近执行完成，可查看下方结果。"}
             </div>
           </div>
-          <div className="collector-grid collector-grid-2 manual-rail-grid workbench-summary-grid">
-            <div className="dashboard-detail-item">
+          <div className="manual-rail-grid flat-row-list">
+            <div className="flat-row">
               <span>草稿状态</span>
               <strong>
                 {currentDraftStatusLabel}
               </strong>
             </div>
-            <div className="dashboard-detail-item">
+            <div className="flat-row">
               <span>最近执行</span>
               <strong>{lastExecutionTimeLabel}</strong>
             </div>
-            <div className="dashboard-detail-item">
+            <div className="flat-row">
               <span>最近一次结果</span>
               <strong>
                 <span className={`badge ${executionStatusTone(lastExecution.status)}`}>
@@ -760,15 +760,15 @@ export function ManualSearchPage() {
                 </span>
               </strong>
             </div>
-            <div className="dashboard-detail-item">
+            <div className="flat-row">
               <span>raw_total</span>
               <strong>{lastExecution.status === "idle" ? "--" : `${lastExecution.rawTotal} 条`}</strong>
             </div>
-            <div className="dashboard-detail-item">
+            <div className="flat-row">
               <span>matched_total</span>
               <strong>{lastExecution.status === "idle" ? "--" : `${lastExecution.matchedTotal} 条`}</strong>
             </div>
-            <div className="dashboard-detail-item">
+            <div className="flat-row">
               <span>errors</span>
               <strong>{lastExecution.status === "idle" ? "--" : `${lastExecution.errorCount} 条`}</strong>
             </div>
@@ -792,7 +792,7 @@ export function ManualSearchPage() {
           title="执行结果"
           description="完整执行输出仍放在页面下方全宽区域，包含最终查询、原始结果和命中结果。"
         />
-        <div className="manual-results-hero workbench-summary-panel" data-testid="manual-results-summary-card">
+        <div className="manual-results-hero flat-meta-strip" data-testid="manual-results-summary-card">
           <div className="manual-results-hero-copy">
             <div className="workbench-section-eyebrow">执行概览</div>
             <div className="collector-subtitle">结果区只负责承载完整输出</div>
@@ -814,8 +814,8 @@ export function ManualSearchPage() {
           </div>
         ) : result ? (
           <div className="collector-stack">
-            <div className="card collector-summary-grid">
-              <div className="dashboard-detail-item">
+            <div className="collector-summary-grid flat-row-list">
+              <div className="flat-row">
                 <span>实际查询</span>
                 <div>
                   {resultQueries.map((query) => (
@@ -826,15 +826,15 @@ export function ManualSearchPage() {
                   {!resultQueries.length && <strong>--</strong>}
                 </div>
               </div>
-              <div className="dashboard-detail-item">
+              <div className="flat-row">
                 <span>本次执行规则</span>
                 <strong>{result.rule_set_summary?.name || "--"}</strong>
               </div>
-              <div className="dashboard-detail-item">
+              <div className="flat-row">
                 <span>原始结果</span>
                 <strong>{result.raw_total}</strong>
               </div>
-              <div className="dashboard-detail-item">
+              <div className="flat-row">
                 <span>命中结果</span>
                 <strong>{result.matched_total}</strong>
               </div>

@@ -1,7 +1,6 @@
 import { type ReactNode } from "react";
 
 type ResultsTableManagerProps = {
-  tableName: string;
   total: number;
   selectedCount: number;
   allMatchingSelected: boolean;
@@ -23,7 +22,6 @@ type ResultsTableManagerProps = {
 };
 
 export function ResultsTableManager({
-  tableName,
   total,
   selectedCount,
   allMatchingSelected,
@@ -45,11 +43,9 @@ export function ResultsTableManager({
 }: ResultsTableManagerProps) {
   return (
     <section className="results-manager-layer workbench-layer" data-testid="results-manager-layer">
-      <div className="results-manager-summary-panel workbench-summary-panel" data-testid="results-manager-summary-panel">
+      <div className="results-manager-summary-panel flat-meta-strip" data-testid="results-manager-summary-panel">
         <div className="results-manager-copy workbench-section-copy">
-          <div className="workbench-section-eyebrow">结果管理</div>
           <div className="results-manager-title workbench-section-title">表格管理</div>
-          <div className="kv">管理当前结果表的字段、选择和整表操作。</div>
         </div>
 
         <div className="results-manager-summary workbench-pill-row">
@@ -60,7 +56,7 @@ export function ResultsTableManager({
       </div>
 
       <div
-        className="results-manager-toolbar-shell workbench-subsurface workbench-subsurface-muted"
+        className="results-manager-toolbar-shell flat-actions"
         data-testid="results-manager-toolbar-shell"
       >
         <div className="results-manager-toolbar" data-testid="results-manager-toolbar">
@@ -123,7 +119,6 @@ export function ResultsTableManager({
         </div>
       </div>
 
-      <div className="results-manager-note">{`全表去重会作用于当前整张 ${tableName} 表。`}</div>
     </section>
   );
 }

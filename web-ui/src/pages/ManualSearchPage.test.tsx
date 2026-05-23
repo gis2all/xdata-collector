@@ -135,7 +135,7 @@ describe("ManualSearchPage", () => {
     expect(screen.getByRole("heading", { name: "执行摘要" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "执行结果" })).toBeInTheDocument();
     expect(screen.queryByTestId("manual-pack-state-grid")).not.toBeInTheDocument();
-    expect(screen.getByTestId("manual-pack-context-hint")).toHaveClass("workbench-subsurface");
+    expect(screen.getByTestId("manual-pack-context-hint")).toHaveClass("flat-meta-strip");
     expect(screen.getByTestId("manual-pack-load-card")).toBeInTheDocument();
     expect(screen.getByTestId("manual-pack-save-card")).toBeInTheDocument();
     expect(screen.getByTestId("manual-search-editor-surface")).toBeInTheDocument();
@@ -154,8 +154,8 @@ describe("ManualSearchPage", () => {
     expect(screen.getByTestId("manual-refresh-task-packs")).toHaveClass("workbench-secondary-action");
     expect(within(header).queryByRole("button", { name: "清空当前草稿" })).not.toBeInTheDocument();
     expect(within(header).queryByRole("button", { name: "刷新任务包列表" })).not.toBeInTheDocument();
-    expect(screen.getByText("当前草稿：未绑定草稿").closest(".manual-rail-hero")).toHaveClass("workbench-summary-panel");
-    expect(within(screen.getByTestId("manual-execution-rail")).getByText("草稿状态").closest(".manual-rail-grid")).toHaveClass("workbench-summary-grid");
+    expect(screen.getByText("当前草稿：未绑定草稿").closest(".manual-rail-hero")).toHaveClass("flat-section");
+    expect(within(screen.getByTestId("manual-execution-rail")).getByText("草稿状态").closest(".manual-rail-grid")).toHaveClass("flat-row-list");
     expect(screen.getByText("当前来源：默认空白")).toBeInTheDocument();
     expect(screen.getByText("当前绑定：--")).toBeInTheDocument();
     expect(screen.getByText("当前草稿：未绑定草稿")).toBeInTheDocument();
@@ -212,7 +212,7 @@ describe("ManualSearchPage", () => {
     expect(screen.queryByText("pack_path=config/packs/alpha-watch.json")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务包操作" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务正文摘要" })).toBeInTheDocument();
-    expect(screen.getByTestId("manual-pack-context-hint")).toHaveClass("workbench-subsurface");
+    expect(screen.getByTestId("manual-pack-context-hint")).toHaveClass("flat-meta-strip");
     expect(screen.getByTestId("manual-pack-load-card")).toBeInTheDocument();
     expect(screen.getByTestId("manual-pack-save-card")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "恢复任务包内容" })).toBeInTheDocument();
@@ -226,7 +226,7 @@ describe("ManualSearchPage", () => {
     expect(screen.getByTestId("manual-save-as-pack")).toHaveClass("workbench-secondary-action");
     expect(screen.getByTestId("manual-save-current-pack")).toHaveClass("workbench-primary-action");
     expect(screen.getByTestId("manual-delete-pack")).toHaveClass("workbench-danger-action");
-    expect(screen.getByText("关键词片段").closest(".manual-body-detail-grid")).toHaveClass("workbench-summary-grid");
+    expect(screen.getByText("关键词片段").closest(".manual-body-detail-grid")).toHaveClass("flat-row-list");
     expect(screen.getByTestId("manual-search-editor-surface")).toBeInTheDocument();
     expect(screen.getByTestId("manual-rule-editor-surface")).toBeInTheDocument();
     expect(screen.getByText(/只替换当前草稿/)).toBeInTheDocument();

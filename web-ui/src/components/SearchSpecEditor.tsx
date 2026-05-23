@@ -192,7 +192,7 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
   return (
     <div className="collector-panel collector-editor-shell search-spec-editor" data-testid="search-spec-editor">
       <section
-        className="collector-editor-section collector-editor-section-highlight workbench-subsurface"
+        className="collector-editor-section collector-editor-section-highlight flat-section"
         data-testid="search-spec-section-keywords"
       >
         <SectionHeader
@@ -241,7 +241,7 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
         </div>
       </section>
 
-      <section className="collector-editor-section workbench-subsurface" data-testid="search-spec-section-scope">
+      <section className="collector-editor-section flat-section" data-testid="search-spec-section-scope">
         <SectionHeader
           eyebrow={TEXT.scopeEyebrow}
           title={TEXT.scopeTitle}
@@ -273,7 +273,7 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
         </div>
       </section>
 
-      <section className="collector-editor-section workbench-subsurface" data-testid="search-spec-section-metrics">
+      <section className="collector-editor-section flat-section" data-testid="search-spec-section-metrics">
         <SectionHeader
           eyebrow={TEXT.metricsEyebrow}
           title={TEXT.metricsTitle}
@@ -287,7 +287,7 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
         </div>
       </section>
 
-      <section className="collector-editor-section workbench-subsurface" data-testid="search-spec-section-behavior">
+      <section className="collector-editor-section flat-section" data-testid="search-spec-section-behavior">
         <SectionHeader
           eyebrow={TEXT.behaviorEyebrow}
           title={TEXT.behaviorTitle}
@@ -318,7 +318,7 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
       </section>
 
       <section
-        className="collector-query-preview collector-editor-section collector-editor-section-highlight workbench-summary-panel"
+        className="collector-query-preview collector-editor-section collector-editor-section-highlight flat-section"
         data-testid="search-spec-query-summary"
       >
         <SectionHeader

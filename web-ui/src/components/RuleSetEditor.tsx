@@ -119,7 +119,7 @@ function ConditionEditor({
 
   return (
     <div
-      className="collector-condition-card workbench-subsurface workbench-subsurface-muted"
+      className="collector-condition-card flat-section"
       data-testid={`rule-condition-${ruleId}-${index}`}
     >
       <div className="collector-condition-card-header">
@@ -202,7 +202,7 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, disabled = false 
   return (
     <div className="collector-panel collector-editor-shell rule-set-editor" data-testid="rule-set-editor">
       <section
-        className="collector-editor-section collector-editor-section-highlight workbench-summary-panel"
+        className="collector-editor-section collector-editor-section-highlight flat-section"
         data-testid="rule-set-summary"
       >
         <SectionHeader
@@ -218,7 +218,7 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, disabled = false 
         </div>
       </section>
 
-      <section className="collector-editor-section workbench-subsurface" data-testid="rule-set-levels">
+      <section className="collector-editor-section flat-section" data-testid="rule-set-levels">
         <SectionHeader
           eyebrow={TEXT.levelsEyebrow}
           title={TEXT.levelsTitle}
@@ -226,7 +226,7 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, disabled = false 
         />
         <div className="collector-grid collector-grid-3 collector-level-grid">
           {current.levels.map((level, index) => (
-            <div key={`${level.id}-${index}`} className="collector-card collector-level-card">
+            <div key={`${level.id}-${index}`} className="collector-level-card flat-section">
               <label className="field">
                 <span>{TEXT.levelId}</span>
                 <input disabled={disabled} value={level.id} onChange={(e) => onDraftChange({ ...current, levels: updateLevel(current.levels, index, { id: e.target.value }) })} />
@@ -248,7 +248,7 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, disabled = false 
         </div>
       </section>
 
-      <section className="collector-editor-section workbench-subsurface" data-testid="rule-set-rules">
+      <section className="collector-editor-section flat-section" data-testid="rule-set-rules">
         <div className="collector-editor-section-header collector-editor-section-header-between">
           <div className="collector-editor-section-copy">
             <div className="collector-editor-section-eyebrow">{TEXT.rulesEyebrow}</div>
@@ -270,7 +270,7 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, disabled = false 
           {current.rules.map((rule, index) => (
             <div
               key={rule.id}
-              className="collector-card collector-rule-card collector-rule-shell workbench-subsurface"
+              className="collector-rule-card collector-rule-shell flat-section"
               data-testid={`rule-card-${rule.id}`}
             >
               <div className="collector-rule-header">

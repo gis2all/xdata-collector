@@ -15,14 +15,18 @@ describe("RuleSetEditor", () => {
     );
 
     expect(screen.getByTestId("rule-set-editor")).toHaveClass("collector-editor-shell");
-    expect(screen.getByTestId("rule-set-summary")).toHaveClass("workbench-summary-panel");
+    expect(screen.getByTestId("rule-set-summary")).toHaveClass("flat-section");
+    expect(screen.getByTestId("rule-set-summary")).not.toHaveClass("workbench-summary-panel");
     expect(screen.getByTestId("rule-set-levels")).toHaveClass("collector-editor-section");
+    expect(screen.getByTestId("rule-set-levels")).toHaveClass("flat-section");
     expect(screen.getByTestId("rule-set-rules")).toHaveClass("collector-editor-section");
+    expect(screen.getByTestId("rule-set-rules")).toHaveClass("flat-section");
     expect(screen.getByLabelText("add-scoring-rule")).toHaveClass("workbench-secondary-action");
     expect(screen.getByLabelText("delete-rule-exclude-trade-gated")).toHaveClass("workbench-danger-action");
     expect(screen.getByLabelText("add-condition-exclude-trade-gated")).toHaveClass("workbench-secondary-action");
     expect(screen.getByLabelText("delete-condition-exclude-trade-gated-0")).toHaveClass("workbench-danger-action");
-    expect(screen.getByTestId("rule-card-exclude-trade-gated")).toHaveClass("collector-rule-shell");
+    expect(screen.getByTestId("rule-card-exclude-trade-gated")).toHaveClass("flat-section");
+    expect(screen.getByTestId("rule-card-exclude-trade-gated")).not.toHaveClass("collector-card");
   });
 
   it("writes back rule and condition mutations through the shared editor shell", () => {

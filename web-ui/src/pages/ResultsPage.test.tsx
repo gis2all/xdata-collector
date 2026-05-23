@@ -104,18 +104,18 @@ describe("ResultsPage", () => {
     expect(screen.getByTestId("results-page")).not.toHaveClass("card");
     expect(screen.getByTestId("results-page-header")).toHaveClass("workbench-page-header");
     expect(screen.getByTestId("results-filter-layer")).toHaveClass("workbench-layer");
-    expect(screen.getByTestId("results-filter-summary-panel")).toHaveClass("workbench-summary-panel");
-    expect(screen.getByTestId("results-filter-toolbar-shell")).toHaveClass("workbench-subsurface");
+    expect(screen.getByTestId("results-filter-summary-panel")).toHaveClass("flat-meta-strip");
+    expect(screen.getByTestId("results-filter-toolbar-shell")).toHaveClass("flat-actions");
     expect(screen.getByTestId("results-manager-layer")).toHaveClass("workbench-layer");
-    expect(screen.getByTestId("results-manager-toolbar-shell")).toHaveClass("workbench-subsurface");
+    expect(screen.getByTestId("results-manager-toolbar-shell")).toHaveClass("flat-actions");
     expect(screen.getByTestId("results-main-workspace")).toBeInTheDocument();
     expect(screen.getByTestId("results-table-pane")).toBeInTheDocument();
-    expect(screen.getByTestId("results-table-headband")).toBeInTheDocument();
+    expect(screen.getByTestId("results-table-headband")).toHaveClass("flat-meta-strip");
     expect(screen.getByTestId("results-detail-rail")).toHaveClass("workbench-layer");
     expect(screen.getByTestId("results-table-status")).toBeInTheDocument();
     expect(screen.getByTestId("results-filter-toolbar")).toBeInTheDocument();
     expect(screen.getByTestId("results-manager-toolbar")).toBeInTheDocument();
-    expect(screen.getByTestId("results-manager-summary-panel")).toHaveClass("workbench-summary-panel");
+    expect(screen.getByTestId("results-manager-summary-panel")).toHaveClass("flat-meta-strip");
     expect(screen.getByRole("button", { name: TEXT.refresh })).toHaveClass("workbench-primary-action");
     expect(screen.getByRole("button", { name: TEXT.fields })).toHaveClass("workbench-secondary-action");
     expect(screen.getByRole("button", { name: TEXT.resetColumns })).toHaveClass("workbench-secondary-action");
@@ -131,6 +131,20 @@ describe("ResultsPage", () => {
     expect(fieldMenu).toBeInTheDocument();
     expect(fieldPicker).toContainElement(fieldMenu);
     expect(screen.getByText("列显示")).toBeInTheDocument();
+  });
+
+  it("keeps results controls terse without explanatory copy blocks", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("results-manager-layer")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("结果管理")).not.toBeInTheDocument();
+    expect(screen.queryByText("管理当前结果表的字段、选择和整表操作。")).not.toBeInTheDocument();
+    expect(screen.queryByText(/全表去重会作用于当前整张/)).not.toBeInTheDocument();
   });
 
   it("loads the first curated row into the detail rail, then follows row switching", async () => {
@@ -165,13 +179,13 @@ describe("ResultsPage", () => {
     expect(infoHeading).toBeTruthy();
     expect(summaryHeading.compareDocumentPosition(cluesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(cluesHeading.compareDocumentPosition(infoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(detailRail.querySelector(".results-detail-hero")).toHaveClass("workbench-summary-panel");
-    expect(detailRail.querySelector(".results-detail-fact-grid")).toHaveClass("workbench-summary-grid");
+    expect(detailRail.querySelector(".results-detail-hero")).toHaveClass("flat-section");
+    expect(detailRail.querySelector(".results-detail-fact-grid")).toHaveClass("flat-row-list");
     expect(within(detailRail).queryByTestId("results-detail-context-grid")).not.toBeInTheDocument();
-    expect(within(detailRail).getByTestId("results-detail-hero")).toHaveClass("results-detail-card");
-    expect(within(detailRail).getByTestId("results-detail-summary-section")).toHaveClass("results-detail-card");
-    expect(within(detailRail).getByTestId("results-detail-clues-section")).toHaveClass("results-detail-card");
-    expect(within(detailRail).getByTestId("results-detail-info-section")).toHaveClass("results-detail-card");
+    expect(within(detailRail).getByTestId("results-detail-hero")).toHaveClass("flat-section");
+    expect(within(detailRail).getByTestId("results-detail-summary-section")).toHaveClass("flat-section");
+    expect(within(detailRail).getByTestId("results-detail-clues-section")).toHaveClass("flat-section");
+    expect(within(detailRail).getByTestId("results-detail-info-section")).toHaveClass("flat-section");
     expect(within(detailRail).getByText(/author-2/)).toBeInTheDocument();
     expect(within(detailRail).getByText(/rule-2/)).toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).getByText("Item 2").closest("tr")).toHaveAttribute("data-row-active", "true");
@@ -291,12 +305,12 @@ describe("ResultsPage", () => {
     expect(bodyHeading).toBeTruthy();
     expect(collectHeading).toBeTruthy();
     expect(bodyHeading.compareDocumentPosition(collectHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(detailRail.querySelector(".results-detail-hero")).toHaveClass("workbench-summary-panel");
-    expect(detailRail.querySelector(".results-detail-fact-grid")).toHaveClass("workbench-summary-grid");
+    expect(detailRail.querySelector(".results-detail-hero")).toHaveClass("flat-section");
+    expect(detailRail.querySelector(".results-detail-fact-grid")).toHaveClass("flat-row-list");
     expect(within(detailRail).queryByTestId("results-detail-context-grid")).not.toBeInTheDocument();
-    expect(within(detailRail).getByTestId("results-detail-hero")).toHaveClass("results-detail-card");
-    expect(within(detailRail).getByTestId("results-detail-collect-section")).toHaveClass("results-detail-card");
-    expect(within(detailRail).getByTestId("results-detail-metrics-section")).toHaveClass("results-detail-card");
+    expect(within(detailRail).getByTestId("results-detail-hero")).toHaveClass("flat-section");
+    expect(within(detailRail).getByTestId("results-detail-collect-section")).toHaveClass("flat-section");
+    expect(within(detailRail).getByTestId("results-detail-metrics-section")).toHaveClass("flat-section");
     expect(within(detailRail).getAllByText("raw-author-2").length).toBeGreaterThan(0);
     expect(within(detailRail).getByText("102")).toBeInTheDocument();
     expect(within(detailRail).getByText("manual:2")).toBeInTheDocument();
@@ -602,7 +616,7 @@ describe("ResultsPage", () => {
     expect(within(screen.getByTestId("results-manager-layer")).getByText("共 132 条")).toBeInTheDocument();
     expect(within(screen.getByTestId("results-filter-summary")).getByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
     expect(screen.getByText("第 1 / 2 页")).toBeInTheDocument();
-    expect(screen.getByTestId("results-pagination")).toHaveClass("workbench-subsurface");
+    expect(screen.getByTestId("results-pagination")).toHaveClass("flat-meta-strip");
     expect(
       screen.getByTestId("results-pagination").compareDocumentPosition(screen.getByTestId("results-table-wrap")) &
         Node.DOCUMENT_POSITION_FOLLOWING,

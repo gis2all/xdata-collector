@@ -74,6 +74,8 @@ describe("DashboardPage", () => {
     expect(screen.getByTestId("dashboard-panels")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-db-info")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-x-info")).toBeInTheDocument();
+    expect(within(screen.getByTestId("dashboard-db-info")).getByTestId("dashboard-db-detail-list")).toHaveClass("flat-row-list");
+    expect(within(screen.getByTestId("dashboard-x-info")).getByTestId("dashboard-x-detail-list")).toHaveClass("flat-row-list");
     expect(within(screen.getByTestId("dashboard-summary")).getByText("\u6700\u8fd1\u72b6\u6001")).toBeInTheDocument();
     expect(screen.getAllByText("\u5df2\u8fde\u63a5").length).toBeGreaterThan(0);
     expect(healthMock).not.toHaveBeenCalled();

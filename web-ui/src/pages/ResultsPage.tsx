@@ -25,11 +25,11 @@ const RESULTS_OPERATION_COLUMN_WIDTH = 88;
 
 const TEXT = {
   title: "\u7ed3\u679c\u67e5\u8be2",
-  subtitle: "\u652f\u6301\u5173\u952e\u8bcd\u7b5b\u9009\u3001\u5237\u65b0\u548c\u7b5b\u9009\u7ed3\u679c / \u539f\u59cb\u7ed3\u679c\u53cc\u8868\u6d4f\u89c8\u3002",
+  subtitle: "\u7b5b\u9009\u3001\u67e5\u770b\u3001\u6279\u91cf\u5904\u7406\u7ed3\u679c\u3002",
   curatedTab: "\u7b5b\u9009\u7ed3\u679c",
   rawTab: "\u539f\u59cb\u7ed3\u679c",
   keywordLabel: "keyword",
-  keywordPlaceholder: "\u8f93\u5165\u5173\u952e\u8bcd\uff0c\u6309\u5f53\u524d\u8868\u53ef\u89c1\u6587\u672c\u5b57\u6bb5\u68c0\u7d22",
+  keywordPlaceholder: "\u5173\u952e\u8bcd",
   refresh: "\u5237\u65b0\u5217\u8868",
   fields: "\u5b57\u6bb5",
   resetColumns: "\u6062\u590d\u9ed8\u8ba4",
@@ -815,11 +815,9 @@ export function ResultsPage() {
       <ResultsPageHeader title={TEXT.title} subtitle={TEXT.subtitle} />
 
       <section className="results-filter-layer workbench-layer" data-testid="results-filter-layer">
-        <div className="results-filter-summary-panel workbench-summary-panel" data-testid="results-filter-summary-panel">
+        <div className="results-filter-summary-panel flat-meta-strip" data-testid="results-filter-summary-panel">
           <div className="results-filter-copy workbench-section-copy">
-            <div className="workbench-section-eyebrow">浏览范围</div>
             <div className="results-filter-title workbench-section-title">当前浏览范围</div>
-            <div className="kv">切换结果表、输入关键词，并按当前视图刷新列表。</div>
           </div>
           <div className="results-filter-summary workbench-pill-row" data-testid="results-filter-summary">
             <div className="results-summary-pill workbench-pill">{`\u5f53\u524d\u8868\uff1a${tableLabel}`}</div>
@@ -827,7 +825,7 @@ export function ResultsPage() {
           </div>
         </div>
         <div
-          className="results-filter-toolbar-shell workbench-subsurface workbench-subsurface-muted"
+          className="results-filter-toolbar-shell flat-actions"
           data-testid="results-filter-toolbar-shell"
         >
           <div className="results-filter-controls results-filter-toolbar" data-testid="results-filter-toolbar">
@@ -873,7 +871,6 @@ export function ResultsPage() {
       </section>
 
       <ResultsTableManager
-        tableName={tableName}
         total={total}
         selectedCount={selectedCount}
         allMatchingSelected={allMatchingSelected}
@@ -919,13 +916,11 @@ export function ResultsPage() {
 
       <section className="results-main-workspace" data-testid="results-main-workspace">
         <div className="results-table-pane" data-testid="results-table-pane">
-          <div className="results-table-headband workbench-summary-panel" data-testid="results-table-headband">
-            <div className="results-table-headband-copy">
-              <div className="workbench-section-eyebrow">{"数据表格"}</div>
-              <div className="results-table-headband-title">{"当前结果表"}</div>
-              <div className="kv">{"按当前表浏览记录，支持拖动列宽、排序、勾选批量操作，并与右侧详情轨联动查看。"} </div>
+          <div className="results-table-strip flat-meta-strip" data-testid="results-table-headband">
+            <div className="results-table-strip-copy">
+              <div className="results-table-strip-title">{"当前结果表"}</div>
             </div>
-            <div className="results-table-headband-meta workbench-pill-row">
+            <div className="results-table-strip-meta workbench-pill-row">
               <span className="results-summary-pill workbench-pill">{`可见列 ${visibleColumnDefinitions.length} 个`}</span>
               <span className="results-summary-pill workbench-pill">{`当前表：${tableLabel}`}</span>
               <span className="results-summary-pill workbench-pill">{`列宽：可拖动调整`}</span>
@@ -956,7 +951,7 @@ export function ResultsPage() {
           </div>
 
           {total > 0 && (
-            <div className="results-pagination workbench-subsurface" data-testid="results-pagination">
+            <div className="results-pagination flat-meta-strip" data-testid="results-pagination">
               <span className="kv">{`\u5171 ${total} \u6761`}</span>
               <div className="row">
                 <button

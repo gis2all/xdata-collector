@@ -12,7 +12,7 @@ type ResultsDetailRailProps = {
 
 function renderFact(label: string, value: string) {
   return (
-    <div className="results-detail-fact">
+    <div className="results-detail-fact flat-row">
       <div className="results-detail-fact-label">{label}</div>
       <div className="results-detail-fact-value">{value || "--"}</div>
     </div>
@@ -21,7 +21,7 @@ function renderFact(label: string, value: string) {
 
 function renderSection(title: string, content: ReactNode, testId?: string) {
   return (
-    <section className="results-detail-section results-detail-card" data-testid={testId}>
+    <section className="results-detail-section flat-section" data-testid={testId}>
       <div className="results-detail-section-head">
         <div className="results-detail-section-title">{title}</div>
       </div>
@@ -39,7 +39,7 @@ function renderCuratedItem(item: CuratedItemRecord, tableLabel: string) {
   return (
     <div className="results-detail-body">
       <div
-        className="results-detail-hero results-detail-card results-detail-card-accent workbench-summary-panel"
+        className="results-detail-hero flat-section"
         data-testid="results-detail-hero"
       >
         <div className="results-detail-eyebrow">筛选结果详情</div>
@@ -70,7 +70,7 @@ function renderCuratedItem(item: CuratedItemRecord, tableLabel: string) {
 
       {renderSection(
         "记录信息",
-        <div className="results-detail-fact-grid workbench-summary-grid">
+        <div className="results-detail-fact-grid flat-row-list">
           {renderFact("状态", item.state || "--")}
           {renderFact("等级", item.level || "--")}
           {renderFact("来源链接", item.source_url || "--")}
@@ -90,7 +90,7 @@ function renderRawItem(item: RawItemRecord, tableLabel: string) {
   return (
     <div className="results-detail-body">
       <div
-        className="results-detail-hero results-detail-card results-detail-card-accent workbench-summary-panel"
+        className="results-detail-hero flat-section"
         data-testid="results-detail-hero"
       >
         <div className="results-detail-eyebrow">原始记录详情</div>
@@ -113,7 +113,7 @@ function renderRawItem(item: RawItemRecord, tableLabel: string) {
 
       {renderSection(
         "采集信息",
-        <div className="results-detail-fact-grid workbench-summary-grid">
+        <div className="results-detail-fact-grid flat-row-list">
           {renderFact("查询名称", item.query_name || "--")}
           {renderFact("运行 ID", String(item.run_id ?? "--"))}
           {renderFact("推文 ID", item.tweet_id || "--")}
@@ -124,7 +124,7 @@ function renderRawItem(item: RawItemRecord, tableLabel: string) {
 
       {renderSection(
         "互动指标",
-        <div className="results-detail-fact-grid workbench-summary-grid">
+        <div className="results-detail-fact-grid flat-row-list">
           {renderFact("浏览", String(item.views ?? "--"))}
           {renderFact("点赞", String(item.likes ?? "--"))}
           {renderFact("回复", String(item.replies ?? "--"))}
@@ -147,7 +147,7 @@ export function ResultsDetailRail({ item, table, tableLabel, total }: ResultsDet
     return (
       <div className="results-detail-empty">
         <div
-          className="results-detail-hero results-detail-card results-detail-card-accent workbench-summary-panel"
+          className="results-detail-hero flat-section"
           data-testid="results-detail-hero"
         >
           <div className="results-detail-eyebrow">右侧详情</div>
