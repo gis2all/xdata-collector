@@ -81,6 +81,9 @@ function buildPackComparable(pack: TaskPackFile) {
 type DraftSourceKind = "blank" | "pack" | "file";
 type ExecutionStatus = "idle" | "success" | "failed";
 
+const DEFAULT_DRAFT_PACK_NAME = "__default_draft__";
+const DEFAULT_DRAFT_PACK_LABEL = "默认草稿";
+
 type ExecutionSummary = {
   status: ExecutionStatus;
   executedAt: string | null;
@@ -138,7 +141,7 @@ export function ManualSearchPage() {
   const [savingPack, setSavingPack] = useState(false);
   const [deletingPack, setDeletingPack] = useState(false);
   const [taskPacks, setTaskPacks] = useState<TaskPackSummary[]>([]);
-  const [selectedPackName, setSelectedPackName] = useState("");
+  const [selectedPackName, setSelectedPackName] = useState(DEFAULT_DRAFT_PACK_NAME);
   const [currentPack, setCurrentPack] = useState<TaskPackFile | null>(null);
   const [draftSource, setDraftSource] = useState<DraftSourceKind>("blank");
   const [draftRuleName, setDraftRuleName] = useState("Default Rule Set");
@@ -211,7 +214,7 @@ export function ManualSearchPage() {
     setDraftRuleDescription("Built-in opportunity discovery rules.");
     setDraftDefinition(cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION));
     setCurrentPack(null);
-    setSelectedPackName("");
+    setSelectedPackName(DEFAULT_DRAFT_PACK_NAME);
     setDraftSource("blank");
   }
 
@@ -234,7 +237,11 @@ export function ManualSearchPage() {
     const payload = await listTaskPacks();
     const items = payload.items || [];
     setTaskPacks(items);
-    setSelectedPackName((prev) => prev || items[0]?.pack_name || "");
+    setSelectedPackName((prev) => {
+      if (prev === DEFAULT_DRAFT_PACK_NAME) return prev;
+      if (items.some((item) => item.pack_name === prev)) return prev;
+      return DEFAULT_DRAFT_PACK_NAME;
+    });
   }
 
   useEffect(() => {
@@ -242,6 +249,11 @@ export function ManualSearchPage() {
   }, []);
 
   async function importSelectedPack() {
+    if (selectedPackName === DEFAULT_DRAFT_PACK_NAME) {
+      resetToBlankDraft();
+      setMessage("已切换到默认草稿");
+      return;
+    }
     if (!selectedPackName) return;
 
     setError("");
@@ -312,7 +324,7 @@ export function ManualSearchPage() {
       setDraftRuleDescription(imported.ruleSet.description || imported.description);
       setDraftDefinition(cloneRuleDefinition(imported.ruleSet.definition));
       setCurrentPack(null);
-      setSelectedPackName("");
+      setSelectedPackName(DEFAULT_DRAFT_PACK_NAME);
       setDraftSource("file");
       setMessage(`已从文件导入任务包 ${imported.sourceName}，当前仍是未绑定草稿`);
     } catch (err) {
@@ -358,7 +370,7 @@ export function ManualSearchPage() {
   }
 
   async function handleDeleteCurrentPack() {
-    if (!currentPack?.pack_name) return;
+    if (!currentPack?.pack_name || selectedPackName === DEFAULT_DRAFT_PACK_NAME) return;
     if (!window.confirm(`确认删除当前任务包 ${currentPack.pack_name} 吗？`)) return;
 
     setDeletingPack(true);
@@ -505,7 +517,7 @@ export function ManualSearchPage() {
                       value={selectedPackName}
                       onChange={(event) => setSelectedPackName(event.target.value)}
                     >
-                      <option value="">选择任务包</option>
+                      <option value={DEFAULT_DRAFT_PACK_NAME}>{DEFAULT_DRAFT_PACK_LABEL}</option>
                       {taskPacks.map((item) => (
                         <option key={item.pack_name} value={item.pack_name}>
                           {item.name}
@@ -606,7 +618,7 @@ export function ManualSearchPage() {
                       className="workbench-danger-action"
                       data-testid="manual-delete-pack"
                       onClick={() => handleDeleteCurrentPack().catch(() => undefined)}
-                      disabled={deletingPack || !currentPack?.pack_name}
+                      disabled={deletingPack || !currentPack?.pack_name || selectedPackName === DEFAULT_DRAFT_PACK_NAME}
                     >
                       {deletingPack ? "删除中..." : "删除当前任务包"}
                     </button>

@@ -124,6 +124,11 @@ describe("ManualSearchPage", () => {
       expect(listTaskPacksMock).toHaveBeenCalled();
     });
 
+    const select = await screen.findByLabelText("manual-pack-select");
+    const options = within(select).getAllByRole("option");
+    expect(options[0]).toHaveTextContent("默认草稿");
+    expect(options[0]).toHaveValue("__default_draft__");
+
     const header = screen.getByTestId("manual-page-header");
     expect(screen.getByRole("heading", { name: "手动执行任务" })).toBeInTheDocument();
     expect(header).toHaveClass("workbench-page-header");
@@ -198,6 +203,7 @@ describe("ManualSearchPage", () => {
     render(<ManualSearchPage />);
 
     const select = await screen.findByLabelText("manual-pack-select");
+    expect(within(select).getAllByRole("option")[0]).toHaveTextContent("默认草稿");
     fireEvent.change(select, { target: { value: "alpha-watch" } });
     fireEvent.click(screen.getByTestId("manual-load-pack"));
 
@@ -245,6 +251,30 @@ describe("ManualSearchPage", () => {
     });
 
     promptSpy.mockRestore();
+  });
+
+  it("restores the blank draft when the default draft option is selected", async () => {
+    render(<ManualSearchPage />);
+
+    const select = await screen.findByLabelText("manual-pack-select");
+    fireEvent.change(select, { target: { value: "alpha-watch" } });
+    fireEvent.click(screen.getByTestId("manual-load-pack"));
+
+    await waitFor(() => {
+      expect(screen.getByText("当前绑定：alpha-watch")).toBeInTheDocument();
+    });
+
+    fireEvent.change(select, { target: { value: "__default_draft__" } });
+    fireEvent.click(screen.getByTestId("manual-load-pack"));
+
+    await waitFor(() => {
+      expect(screen.getByText("当前来源：默认空白")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("当前绑定：--")).toBeInTheDocument();
+    expect(screen.getByText("草稿状态：未绑定")).toBeInTheDocument();
+    expect(screen.getByTestId("manual-delete-pack")).toBeDisabled();
+    expect(deleteTaskPackMock).not.toHaveBeenCalledWith("__default_draft__");
   });
 
 
