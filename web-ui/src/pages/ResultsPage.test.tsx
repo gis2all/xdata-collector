@@ -27,7 +27,7 @@ const TEXT = {
   selectPage: "本页全选",
   fields: "字段",
   resetColumns: "恢复默认",
-  keywordLabel: "keyword",
+  keywordLabel: "\u5173\u952e\u8bcd",
 } as const;
 
 function makeItem(id: number, overrides: Record<string, unknown> = {}) {
@@ -163,7 +163,7 @@ describe("ResultsPage", () => {
     fireEvent.mouseDown(resizer, { clientX: 900 });
     fireEvent.mouseMove(window, { clientX: 760 });
 
-    expect(layout).toHaveStyle({ gridTemplateColumns: "760px 12px minmax(380px, 1fr)" });
+    expect(layout).toHaveStyle({ gridTemplateColumns: "760px 20px minmax(380px, 1fr)" });
     expect(layout.className).toContain("dragging");
 
     fireEvent.mouseUp(window);
@@ -319,6 +319,7 @@ describe("ResultsPage", () => {
     expect(within(managerDataActions).getAllByRole("button").map((button) => button.textContent)).toEqual(["批量删除", "全表去重"]);
     expect(within(managerToolbar).queryByLabelText(TEXT.keywordLabel)).not.toBeInTheDocument();
     expect(within(filterBrowse).getByLabelText(TEXT.keywordLabel)).toBeInTheDocument();
+    expect(within(filterBrowse).queryByText("keyword")).not.toBeInTheDocument();
     expect(within(controlSummary).getByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
     expect(within(controlSummary).getByText("\u5173\u952e\u8bcd\uff1a\u5168\u90e8")).toBeInTheDocument();
     expect(within(managerToolbar).queryByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).not.toBeInTheDocument();

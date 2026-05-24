@@ -27,14 +27,11 @@ const CONDITION_LABELS: Array<{ value: RuleCondition["type"]; label: string }> =
 ];
 
 const TEXT = {
-  summaryEyebrow: "RULES",
   summaryTitle: "\u89c4\u5219\u53ef\u89c6\u5316\u7f16\u8f91\u5668",
   summaryDescription:
     "\u5148\u7ef4\u62a4\u7b49\u7ea7\u6620\u5c04\uff0c\u518d\u6309\u89c4\u5219\u5757\u7ec4\u88c5\u6761\u4ef6\u3001\u52a8\u4f5c\u548c\u5206\u503c\uff0c\u8ba9\u624b\u52a8\u6267\u884c\u4e0e\u81ea\u52a8\u4efb\u52a1\u4f7f\u7528\u540c\u4e00\u5957\u5224\u5206\u8bed\u4e49\u3002",
-  levelsEyebrow: "LEVELS",
   levelsTitle: "\u7b49\u7ea7\u6620\u5c04",
   levelsDescription: "\u5b9a\u4e49\u4ece\u5206\u6570\u5230\u7b49\u7ea7\u6807\u7b7e\u7684\u5bf9\u5e94\u5173\u7cfb\u3002",
-  rulesEyebrow: "RULE BLOCKS",
   rulesTitle: "\u89c4\u5219\u5757",
   rulesDescription: "\u6bcf\u6761\u89c4\u5219\u90fd\u7531\u6761\u4ef6\u3001\u52a8\u4f5c\u548c\u7b49\u7ea7\u63d0\u793a\u7ec4\u6210\uff0c\u53ef\u72ec\u7acb\u542f\u505c\u3002",
   conditionsTitle: "\u6761\u4ef6\u5217\u8868",
@@ -79,16 +76,14 @@ function updateCondition(conditions: RuleCondition[], index: number, patch: Part
 }
 
 type SectionHeaderProps = {
-  eyebrow: string;
   title: string;
   description: string;
 };
 
-function SectionHeader({ eyebrow, title, description }: SectionHeaderProps) {
+function SectionHeader({ title, description }: SectionHeaderProps) {
   return (
     <div className="collector-editor-section-header">
       <div className="collector-editor-section-copy">
-        <div className="collector-editor-section-eyebrow">{eyebrow}</div>
         <div className="collector-editor-section-title">{title}</div>
         <div className="collector-editor-section-description">{description}</div>
       </div>
@@ -206,7 +201,6 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, disabled = false 
         data-testid="rule-set-summary"
       >
         <SectionHeader
-          eyebrow={TEXT.summaryEyebrow}
           title={TEXT.summaryTitle}
           description={TEXT.summaryDescription}
         />
@@ -220,7 +214,6 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, disabled = false 
 
       <section className="collector-editor-section flat-section" data-testid="rule-set-levels">
         <SectionHeader
-          eyebrow={TEXT.levelsEyebrow}
           title={TEXT.levelsTitle}
           description={TEXT.levelsDescription}
         />
@@ -251,7 +244,6 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, disabled = false 
       <section className="collector-editor-section flat-section" data-testid="rule-set-rules">
         <div className="collector-editor-section-header collector-editor-section-header-between">
           <div className="collector-editor-section-copy">
-            <div className="collector-editor-section-eyebrow">{TEXT.rulesEyebrow}</div>
             <div className="collector-editor-section-title">{TEXT.rulesTitle}</div>
             <div className="collector-editor-section-description">{TEXT.rulesDescription}</div>
           </div>

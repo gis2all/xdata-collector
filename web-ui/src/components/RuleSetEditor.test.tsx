@@ -21,6 +21,12 @@ describe("RuleSetEditor", () => {
     expect(screen.getByTestId("rule-set-levels")).toHaveClass("flat-section");
     expect(screen.getByTestId("rule-set-rules")).toHaveClass("collector-editor-section");
     expect(screen.getByTestId("rule-set-rules")).toHaveClass("flat-section");
+    expect(screen.getByText("规则可视化编辑器")).toBeInTheDocument();
+    expect(screen.getByText("等级映射")).toBeInTheDocument();
+    expect(screen.getByText("规则块")).toBeInTheDocument();
+    expect(screen.queryByText("RULES")).not.toBeInTheDocument();
+    expect(screen.queryByText("LEVELS")).not.toBeInTheDocument();
+    expect(screen.queryByText("RULE BLOCKS")).not.toBeInTheDocument();
     expect(screen.getByLabelText("add-scoring-rule")).toHaveClass("workbench-secondary-action");
     expect(screen.getByLabelText("delete-rule-exclude-trade-gated")).toHaveClass("workbench-danger-action");
     expect(screen.getByLabelText("add-condition-exclude-trade-gated")).toHaveClass("workbench-secondary-action");

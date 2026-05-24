@@ -189,7 +189,7 @@ describe("JobsPage", () => {
     fireEvent.mouseDown(resizer, { clientX: 760 });
     fireEvent.mouseMove(window, { clientX: 700 });
 
-    expect(layout).toHaveStyle({ gridTemplateColumns: "700px 12px minmax(320px, 1fr)" });
+    expect(layout).toHaveStyle({ gridTemplateColumns: "700px 20px minmax(320px, 1fr)" });
     expect(layout.className).toContain("dragging");
 
     fireEvent.mouseUp(window);
@@ -243,7 +243,7 @@ describe("JobsPage", () => {
     fireEvent.mouseMove(window, { clientX: 680 });
     fireEvent.mouseUp(window);
 
-    expect(firstLayout).toHaveStyle({ gridTemplateColumns: "680px 12px minmax(320px, 1fr)" });
+    expect(firstLayout).toHaveStyle({ gridTemplateColumns: "680px 20px minmax(320px, 1fr)" });
 
     first.unmount();
 
@@ -293,6 +293,7 @@ describe("JobsPage", () => {
     expect(screen.queryByRole("columnheader", { name: "查询摘要" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("create-job-button"));
+    expect(screen.getByLabelText("submit-job").closest(".jobs-workspace")).toHaveClass("jobs-workspace-create");
     fireEvent.change(screen.getByLabelText("job-name"), { target: { value: "scheduled-alpha" } });
     fireEvent.change(screen.getByLabelText("job-interval"), { target: { value: "120" } });
     fireEvent.change(screen.getByLabelText("job-pack-select"), { target: { value: "alpha-watch" } });
@@ -365,12 +366,17 @@ describe("JobsPage", () => {
     expect(screen.getByTestId("create-job-button")).toBeInTheDocument();
     expect(screen.queryByTestId("jobs-list-tools-summary")).not.toBeInTheDocument();
     expect(screen.queryByText("筛选与批量管理")).not.toBeInTheDocument();
-    expect(screen.getByTestId("jobs-filter-bar")).toBeInTheDocument();
+    const filterBar = screen.getByTestId("jobs-filter-bar");
+    expect(filterBar).toBeInTheDocument();
+    const filterQueryGroup = screen.getByTestId("jobs-filter-query-group");
     const manageBar = screen.getByTestId("jobs-manage-bar");
     expect(manageBar).toBeInTheDocument();
     expect(manageBar).not.toHaveClass("workbench-subsurface");
-    expect(screen.getByTestId("jobs-filter-bar")).toHaveClass("flat-actions");
+    expect(filterBar).toHaveClass("flat-actions");
     expect(screen.getByTestId("jobs-search-button")).toHaveClass("workbench-secondary-action");
+    expect(within(filterQueryGroup).getByLabelText("搜索任务")).toBeInTheDocument();
+    expect(within(filterQueryGroup).getByTestId("jobs-search-button")).toBeInTheDocument();
+    expect(within(filterQueryGroup).getByLabelText("任务状态")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "批量启用" })).toHaveClass("workbench-secondary-action");
     expect(screen.getByRole("button", { name: "批量删除" })).toHaveClass("workbench-danger-action");
     expect(screen.queryByText("\u5171 0 \u9879\u4efb\u52a1")).not.toBeInTheDocument();

@@ -19,8 +19,16 @@ describe("SearchSpecEditor", () => {
     expect(screen.getByTestId("search-spec-section-behavior")).toHaveClass("flat-section");
     expect(screen.getByTestId("search-spec-query-summary")).toHaveClass("flat-section");
     expect(screen.getByTestId("search-spec-query-summary")).not.toHaveClass("workbench-summary-panel");
-    expect(screen.getByText("QUERY SETUP")).toBeInTheDocument();
-    expect(screen.getByText("PREVIEW")).toBeInTheDocument();
+    expect(screen.getByText("关键词与作者范围")).toBeInTheDocument();
+    expect(screen.getByText("范围与产出控制")).toBeInTheDocument();
+    expect(screen.getByText("互动指标阈值")).toBeInTheDocument();
+    expect(screen.getByText("补充约束")).toBeInTheDocument();
+    expect(screen.getByText("查询摘要")).toBeInTheDocument();
+    expect(screen.queryByText("QUERY SETUP")).not.toBeInTheDocument();
+    expect(screen.queryByText("SCOPE")).not.toBeInTheDocument();
+    expect(screen.queryByText("METRICS")).not.toBeInTheDocument();
+    expect(screen.queryByText("BEHAVIOR")).not.toBeInTheDocument();
+    expect(screen.queryByText("PREVIEW")).not.toBeInTheDocument();
   });
 
   it("defaults language to zh_en and writes back range filters", () => {

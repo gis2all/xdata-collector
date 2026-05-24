@@ -21,23 +21,18 @@ const RANGE_MODE_OPTIONS: Array<{ value: RangeMode; label: string }> = [
 ];
 
 const TEXT = {
-  keywordsEyebrow: "QUERY SETUP",
   keywordsTitle: "\u5173\u952e\u8bcd\u4e0e\u4f5c\u8005\u8303\u56f4",
   keywordsDescription: "\u5148\u5b9a\u4e49\u67e5\u8be2\u8bcd\u7ec4\u5408\uff0c\u518d\u8865\u5145\u4f5c\u8005\u767d\u540d\u5355\u6216\u9ed1\u540d\u5355\u7ea6\u675f\u3002",
   keywordPanelTitle: "\u5173\u952e\u8bcd\u7ec4\u5408",
   keywordPanelDescription: "\u7528\u4e8e\u7ec4\u51fa X \u641c\u7d22\u8bed\u53e5\u7684\u4e3b\u8981\u6587\u672c\u6761\u4ef6\u3002",
   authorPanelTitle: "\u4f5c\u8005\u8303\u56f4",
   authorPanelDescription: "\u7528\u4e8e\u6536\u7d27\u6216\u6392\u9664\u7279\u5b9a\u8d26\u53f7\u6765\u6e90\u3002",
-  scopeEyebrow: "SCOPE",
   scopeTitle: "\u8303\u56f4\u4e0e\u4ea7\u51fa\u63a7\u5236",
   scopeDescription: "\u786e\u5b9a\u8bed\u8a00\u3001\u65f6\u95f4\u7a97\u53e3\u548c\u5355\u6b21\u62c9\u53d6\u4e0a\u9650\u3002",
-  metricsEyebrow: "METRICS",
   metricsTitle: "\u4e92\u52a8\u6307\u6807\u9608\u503c",
   metricsDescription: "\u7ed9\u6d4f\u89c8\u3001\u70b9\u8d5e\u3001\u56de\u590d\u548c\u8f6c\u63a8\u8bbe\u5b9a\u4e0b\u9650\u6216\u533a\u95f4\u3002",
-  behaviorEyebrow: "BEHAVIOR",
   behaviorTitle: "\u8865\u5145\u7ea6\u675f",
   behaviorDescription: "\u5904\u7406\u8f6c\u63a8/\u56de\u590d\u53ca\u5a92\u4f53/\u94fe\u63a5\u7b49\u884c\u4e3a\u7ea6\u675f\uff0c\u5e76\u53ef\u8865\u5145\u539f\u751f X \u641c\u7d22\u8bed\u6cd5\u3002",
-  summaryEyebrow: "PREVIEW",
   summaryTitle: "\u67e5\u8be2\u6458\u8981",
   summaryDescription: "\u57fa\u4e8e\u5f53\u524d\u8349\u7a3f\u5b9e\u65f6\u7ec4\u88c5\u51fa\u7684\u67e5\u8be2\u9884\u89c8\u3002",
   allKeywords: "\u5305\u542b\u5173\u952e\u8bcd",
@@ -94,16 +89,14 @@ type RangeFieldProps = {
 };
 
 type SectionHeaderProps = {
-  eyebrow: string;
   title: string;
   description: string;
 };
 
-function SectionHeader({ eyebrow, title, description }: SectionHeaderProps) {
+function SectionHeader({ title, description }: SectionHeaderProps) {
   return (
     <div className="collector-editor-section-header">
       <div className="collector-editor-section-copy">
-        <div className="collector-editor-section-eyebrow">{eyebrow}</div>
         <div className="collector-editor-section-title">{title}</div>
         <div className="collector-editor-section-description">{description}</div>
       </div>
@@ -196,7 +189,6 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
         data-testid="search-spec-section-keywords"
       >
         <SectionHeader
-          eyebrow={TEXT.keywordsEyebrow}
           title={TEXT.keywordsTitle}
           description={TEXT.keywordsDescription}
         />
@@ -243,7 +235,6 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
 
       <section className="collector-editor-section flat-section" data-testid="search-spec-section-scope">
         <SectionHeader
-          eyebrow={TEXT.scopeEyebrow}
           title={TEXT.scopeTitle}
           description={TEXT.scopeDescription}
         />
@@ -275,7 +266,6 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
 
       <section className="collector-editor-section flat-section" data-testid="search-spec-section-metrics">
         <SectionHeader
-          eyebrow={TEXT.metricsEyebrow}
           title={TEXT.metricsTitle}
           description={TEXT.metricsDescription}
         />
@@ -289,7 +279,6 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
 
       <section className="collector-editor-section flat-section" data-testid="search-spec-section-behavior">
         <SectionHeader
-          eyebrow={TEXT.behaviorEyebrow}
           title={TEXT.behaviorTitle}
           description={TEXT.behaviorDescription}
         />
@@ -322,7 +311,6 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
         data-testid="search-spec-query-summary"
       >
         <SectionHeader
-          eyebrow={TEXT.summaryEyebrow}
           title={TEXT.summaryTitle}
           description={TEXT.summaryDescription}
         />

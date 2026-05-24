@@ -156,6 +156,7 @@ describe("visual contract", () => {
 
   it("keeps the Jobs table readable beside the detail rail", () => {
     expect(blocksContainingSelector(".jobs-layout").some((block) => block.includes("minmax(320px, 320px)"))).toBe(true);
+    expect(blocksContainingSelector(".jobs-layout").some((block) => block.includes("20px"))).toBe(true);
     expect(blocksContainingSelector(".jobs-layout").some((block) => block.includes("align-items: stretch;"))).toBe(true);
     expect(blockFor(".jobs-table")).toContain("min-width: 760px;");
     expect(blockFor(".jobs-table")).not.toContain("table-layout: fixed;");
@@ -174,6 +175,7 @@ describe("visual contract", () => {
 
   it("keeps the Results workspace split stretchable with a dedicated rail resizer", () => {
     expect(blocksContainingSelector(".results-main-workspace").some((block) => block.includes("minmax(380px, 420px)"))).toBe(true);
+    expect(blocksContainingSelector(".results-main-workspace").some((block) => block.includes("20px"))).toBe(true);
     expect(blocksContainingSelector(".results-main-workspace").some((block) => block.includes("align-items: stretch;"))).toBe(true);
     expect(blockFor(".results-resizer")).toContain("cursor: col-resize;");
     expect(blocksContainingSelector(".results-resizer::before").some((block) => block.includes("width: 1px;"))).toBe(true);
@@ -184,10 +186,19 @@ describe("visual contract", () => {
   });
 
   it("keeps table selection checkboxes consistent in size and left aligned", () => {
-    expect(blockFor(".jobs-select-page-label")).toContain("justify-content: flex-start;");
-    expect(blockFor(".results-th-cell > .row:first-child")).toContain("justify-content: flex-start;");
+    expect(blockFor(".table-select-cell")).toContain("width: 48px;");
+    expect(blockFor(".table-select-cell")).toContain("padding-left: 14px;");
+    expect(blocksContainingSelector(".table-select-cell > label").some((block) => block.includes("justify-content: flex-start;"))).toBe(true);
     expect(blockFor(".table input[type=\"checkbox\"]")).toContain("width: 16px;");
     expect(blockFor(".table input[type=\"checkbox\"]")).toContain("height: 16px;");
+  });
+
+  it("keeps select arrows centered with a custom chevron instead of browser default chrome", () => {
+    const selectBlocks = blocksContainingSelector("select");
+    expect(selectBlocks.some((block) => block.includes("appearance: none;"))).toBe(true);
+    expect(selectBlocks.some((block) => block.includes("background-position: right 14px center;"))).toBe(true);
+    expect(selectBlocks.some((block) => block.includes("background-size: 12px 12px;"))).toBe(true);
+    expect(blockFor("select::-ms-expand")).toContain("display: none;");
   });
 
   it("keeps key pages free of nested summary panels and subsurfaces", () => {

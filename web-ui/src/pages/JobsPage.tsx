@@ -92,7 +92,7 @@ const DELETED_BATCH_ACTIONS: BatchActionSpec[] = [
 
 const MIN_LIST_PANE_WIDTH = 320;
 const MIN_DRAWER_PANE_WIDTH = 320;
-const RESIZER_WIDTH = 12;
+const RESIZER_WIDTH = 20;
 const SPLIT_LAYOUT_BREAKPOINT = 1160;
 
 function jobState(job: JobRecord) {
@@ -919,6 +919,7 @@ export function JobsPage() {
   const currentTaskPackDraftLabel = hasCurrentTaskPackBinding
     ? (currentTaskPack ? (taskPackDirty ? "已修改未保存" : "未修改") : "已绑定")
     : "未绑定";
+  const isCreateWorkspace = drawerOpen && !selectedJob;
   const workspaceActionBar = (
     <div className="drawer-footer" data-testid="jobs-primary-actions">
       {!selectedJob ? (
@@ -965,29 +966,31 @@ export function JobsPage() {
               className="jobs-list-filterbar flat-actions"
               data-testid="jobs-filter-bar"
             >
-              <label className="field jobs-filter-field">
-                <span>{"搜索任务"}</span>
-                <input value={queryInput} onChange={(e) => setQueryInput(e.target.value)} placeholder={"按任务名称搜索"} aria-label="搜索任务" />
-              </label>
-              <label className="field jobs-filter-field jobs-filter-status">
-                <span>{"状态"}</span>
-                <select
-                  value={status}
-                  onChange={(e) => {
-                    const nextStatus = e.target.value as JobStatusFilter;
-                    setStatus(nextStatus);
-                    clearSelection();
-                    refreshJobs({ page: 1, status: nextStatus }).catch(() => undefined);
-                  }}
-                  aria-label="任务状态"
-                >
-                  <option value="active">{"启用中"}</option>
-                  <option value="all">{"全部"}</option>
-                  <option value="deleted">{"已删除"}</option>
-                </select>
-              </label>
-              <div className="jobs-filter-actions">
-                <button type="button" className="ghost workbench-secondary-action" data-testid="jobs-search-button" onClick={submitQuery}>{"搜索"}</button>
+              <div className="jobs-filter-query-group" data-testid="jobs-filter-query-group">
+                <label className="field jobs-filter-field">
+                  <span>{"搜索任务"}</span>
+                  <input value={queryInput} onChange={(e) => setQueryInput(e.target.value)} placeholder={"按任务名称搜索"} aria-label="搜索任务" />
+                </label>
+                <div className="jobs-filter-actions">
+                  <button type="button" className="ghost workbench-secondary-action" data-testid="jobs-search-button" onClick={submitQuery}>{"搜索"}</button>
+                </div>
+                <label className="field jobs-filter-field jobs-filter-status">
+                  <span>{"状态"}</span>
+                  <select
+                    value={status}
+                    onChange={(e) => {
+                      const nextStatus = e.target.value as JobStatusFilter;
+                      setStatus(nextStatus);
+                      clearSelection();
+                      refreshJobs({ page: 1, status: nextStatus }).catch(() => undefined);
+                    }}
+                    aria-label="任务状态"
+                  >
+                    <option value="active">{"启用中"}</option>
+                    <option value="all">{"全部"}</option>
+                    <option value="deleted">{"已删除"}</option>
+                  </select>
+                </label>
               </div>
             </div>
 
@@ -1069,7 +1072,7 @@ export function JobsPage() {
                 <table className="table jobs-table">
                   <thead>
                     <tr>
-                      <th>
+                      <th className="table-select-cell">
                         <label className="field checkbox-row jobs-select-page-label">
                           <input aria-label="jobs-select-page" type="checkbox" checked={allPageSelected} onChange={togglePageSelection} />
                         </label>
@@ -1091,7 +1094,7 @@ export function JobsPage() {
                         data-job-active={selectedJob?.id === job.id ? "true" : "false"}
                         onClick={() => openJobWorkspace(job)}
                       >
-                        <td onClick={(event) => event.stopPropagation()}>
+                        <td className="table-select-cell" onClick={(event) => event.stopPropagation()}>
                           <input
                             aria-label={`select-job-${job.id}`}
                             type="checkbox"
@@ -1141,9 +1144,9 @@ export function JobsPage() {
           />
         )}
 
-        <aside className={`jobs-drawer${drawerOpen ? " open" : ""}${drawerOpen ? "" : " jobs-drawer-empty"}`}>
+        <aside className={`jobs-drawer${drawerOpen ? " open" : ""}${drawerOpen ? "" : " jobs-drawer-empty"}${isCreateWorkspace ? " jobs-drawer-create" : ""}`}>
           {drawerOpen ? (
-            <div className="jobs-workspace">
+            <div className={`jobs-workspace${isCreateWorkspace ? " jobs-workspace-create" : ""}`}>
               <div className="drawer-header">
                 <div>
                   <h4>{workspaceTitle}</h4>

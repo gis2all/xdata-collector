@@ -20,19 +20,19 @@ import { formatUtcPlus8Time } from "../time";
 const RESULTS_VISIBLE_COLUMNS_KEY = "results.visibleColumns.v1";
 const RESULTS_COLUMN_WIDTHS_KEY = "results.columnWidths.v1";
 const PAGE_SIZE = 100;
-const RESULTS_SELECT_COLUMN_WIDTH = 92;
+const RESULTS_SELECT_COLUMN_WIDTH = 48;
 const RESULTS_OPERATION_COLUMN_WIDTH = 88;
 const RESULTS_SPLIT_LAYOUT_BREAKPOINT = 1180;
 const RESULTS_MIN_TABLE_PANE_WIDTH = 720;
 const RESULTS_MIN_DETAIL_PANE_WIDTH = 380;
-const RESULTS_RESIZER_WIDTH = 12;
+const RESULTS_RESIZER_WIDTH = 20;
 
 const TEXT = {
   title: "\u7ed3\u679c\u67e5\u8be2",
   subtitle: "\u7b5b\u9009\u3001\u67e5\u770b\u3001\u6279\u91cf\u5904\u7406\u7ed3\u679c\u3002",
   curatedTab: "\u7b5b\u9009\u7ed3\u679c",
   rawTab: "\u539f\u59cb\u7ed3\u679c",
-  keywordLabel: "keyword",
+  keywordLabel: "\u5173\u952e\u8bcd",
   keywordPlaceholder: "\u5173\u952e\u8bcd",
   refresh: "\u5237\u65b0\u5217\u8868",
   fields: "\u5b57\u6bb5",
@@ -940,7 +940,6 @@ export function ResultsPage() {
                 </button>
               </div>
               <label className="field results-filter-keyword-field">
-                <span>{TEXT.keywordLabel}</span>
                 <input
                   placeholder={TEXT.keywordPlaceholder}
                   value={keywordInput}
@@ -1084,7 +1083,7 @@ export function ResultsPage() {
               </colgroup>
               <thead>
                 <tr>
-                  <th className="results-th-cell" style={{ width: RESULTS_SELECT_COLUMN_WIDTH, minWidth: RESULTS_SELECT_COLUMN_WIDTH }}>
+                  <th className="results-th-cell table-select-cell" style={{ width: RESULTS_SELECT_COLUMN_WIDTH, minWidth: RESULTS_SELECT_COLUMN_WIDTH }}>
                     <label className="row">
                       <input
                         type="checkbox"
@@ -1135,7 +1134,7 @@ export function ResultsPage() {
                     data-row-active={activeRowId === item.id ? "true" : "false"}
                     onClick={() => setActiveRowId(item.id)}
                   >
-                    <td onClick={(event) => event.stopPropagation()}>
+                    <td className="table-select-cell" onClick={(event) => event.stopPropagation()}>
                       <input
                         type="checkbox"
                         aria-label={`select-item-${item.id}`}
