@@ -1,5 +1,8 @@
 import { LanguageMode, RangeFilter, RangeMode, SearchSpec } from "../api";
-import { buildQueryPreview, joinCommaLines, splitCommaLines } from "../collector";
+import { useMemo } from "react";
+
+import { buildQueryPreview, joinCommaLinesForTextarea, splitCommaLines } from "../collector";
+import { useDelimitedInputDraft } from "./useDelimitedInputDraft";
 
 type Props = {
   value: SearchSpec;
@@ -98,6 +101,31 @@ type SectionHeaderProps = {
   title: string;
   description: string;
 };
+
+function DelimitedTextarea(props: {
+  value: string[] | undefined;
+  onValueChange: (items: string[]) => void;
+  disabled: boolean;
+  placeholder: string;
+}) {
+  const draft = useDelimitedInputDraft({
+    value: props.value,
+    parse: splitCommaLines,
+    format: joinCommaLinesForTextarea,
+    onValueChange: props.onValueChange,
+  });
+
+  return (
+    <textarea
+      value={draft.draft}
+      onChange={(e) => draft.handleChange(e.target.value)}
+      onFocus={draft.handleFocus}
+      onBlur={draft.handleBlur}
+      disabled={props.disabled}
+      placeholder={props.placeholder}
+    />
+  );
+}
 
 function SectionHeader({ title, description }: SectionHeaderProps) {
   return (
@@ -205,36 +233,36 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
             <div className="collector-grid collector-grid-2">
               <label className="field">
                 <span>{TEXT.allKeywords}</span>
-                <textarea
-                  value={joinCommaLines(value.all_keywords)}
-                  onChange={(e) => update("all_keywords", splitCommaLines(e.target.value))}
+                <DelimitedTextarea
+                  value={value.all_keywords}
+                  onValueChange={(items) => update("all_keywords", items)}
                   disabled={disabled}
                   placeholder={TEXT.allKeywordsPlaceholder}
                 />
               </label>
               <label className="field">
                 <span>{TEXT.exactPhrases}</span>
-                <textarea
-                  value={joinCommaLines(value.exact_phrases)}
-                  onChange={(e) => update("exact_phrases", splitCommaLines(e.target.value))}
+                <DelimitedTextarea
+                  value={value.exact_phrases}
+                  onValueChange={(items) => update("exact_phrases", items)}
                   disabled={disabled}
                   placeholder={TEXT.exactPhrasesPlaceholder}
                 />
               </label>
               <label className="field">
                 <span>{TEXT.anyKeywords}</span>
-                <textarea
-                  value={joinCommaLines(value.any_keywords)}
-                  onChange={(e) => update("any_keywords", splitCommaLines(e.target.value))}
+                <DelimitedTextarea
+                  value={value.any_keywords}
+                  onValueChange={(items) => update("any_keywords", items)}
                   disabled={disabled}
                   placeholder={TEXT.anyKeywordsPlaceholder}
                 />
               </label>
               <label className="field">
                 <span>{TEXT.excludeKeywords}</span>
-                <textarea
-                  value={joinCommaLines(value.exclude_keywords)}
-                  onChange={(e) => update("exclude_keywords", splitCommaLines(e.target.value))}
+                <DelimitedTextarea
+                  value={value.exclude_keywords}
+                  onValueChange={(items) => update("exclude_keywords", items)}
                   disabled={disabled}
                   placeholder={TEXT.excludeKeywordsPlaceholder}
                 />
@@ -248,18 +276,18 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
             <div className="collector-grid collector-grid-2">
               <label className="field">
                 <span>{TEXT.authorsInclude}</span>
-                <textarea
-                  value={joinCommaLines(value.authors_include)}
-                  onChange={(e) => update("authors_include", splitCommaLines(e.target.value))}
+                <DelimitedTextarea
+                  value={value.authors_include}
+                  onValueChange={(items) => update("authors_include", items)}
                   disabled={disabled}
                   placeholder={TEXT.authorsIncludePlaceholder}
                 />
               </label>
               <label className="field">
                 <span>{TEXT.authorsExclude}</span>
-                <textarea
-                  value={joinCommaLines(value.authors_exclude)}
-                  onChange={(e) => update("authors_exclude", splitCommaLines(e.target.value))}
+                <DelimitedTextarea
+                  value={value.authors_exclude}
+                  onValueChange={(items) => update("authors_exclude", items)}
                   disabled={disabled}
                   placeholder={TEXT.authorsExcludePlaceholder}
                 />

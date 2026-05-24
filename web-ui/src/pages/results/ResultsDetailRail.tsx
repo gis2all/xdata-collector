@@ -73,6 +73,7 @@ function renderCuratedItem(item: CuratedItemRecord, tableLabel: string) {
         <div className="results-detail-fact-grid flat-row-list">
           {renderFact("状态", item.state || "--")}
           {renderFact("等级", item.level || "--")}
+          {renderFact("采集时间", formatUtcPlus8Time(item.fetched_at))}
           {renderFact("来源链接", item.source_url || "--")}
           {renderFact("去重键", item.dedupe_key || "--")}
         </div>,

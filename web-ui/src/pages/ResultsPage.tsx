@@ -17,7 +17,8 @@ import { ResultsPageHeader } from "./results/ResultsPageHeader";
 import { ResultsTableManager } from "./results/ResultsTableManager";
 import { formatUtcPlus8Time } from "../time";
 
-const RESULTS_VISIBLE_COLUMNS_KEY = "results.visibleColumns.v1";
+const LEGACY_RESULTS_VISIBLE_COLUMNS_KEY = "results.visibleColumns.v1";
+const RESULTS_VISIBLE_COLUMNS_KEY = "results.visibleColumns.v2";
 const RESULTS_COLUMN_WIDTHS_KEY = "results.columnWidths.v1";
 const PAGE_SIZE = 100;
 const RESULTS_SELECT_COLUMN_WIDTH = 48;
@@ -189,6 +190,13 @@ const CURATED_COLUMN_DEFINITIONS: ColumnDefinition[] = [
     render: (item) => formatUtcPlus8Time((item as CuratedItemRecord).created_at_x),
   },
   {
+    key: "fetched_at",
+    label: "fetched_at",
+    defaultVisible: true,
+    width: 220,
+    render: (item) => formatUtcPlus8Time((item as CuratedItemRecord).fetched_at),
+  },
+  {
     key: "reasons_json",
     label: "reasons_json",
     defaultVisible: false,
@@ -310,19 +318,36 @@ function normalizeVisibleColumnsForTable(table: ItemTable, value: unknown): Item
   return ordered.length ? ordered : DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
 }
 
+function normalizeLegacyVisibleColumnsForTable(table: ItemTable, value: unknown): ItemSortField[] {
+  const ordered = normalizeVisibleColumnsForTable(table, value);
+  const merged = new Set<ItemSortField>(ordered);
+  for (const key of DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table]) {
+    merged.add(key);
+  }
+  return orderVisibleColumns(table, merged);
+}
+
 function readVisibleColumns(table: ItemTable) {
   if (typeof window === "undefined") {
     return DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
   }
   const raw = window.localStorage.getItem(RESULTS_VISIBLE_COLUMNS_KEY);
-  if (raw == null) {
-    return DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
+  if (raw != null) {
+    try {
+      return normalizeVisibleColumnsForTable(table, JSON.parse(raw));
+    } catch {
+      return DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
+    }
   }
-  try {
-    return normalizeVisibleColumnsForTable(table, JSON.parse(raw));
-  } catch {
-    return DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
+  const legacyRaw = window.localStorage.getItem(LEGACY_RESULTS_VISIBLE_COLUMNS_KEY);
+  if (legacyRaw != null) {
+    try {
+      return normalizeLegacyVisibleColumnsForTable(table, JSON.parse(legacyRaw));
+    } catch {
+      return DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
+    }
   }
+  return DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
 }
 
 function writeVisibleColumns(visibleColumns: ItemSortField[]) {

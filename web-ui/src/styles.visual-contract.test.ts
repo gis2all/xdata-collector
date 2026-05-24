@@ -225,6 +225,8 @@ describe("visual contract", () => {
     expect(selectBlocks.some((block) => block.includes("appearance: none;"))).toBe(true);
     expect(selectBlocks.some((block) => block.includes("background-position: right 14px center;"))).toBe(true);
     expect(selectBlocks.some((block) => block.includes("background-size: 12px 12px;"))).toBe(true);
+    expect(blockFor("select:disabled")).toContain("background-repeat: no-repeat;");
+    expect(blockFor("select:disabled")).toContain("background-position: right 14px center;");
     expect(blockFor("select::-ms-expand")).toContain("display: none;");
   });
 

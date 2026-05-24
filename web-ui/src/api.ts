@@ -207,6 +207,7 @@ export type CollectorResultItem = {
   text: string;
   author: string;
   created_at: string;
+  fetched_at?: string | null;
   raw: Record<string, unknown>;
   metrics: Record<string, number>;
   flags: {
@@ -345,6 +346,7 @@ export type CuratedItemSortField =
   | "source_url"
   | "author"
   | "created_at_x"
+  | "fetched_at"
   | "reasons_json"
   | "rule_set_id"
   | "state";
@@ -379,6 +381,7 @@ export type CuratedItemRecord = {
   source_url: string;
   author: string;
   created_at_x: string | null;
+  fetched_at: string | null;
   reasons_json: unknown;
   rule_set_id: number | null;
   state: string;

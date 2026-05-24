@@ -55,6 +55,7 @@ CURATED_ITEM_FIELDS = (
     "source_url",
     "author",
     "created_at_x",
+    "fetched_at",
     "reasons_json",
     "rule_set_id",
     "state",
@@ -971,7 +972,8 @@ class DesktopService:
                 raise RuntimeError("; ".join(query_errors[:3]))
 
             deduped_results = _dedupe_search_results(fetched_results)
-            self._store_raw(run_id, deduped_results)
+            fetched_at = utc_now_iso()
+            self._store_raw(run_id, deduped_results, fetched_at=fetched_at)
 
             now_utc = datetime.now(timezone.utc)
             filtered_results = [item for item in deduped_results if passes_search_filters(item, search_spec, now_utc)]
@@ -981,7 +983,9 @@ class DesktopService:
                 now_utc=now_utc,
                 fallback_days=days,
             )
-            self._store_curated(run_id, matched_items, int(rule_set.get("id") or 0) or None)
+            for item in matched_items:
+                item["fetched_at"] = item.get("fetched_at") or fetched_at
+            self._store_curated(run_id, matched_items, int(rule_set.get("id") or 0) or None, fetched_at=fetched_at)
 
             run_errors = query_errors[:10]
             dedupe_stats: dict[str, Any] = {}
@@ -1000,7 +1004,7 @@ class DesktopService:
                         run_errors = run_errors[:9]
                     run_errors.append(f"auto dedupe failed: {exc}")
 
-            raw_items = [serialize_search_result(item) for item in filtered_results[:100]]
+            raw_items = [{**serialize_search_result(item), "fetched_at": fetched_at} for item in filtered_results[:100]]
             rule_set_summary = {
                 "id": int(rule_set.get("id") or 0) if rule_set.get("id") else None,
                 "name": rule_set.get("name", ""),
@@ -1537,8 +1541,8 @@ class DesktopService:
             error_text=error_text or "",
             ended_at=utc_now_iso(),
         )
-    def _store_raw(self, run_id: int, items: list[SearchResult]) -> None:
-        now = utc_now_iso()
+    def _store_raw(self, run_id: int, items: list[SearchResult], fetched_at: str | None = None) -> None:
+        now = fetched_at or utc_now_iso()
         with connect(self.db_path) as conn:
             for item in items:
                 canonical_url = canonicalize_source_url(item.url)
@@ -1562,7 +1566,13 @@ class DesktopService:
                     ),
                 )
 
-    def _store_curated(self, run_id: int, curated_items: list[dict[str, Any]], rule_set_id: int | None) -> None:
+    def _store_curated(
+        self,
+        run_id: int,
+        curated_items: list[dict[str, Any]],
+        rule_set_id: int | None,
+        fetched_at: str | None = None,
+    ) -> None:
         with connect(self.db_path) as conn:
             for item in curated_items:
                 dedupe_key = build_source_dedupe_key(
@@ -1571,11 +1581,12 @@ class DesktopService:
                     text=item.get("text"),
                     author=item.get("author"),
                 ) or ""
+                item_fetched_at = item.get("fetched_at") or fetched_at
                 conn.execute(
                     """
                     INSERT INTO x_items_curated
-                    (run_id, dedupe_key, level, score, title, summary_zh, excerpt, is_zero_cost, source_url, author, created_at_x, reasons_json, rule_set_id, state)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (run_id, dedupe_key, level, score, title, summary_zh, excerpt, is_zero_cost, source_url, author, created_at_x, fetched_at, reasons_json, rule_set_id, state)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         run_id,
@@ -1589,6 +1600,7 @@ class DesktopService:
                         item.get("url", ""),
                         item.get("author", ""),
                         item.get("created_at", ""),
+                        item_fetched_at,
                         json.dumps(item.get("reasons", []), ensure_ascii=False),
                         rule_set_id,
                         "new",

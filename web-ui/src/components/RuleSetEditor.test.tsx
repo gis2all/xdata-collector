@@ -1,8 +1,65 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { within } from "@testing-library/react";
 
 import { RuleSetEditor } from "./RuleSetEditor";
+import type { RuleSetDefinition } from "../api";
 import { DEFAULT_RULE_SET_DEFINITION, cloneRuleDefinition } from "../collector";
+
+const RULE_DRAFT_WITH_TEXT_CONDITION: RuleSetDefinition = {
+  levels: cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION).levels,
+  rules: [
+    {
+      id: "rule-alpha",
+      name: "Alpha Rule",
+      enabled: true,
+      operator: "AND",
+      conditions: [{ type: "text_contains_any", values: [] }],
+      effect: {
+        action: "score",
+        score: 20,
+        level: "A",
+      },
+    },
+  ],
+};
+
+const RULE_DRAFT_WITH_SINGLE_VALUE: RuleSetDefinition = {
+  levels: cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION).levels,
+  rules: [
+    {
+      id: "rule-language",
+      name: "Language Rule",
+      enabled: true,
+      operator: "AND",
+      conditions: [{ type: "language_is", value: "" }],
+      effect: {
+        action: "score",
+        score: 20,
+        level: "A",
+      },
+    },
+  ],
+};
+
+function RuleSetEditorHarness(props: {
+  initialDraft?: RuleSetDefinition;
+  onDraftValueChange?: (next: RuleSetDefinition) => void;
+}) {
+  const [draft, setDraft] = useState(() => cloneRuleDefinition(props.initialDraft ?? DEFAULT_RULE_SET_DEFINITION));
+
+  return (
+    <RuleSetEditor
+      ruleSet={null}
+      draft={draft}
+      onDraftChange={(next) => {
+        props.onDraftValueChange?.(next);
+        setDraft(next);
+      }}
+    />
+  );
+}
 
 describe("RuleSetEditor", () => {
   it("renders summary, level mapping, and rule workspace sections with unified action classes", () => {
@@ -52,6 +109,57 @@ describe("RuleSetEditor", () => {
         rules: expect.arrayContaining([
           expect.objectContaining({ name: "\u65b0\u89c4\u5219" }),
         ]),
+      }),
+    );
+  });
+
+  it("keeps in-progress spaces and commas for list conditions while emitting parsed values", () => {
+    const onDraftValueChange = vi.fn();
+    render(<RuleSetEditorHarness initialDraft={RULE_DRAFT_WITH_TEXT_CONDITION} onDraftValueChange={onDraftValueChange} />);
+
+    const conditionField = within(screen.getByTestId("rule-condition-rule-alpha-0")).getByRole("textbox");
+    fireEvent.change(conditionField, { target: { value: "social mining, " } });
+
+    expect(conditionField).toHaveValue("social mining, ");
+    expect(onDraftValueChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        rules: [
+          expect.objectContaining({
+            conditions: [expect.objectContaining({ values: ["social mining"] })],
+          }),
+        ],
+      }),
+    );
+  });
+
+  it("keeps comma-delimited edits in progress and normalizes list conditions on blur", () => {
+    render(<RuleSetEditorHarness initialDraft={RULE_DRAFT_WITH_TEXT_CONDITION} />);
+
+    const conditionField = within(screen.getByTestId("rule-condition-rule-alpha-0")).getByRole("textbox");
+    fireEvent.change(conditionField, { target: { value: "social mining, daily check-in" } });
+
+    expect(conditionField).toHaveValue("social mining, daily check-in");
+
+    fireEvent.blur(conditionField);
+
+    expect(conditionField).toHaveValue("social mining, daily check-in");
+  });
+
+  it("keeps single-value conditions unchanged", () => {
+    const onDraftValueChange = vi.fn();
+    render(<RuleSetEditorHarness initialDraft={RULE_DRAFT_WITH_SINGLE_VALUE} onDraftValueChange={onDraftValueChange} />);
+
+    const conditionField = within(screen.getByTestId("rule-condition-rule-language-0")).getByRole("textbox");
+    fireEvent.change(conditionField, { target: { value: "en" } });
+
+    expect(conditionField).toHaveValue("en");
+    expect(onDraftValueChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        rules: [
+          expect.objectContaining({
+            conditions: [expect.objectContaining({ value: "en" })],
+          }),
+        ],
       }),
     );
   });

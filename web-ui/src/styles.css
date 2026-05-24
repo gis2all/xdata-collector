@@ -293,13 +293,16 @@ textarea:hover {
 input:not([type="checkbox"]):not([type="radio"]):disabled,
 select:disabled,
 textarea:disabled {
-  background: #f8fafc;
+  background-color: #f8fafc;
   color: #64748b;
   border-color: #dbe4ee;
   cursor: not-allowed;
 }
 select:disabled {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.25 4.25 6 8 9.75 4.25' fill='none' stroke='%2394a3b8' stroke-width='1.5' stroke-linecap='square' stroke-linejoin='miter'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 12px 12px;
 }
 input::placeholder,
 textarea::placeholder {

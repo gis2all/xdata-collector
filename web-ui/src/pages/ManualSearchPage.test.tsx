@@ -362,6 +362,44 @@ describe("ManualSearchPage", () => {
     expect(screen.getAllByText("已修改未保存").length).toBeGreaterThan(0);
   });
 
+  it("submits multi-word phrases and comma-delimited authors as parsed arrays", async () => {
+    runManualMock.mockResolvedValue({
+      run_id: 2,
+      status: "success",
+      search_spec: taskPackFile.search_spec,
+      final_query: "btc lang:zh || btc lang:en",
+      final_queries: ["btc lang:zh -is:retweet", "btc lang:en -is:retweet"],
+      rule_set_summary: { id: 1, name: "Default Rule Set", description: "", version: 1, is_builtin: true },
+      raw_total: 0,
+      matched_total: 0,
+      raw_items: [],
+      matched_items: [],
+      stats: {},
+      errors: [],
+    } as any);
+
+    render(<ManualSearchPage />);
+
+    await waitFor(() => {
+      expect(listTaskPacksMock).toHaveBeenCalled();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText(/quest, points/i), { target: { value: "BTC" } });
+    fireEvent.change(screen.getByPlaceholderText(/social mining, daily check-in/i), { target: { value: "social mining, daily check-in" } });
+    fireEvent.change(screen.getByPlaceholderText(/galxe, layer3xyz, kaitoai/i), { target: { value: "galxe, layer3xyz" } });
+
+    fireEvent.click(screen.getByTestId("manual-run-button"));
+
+    await waitFor(() => {
+      expect(runManualMock).toHaveBeenCalled();
+    });
+
+    const payload = runManualMock.mock.calls[0]?.[0] as any;
+    expect(payload.search_spec.all_keywords).toEqual(["BTC"]);
+    expect(payload.search_spec.exact_phrases).toEqual(["social mining", "daily check-in"]);
+    expect(payload.search_spec.authors_include).toEqual(["galxe", "layer3xyz"]);
+  });
+
   it("deletes the current task pack and resets back to an unbound draft", async () => {
     render(<ManualSearchPage />);
 

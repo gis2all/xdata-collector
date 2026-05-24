@@ -66,6 +66,10 @@ export function joinCommaLines(value: string[] | undefined): string {
   return Array.isArray(value) ? value.join(", ") : "";
 }
 
+export function joinCommaLinesForTextarea(value: string[] | undefined): string {
+  return Array.isArray(value) ? value.join("\n") : "";
+}
+
 function clampNonNegative(value: unknown, fallback = 0, maximum?: number): number {
   const parsed = Number(value);
   const normalized = Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : fallback;

@@ -857,6 +857,65 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(first["rule_set_id"], 4)
         self.assertEqual(first["reasons_json"], [{"rule": "beta"}])
 
+    def test_list_items_curated_returns_fetched_at_when_present(self) -> None:
+        with connect(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO x_items_curated
+                (run_id, dedupe_key, level, score, title, summary_zh, excerpt, is_zero_cost, source_url, author, created_at_x, reasons_json, rule_set_id, fetched_at, state)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    1,
+                    "dedupe-fetched",
+                    "A",
+                    88,
+                    "Fetched",
+                    "summary",
+                    "excerpt",
+                    1,
+                    "https://x.com/demo/status/1001",
+                    "demo",
+                    "2026-04-12T00:00:00+00:00",
+                    json.dumps([{"rule": "alpha"}], ensure_ascii=False),
+                    2,
+                    "2026-04-12T00:10:00+00:00",
+                    "new",
+                ),
+            )
+
+        page = self.service.list_items(page=1, page_size=10, sort_by="id", sort_dir="asc")
+
+        self.assertEqual(page["items"][0]["fetched_at"], "2026-04-12T00:10:00+00:00")
+
+    @patch("backend.collector_service.utc_now_iso", return_value="2026-04-12T01:23:45+00:00")
+    @patch("backend.collector_service.evaluate_rule_set")
+    @patch("backend.collector_service.normalize_search_payload")
+    @patch("backend.collector_service.run_twitter_search")
+    def test_manual_run_curated_items_inherit_raw_fetched_at(
+        self,
+        mock_search,
+        mock_normalize_payload,
+        mock_evaluate_rule_set,
+        _mock_now,
+    ) -> None:
+        mock_search.return_value = []
+        mock_normalize_payload.return_value = [self._make_search_result()]
+        mock_evaluate_rule_set.return_value = ([self._make_curated_match()], {"matched": 1, "excluded": 0})
+
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        report = self.service.run_manual(self._manual_payload(rule_set_id=rule_set_id))
+
+        with connect(self.db_path) as conn:
+            raw_fetched_at = conn.execute("SELECT fetched_at FROM x_items_raw WHERE run_id = ?", (report["run_id"],)).fetchone()[0]
+            curated_fetched_at = conn.execute(
+                "SELECT fetched_at FROM x_items_curated WHERE run_id = ?",
+                (report["run_id"],),
+            ).fetchone()[0]
+
+        self.assertEqual(raw_fetched_at, "2026-04-12T01:23:45+00:00")
+        self.assertEqual(curated_fetched_at, raw_fetched_at)
+
     def test_list_items_invalid_sort_field_falls_back_to_default_id_desc(self) -> None:
         ids = self._seed_curated_items(
             [

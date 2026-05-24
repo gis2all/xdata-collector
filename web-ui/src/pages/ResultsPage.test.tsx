@@ -11,7 +11,8 @@ vi.mock("../api", () => ({
   dedupeItems: vi.fn(),
 }));
 
-const RESULTS_VISIBLE_COLUMNS_KEY = "results.visibleColumns.v1";
+const LEGACY_RESULTS_VISIBLE_COLUMNS_KEY = "results.visibleColumns.v1";
+const RESULTS_VISIBLE_COLUMNS_KEY = "results.visibleColumns.v2";
 const RESULTS_COLUMN_WIDTHS_KEY = "results.columnWidths.v1";
 
 const listItemsMock = vi.mocked(listItems);
@@ -44,6 +45,7 @@ function makeItem(id: number, overrides: Record<string, unknown> = {}) {
     source_url: `https://x.com/demo/status/${id}`,
     author: `author-${id}`,
     created_at_x: "2026-04-13T00:49:06+00:00",
+    fetched_at: "2026-04-13T01:00:00+00:00",
     reasons_json: [{ rule: `rule-${id}` }],
     rule_set_id: 2,
     state: "new",
@@ -134,6 +136,27 @@ describe("ResultsPage", () => {
     expect(fieldMenu).toBeInTheDocument();
     expect(fieldPicker).toContainElement(fieldMenu);
     expect(screen.getByText("列显示")).toBeInTheDocument();
+  });
+
+  it("shows fetched_at by default for curated rows", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("results-table-pane")).getByText("fetched_at")).toBeInTheDocument();
+    });
+  });
+
+  it("merges new default curated fields into legacy stored column preferences", async () => {
+    window.localStorage.setItem(LEGACY_RESULTS_VISIBLE_COLUMNS_KEY, JSON.stringify(["level", "title", "summary_zh", "author"]));
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("results-table-pane")).getByText("fetched_at")).toBeInTheDocument();
+    });
   });
 
   it("renders a draggable workspace resizer on wide screens", async () => {

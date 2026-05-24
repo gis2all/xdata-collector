@@ -1,5 +1,6 @@
 import { RuleCondition, RuleLevel, RuleSet, RuleSetDefinition, ScoringRule } from "../api";
 import { cloneRuleDefinition, joinCommaLines, newCondition, newRule, splitCommaLines } from "../collector";
+import { useDelimitedInputDraft } from "./useDelimitedInputDraft";
 
 type Props = {
   ruleSet: RuleSet | null;
@@ -111,6 +112,12 @@ function ConditionEditor({
   const usesValues = ["text_contains_any", "text_not_contains_any", "author_in", "author_not_in", "author_contains_any"].includes(value.type);
   const usesMetric = value.type === "metric_at_least";
   const usesSingleValue = ["language_is", "age_within_days"].includes(value.type);
+  const delimitedDraft = useDelimitedInputDraft({
+    value: value.values,
+    parse: splitCommaLines,
+    format: joinCommaLines,
+    onValueChange: (items) => onChange({ values: items }),
+  });
 
   return (
     <div
@@ -147,8 +154,10 @@ function ConditionEditor({
             <span>{TEXT.conditionValues}</span>
             <input
               disabled={disabled}
-              value={joinCommaLines(value.values)}
-              onChange={(e) => onChange({ values: splitCommaLines(e.target.value) })}
+              value={delimitedDraft.draft}
+              onChange={(e) => delimitedDraft.handleChange(e.target.value)}
+              onFocus={delimitedDraft.handleFocus}
+              onBlur={delimitedDraft.handleBlur}
               placeholder={TEXT.conditionPlaceholder}
             />
           </label>

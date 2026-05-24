@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { SearchSpecEditor } from "./SearchSpecEditor";
+import type { SearchSpec } from "../api";
 import { DEFAULT_SEARCH_SPEC, cloneSearchSpec } from "../collector";
 
 const PLACEHOLDERS = {
@@ -12,6 +14,23 @@ const PLACEHOLDERS = {
   authorsInclude: "逗号或换行分隔，如：galxe, layer3xyz, kaitoai",
   authorsExclude: "逗号或换行分隔，如：binance, bybit_official, bitgetglobal",
 } as const;
+
+function SearchSpecEditorHarness(props: {
+  initialValue?: Partial<SearchSpec>;
+  onValueChange?: (next: SearchSpec) => void;
+}) {
+  const [value, setValue] = useState(() => cloneSearchSpec(props.initialValue ?? DEFAULT_SEARCH_SPEC));
+
+  return (
+    <SearchSpecEditor
+      value={value}
+      onChange={(next) => {
+        props.onValueChange?.(next);
+        setValue(next);
+      }}
+    />
+  );
+}
 
 describe("SearchSpecEditor", () => {
   it("renders grouped workbench sections for keywords, scope, metrics, behavior, and query summary", () => {
@@ -75,5 +94,72 @@ describe("SearchSpecEditor", () => {
         }),
       }),
     );
+  });
+
+  it("keeps in-progress spaces and commas while editing while still emitting parsed arrays", () => {
+    const onValueChange = vi.fn();
+    render(<SearchSpecEditorHarness onValueChange={onValueChange} />);
+
+    const phrasesField = screen.getByPlaceholderText(/social mining, daily check-in/i);
+    fireEvent.change(phrasesField, { target: { value: "social " } });
+    expect(phrasesField).toHaveValue("social ");
+    expect(onValueChange).toHaveBeenLastCalledWith(expect.objectContaining({ exact_phrases: ["social"] }));
+
+    fireEvent.change(phrasesField, { target: { value: "social mining, " } });
+    expect(phrasesField).toHaveValue("social mining, ");
+    expect(onValueChange).toHaveBeenLastCalledWith(expect.objectContaining({ exact_phrases: ["social mining"] }));
+
+    const authorsField = screen.getByPlaceholderText(/galxe, layer3xyz, kaitoai/i);
+    fireEvent.change(authorsField, { target: { value: "galxe, layer3xyz" } });
+    expect(authorsField).toHaveValue("galxe, layer3xyz");
+    expect(onValueChange).toHaveBeenLastCalledWith(expect.objectContaining({ authors_include: ["galxe", "layer3xyz"] }));
+  });
+
+  it("normalizes textarea list inputs to one item per line on blur", () => {
+    render(<SearchSpecEditorHarness />);
+
+    const phrasesField = screen.getByPlaceholderText(/social mining, daily check-in/i);
+    fireEvent.change(phrasesField, { target: { value: "social mining, daily check-in" } });
+
+    expect(phrasesField).toHaveValue("social mining, daily check-in");
+
+    fireEvent.blur(phrasesField);
+
+    expect(phrasesField).toHaveValue("social mining\ndaily check-in");
+  });
+
+  it("replaces stale draft text when external search spec data is loaded", () => {
+    function ExternalUpdateHarness() {
+      const [value, setValue] = useState(() => cloneSearchSpec(DEFAULT_SEARCH_SPEC));
+
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() =>
+              setValue(
+                cloneSearchSpec({
+                  ...DEFAULT_SEARCH_SPEC,
+                  exact_phrases: ["beta phrase", "gamma phrase"],
+                }),
+              )
+            }
+          >
+            load-pack
+          </button>
+          <SearchSpecEditor value={value} onChange={setValue} />
+        </>
+      );
+    }
+
+    render(<ExternalUpdateHarness />);
+
+    const phrasesField = screen.getByPlaceholderText(/social mining, daily check-in/i);
+    fireEvent.change(phrasesField, { target: { value: "social mining, " } });
+    expect(phrasesField).toHaveValue("social mining, ");
+
+    fireEvent.click(screen.getByRole("button", { name: "load-pack" }));
+
+    expect(phrasesField).toHaveValue("beta phrase\ngamma phrase");
   });
 });

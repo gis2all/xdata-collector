@@ -62,6 +62,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
             source_url TEXT NOT NULL,
             author TEXT,
             created_at_x TEXT,
+            fetched_at TEXT,
             reasons_json TEXT NOT NULL DEFAULT '[]',
             rule_set_id INTEGER NULL,
             state TEXT NOT NULL DEFAULT 'new'
@@ -78,6 +79,8 @@ def ensure_schema_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE x_items_curated ADD COLUMN reasons_json TEXT NOT NULL DEFAULT '[]'")
     if "rule_set_id" not in curated_columns:
         conn.execute("ALTER TABLE x_items_curated ADD COLUMN rule_set_id INTEGER NULL")
+    if "fetched_at" not in curated_columns:
+        conn.execute("ALTER TABLE x_items_curated ADD COLUMN fetched_at TEXT NULL")
 
 
 def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
