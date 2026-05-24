@@ -974,6 +974,23 @@ class DesktopService:
             deduped_results = _dedupe_search_results(fetched_results)
             fetched_at = utc_now_iso()
             self._store_raw(run_id, deduped_results, fetched_at=fetched_at)
+            run_errors = query_errors[:10]
+
+            raw_dedupe_stats: dict[str, Any] = {}
+            if deduped_results:
+                try:
+                    raw_dedupe_summary = self.dedupe_items(table="raw")
+                    raw_dedupe_stats = {
+                        "raw_dedupe_groups": int(raw_dedupe_summary.get("groups", 0) or 0),
+                        "raw_dedupe_deleted": int(raw_dedupe_summary.get("deleted", 0) or 0),
+                        "raw_dedupe_kept": int(raw_dedupe_summary.get("kept", 0) or 0),
+                        "raw_dedupe_rows_after": int(raw_dedupe_summary.get("rows_after", 0) or 0),
+                    }
+                except Exception as exc:  # noqa: BLE001
+                    raw_dedupe_stats = {"raw_dedupe_failed": 1}
+                    if len(run_errors) >= 10:
+                        run_errors = run_errors[:9]
+                    run_errors.append(f"raw auto dedupe failed: {exc}")
 
             now_utc = datetime.now(timezone.utc)
             filtered_results = [item for item in deduped_results if passes_search_filters(item, search_spec, now_utc)]
@@ -987,7 +1004,6 @@ class DesktopService:
                 item["fetched_at"] = item.get("fetched_at") or fetched_at
             self._store_curated(run_id, matched_items, int(rule_set.get("id") or 0) or None, fetched_at=fetched_at)
 
-            run_errors = query_errors[:10]
             dedupe_stats: dict[str, Any] = {}
             if matched_items:
                 try:
@@ -1030,6 +1046,7 @@ class DesktopService:
                     "raw": len(filtered_results),
                     "search_filter_passed": len(filtered_results),
                     "query_errors": len(query_errors),
+                    **raw_dedupe_stats,
                     **match_stats,
                     **dedupe_stats,
                 },

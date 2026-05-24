@@ -17,8 +17,6 @@ import { ResultsPageHeader } from "./results/ResultsPageHeader";
 import { ResultsTableManager } from "./results/ResultsTableManager";
 import { formatUtcPlus8Time } from "../time";
 
-const LEGACY_RESULTS_VISIBLE_COLUMNS_KEY = "results.visibleColumns.v1";
-const RESULTS_VISIBLE_COLUMNS_KEY = "results.visibleColumns.v2";
 const RESULTS_COLUMN_WIDTHS_KEY = "results.columnWidths.v1";
 const PAGE_SIZE = 100;
 const RESULTS_SELECT_COLUMN_WIDTH = 48;
@@ -308,55 +306,6 @@ function orderVisibleColumns(table: ItemTable, keys: Iterable<ItemSortField>) {
   return allowed.filter((key) => keySet.has(key));
 }
 
-function normalizeVisibleColumnsForTable(table: ItemTable, value: unknown): ItemSortField[] {
-  if (!Array.isArray(value)) {
-    return DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
-  }
-  const allowed = new Set(COLUMN_DEFINITIONS_BY_TABLE[table].map((column) => column.key));
-  const selected = value.filter((entry): entry is ItemSortField => typeof entry === "string" && allowed.has(entry as ItemSortField));
-  const ordered = orderVisibleColumns(table, selected);
-  return ordered.length ? ordered : DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
-}
-
-function normalizeLegacyVisibleColumnsForTable(table: ItemTable, value: unknown): ItemSortField[] {
-  const ordered = normalizeVisibleColumnsForTable(table, value);
-  const merged = new Set<ItemSortField>(ordered);
-  for (const key of DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table]) {
-    merged.add(key);
-  }
-  return orderVisibleColumns(table, merged);
-}
-
-function readVisibleColumns(table: ItemTable) {
-  if (typeof window === "undefined") {
-    return DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
-  }
-  const raw = window.localStorage.getItem(RESULTS_VISIBLE_COLUMNS_KEY);
-  if (raw != null) {
-    try {
-      return normalizeVisibleColumnsForTable(table, JSON.parse(raw));
-    } catch {
-      return DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
-    }
-  }
-  const legacyRaw = window.localStorage.getItem(LEGACY_RESULTS_VISIBLE_COLUMNS_KEY);
-  if (legacyRaw != null) {
-    try {
-      return normalizeLegacyVisibleColumnsForTable(table, JSON.parse(legacyRaw));
-    } catch {
-      return DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
-    }
-  }
-  return DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
-}
-
-function writeVisibleColumns(visibleColumns: ItemSortField[]) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.setItem(RESULTS_VISIBLE_COLUMNS_KEY, JSON.stringify(visibleColumns));
-}
-
 function emptyColumnWidths(): ColumnWidthsByTable {
   return {
     curated: {},
@@ -467,7 +416,7 @@ function getCellContentClass(field: ItemSortField) {
 }
 
 export function ResultsPage() {
-  const [table, setTable] = useState<ItemTable>("curated");
+  const [table, setTable] = useState<ItemTable>("raw");
   const [items, setItems] = useState<ResultItemRecord[]>([]);
   const [activeRowId, setActiveRowId] = useState<number | null>(null);
   const [keywordInput, setKeywordInput] = useState("");
@@ -476,7 +425,10 @@ export function ResultsPage() {
   const [total, setTotal] = useState(0);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [allMatchingSelected, setAllMatchingSelected] = useState(false);
-  const [visibleColumns, setVisibleColumns] = useState<ItemSortField[]>(() => readVisibleColumns("curated"));
+  const [visibleColumnsByTable, setVisibleColumnsByTable] = useState<Record<ItemTable, ItemSortField[]>>({
+    curated: [...DEFAULT_VISIBLE_COLUMNS_BY_TABLE.curated],
+    raw: [...DEFAULT_VISIBLE_COLUMNS_BY_TABLE.raw],
+  });
   const [columnWidthsByTable, setColumnWidthsByTable] = useState<ColumnWidthsByTable>(() => readColumnWidths());
   const [fieldMenuOpen, setFieldMenuOpen] = useState(false);
   const [sortBy, setSortBy] = useState<ItemSortField>("id");
@@ -493,6 +445,7 @@ export function ResultsPage() {
   const workspaceLayoutRef = useRef<HTMLElement | null>(null);
   const workspaceDragBoundsRef = useRef<{ left: number; width: number } | null>(null);
 
+  const visibleColumns = visibleColumnsByTable[table];
   const columnDefinitions = COLUMN_DEFINITIONS_BY_TABLE[table];
   const visibleColumnDefinitions = columnDefinitions.filter((column) => visibleColumns.includes(column.key));
   const currentColumnWidths = columnWidthsByTable[table];
@@ -527,10 +480,6 @@ export function ResultsPage() {
   const batchDeleteConfirm = allMatchingSelected
     ? "\u786e\u5b9a\u786c\u5220\u9664\u5f53\u524d\u7b5b\u9009\u7ed3\u679c\u7684\u5168\u90e8\u8bb0\u5f55\u5417\uff1f\u6b64\u64cd\u4f5c\u65e0\u6cd5\u6062\u590d\u3002"
     : "\u786e\u5b9a\u786c\u5220\u9664\u5df2\u52fe\u9009\u7684\u8bb0\u5f55\u5417\uff1f\u6b64\u64cd\u4f5c\u65e0\u6cd5\u6062\u590d\u3002";
-
-  useEffect(() => {
-    writeVisibleColumns(visibleColumns);
-  }, [visibleColumns]);
 
   useEffect(() => {
     writeColumnWidths(columnWidthsByTable);
@@ -740,7 +689,7 @@ export function ResultsPage() {
   }
 
   useEffect(() => {
-    void load({ table: "curated", page: 1, keyword: appliedKeyword, sortBy, sortDir });
+    void load({ table: "raw", page: 1, keyword: appliedKeyword, sortBy, sortDir });
     // initial page load only; refresh and sorting are explicit actions
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -769,15 +718,15 @@ export function ResultsPage() {
     }
     setFieldMenuOpen(false);
     const targetColumns = COLUMN_DEFINITIONS_BY_TABLE[nextTable].map((column) => column.key);
-    const hasInvalidVisibleColumns = visibleColumns.some((column) => !targetColumns.includes(column));
-    const nextVisibleColumns = hasInvalidVisibleColumns
-      ? DEFAULT_VISIBLE_COLUMNS_BY_TABLE[nextTable]
-      : normalizeVisibleColumnsForTable(nextTable, visibleColumns);
+    const nextVisibleColumns = visibleColumnsByTable[nextTable];
     const nextSortBy = sortFieldSet.has(sortBy) && targetColumns.includes(sortBy) ? sortBy : "id";
     const nextSortDir = sortFieldSet.has(sortBy) && targetColumns.includes(sortBy) ? sortDir : "desc";
 
     setTable(nextTable);
-    setVisibleColumns(nextVisibleColumns);
+    setVisibleColumnsByTable((current) => ({
+      ...current,
+      [nextTable]: nextVisibleColumns,
+    }));
     setSortBy(nextSortBy);
     setSortDir(nextSortDir);
     setSelectedIds([]);
@@ -880,16 +829,23 @@ export function ResultsPage() {
   }
 
   function toggleColumnVisibility(key: ItemSortField) {
-    setVisibleColumns((current) => {
-      if (current.includes(key)) {
-        return current.filter((field) => field !== key);
-      }
-      return orderVisibleColumns(table, [...current, key]);
+    setVisibleColumnsByTable((current) => {
+      const tableColumns = current[table];
+      const nextColumns = tableColumns.includes(key)
+        ? tableColumns.filter((field) => field !== key)
+        : orderVisibleColumns(table, [...tableColumns, key]);
+      return {
+        ...current,
+        [table]: nextColumns,
+      };
     });
   }
 
   function handleRestoreDefaultColumns() {
-    setVisibleColumns(DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table]);
+    setVisibleColumnsByTable((current) => ({
+      ...current,
+      [table]: [...DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table]],
+    }));
   }
 
   function startColumnResize(column: ColumnDefinition & { currentWidth: number }, clientX: number | undefined) {

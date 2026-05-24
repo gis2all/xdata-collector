@@ -664,6 +664,45 @@ class DesktopServiceTests(unittest.TestCase):
     @patch("backend.collector_service.evaluate_rule_set")
     @patch("backend.collector_service.normalize_search_payload")
     @patch("backend.collector_service.run_twitter_search")
+    def test_manual_run_auto_dedupes_raw_table_after_store(
+        self,
+        mock_search,
+        mock_normalize_payload,
+        mock_evaluate_rule_set,
+    ) -> None:
+        existing_id = self._seed_raw_items(
+            [
+                {
+                    "run_id": 77,
+                    "tweet_id": "1001",
+                    "canonical_url": "https://x.com/demo/status/1001",
+                    "author": "demo",
+                    "text": "Alpha drop is live https://example.com",
+                    "created_at_x": "2026-04-10T00:00:00+00:00",
+                    "query_name": "manual:seed",
+                }
+            ]
+        )[0]
+
+        mock_search.return_value = []
+        mock_normalize_payload.return_value = [self._make_search_result()]
+        mock_evaluate_rule_set.return_value = ([self._make_curated_match()], {"matched": 1, "excluded": 0})
+
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        report = self.service.run_manual(self._manual_payload(rule_set_id=rule_set_id))
+        page = self.service.list_items(table="raw", page=1, page_size=10, sort_by="id", sort_dir="asc")
+
+        self.assertEqual(report["status"], "success")
+        self.assertEqual(report["stats"]["raw_dedupe_groups"], 1)
+        self.assertEqual(report["stats"]["raw_dedupe_deleted"], 1)
+        self.assertEqual(report["stats"]["raw_dedupe_kept"], 1)
+        self.assertEqual(report["stats"]["raw_dedupe_rows_after"], 1)
+        self.assertEqual(page["total"], 1)
+        self.assertEqual([item["id"] for item in page["items"]], [existing_id])
+
+    @patch("backend.collector_service.evaluate_rule_set")
+    @patch("backend.collector_service.normalize_search_payload")
+    @patch("backend.collector_service.run_twitter_search")
     def test_manual_run_skips_auto_dedupe_when_no_curated_items(
         self,
         mock_search,
@@ -682,7 +721,51 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(report["matched_total"], 0)
         self.assertNotIn("dedupe_groups", report["stats"])
         self.assertEqual(report["errors"], [])
-        mock_dedupe.assert_not_called()
+        self.assertEqual(
+            [call.kwargs.get("table", "curated") for call in mock_dedupe.call_args_list],
+            ["raw"],
+        )
+
+    @patch("backend.collector_service.evaluate_rule_set")
+    @patch("backend.collector_service.normalize_search_payload")
+    @patch("backend.collector_service.run_twitter_search")
+    def test_manual_run_still_auto_dedupes_raw_when_no_curated_items(
+        self,
+        mock_search,
+        mock_normalize_payload,
+        mock_evaluate_rule_set,
+    ) -> None:
+        existing_id = self._seed_raw_items(
+            [
+                {
+                    "run_id": 77,
+                    "tweet_id": "1001",
+                    "canonical_url": "https://x.com/demo/status/1001",
+                    "author": "demo",
+                    "text": "Alpha drop is live https://example.com",
+                    "created_at_x": "2026-04-10T00:00:00+00:00",
+                    "query_name": "manual:seed",
+                }
+            ]
+        )[0]
+
+        mock_search.return_value = []
+        mock_normalize_payload.return_value = [self._make_search_result()]
+        mock_evaluate_rule_set.return_value = ([], {"matched": 0, "excluded": 0})
+
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        report = self.service.run_manual(self._manual_payload(rule_set_id=rule_set_id))
+        page = self.service.list_items(table="raw", page=1, page_size=10, sort_by="id", sort_dir="asc")
+
+        self.assertEqual(report["status"], "success")
+        self.assertEqual(report["matched_total"], 0)
+        self.assertEqual(report["stats"]["raw_dedupe_groups"], 1)
+        self.assertEqual(report["stats"]["raw_dedupe_deleted"], 1)
+        self.assertEqual(report["stats"]["raw_dedupe_kept"], 1)
+        self.assertEqual(report["stats"]["raw_dedupe_rows_after"], 1)
+        self.assertNotIn("dedupe_groups", report["stats"])
+        self.assertEqual(page["total"], 1)
+        self.assertEqual([item["id"] for item in page["items"]], [existing_id])
 
     @patch("backend.collector_service.evaluate_rule_set")
     @patch("backend.collector_service.normalize_search_payload")
@@ -714,6 +797,42 @@ class DesktopServiceTests(unittest.TestCase):
     @patch("backend.collector_service.evaluate_rule_set")
     @patch("backend.collector_service.normalize_search_payload")
     @patch("backend.collector_service.run_twitter_search")
+    def test_manual_run_records_raw_dedupe_failure_but_stays_successful(
+        self,
+        mock_search,
+        mock_normalize_payload,
+        mock_evaluate_rule_set,
+    ) -> None:
+        mock_search.return_value = []
+        mock_normalize_payload.return_value = [self._make_search_result()]
+        mock_evaluate_rule_set.return_value = ([], {"matched": 0, "excluded": 0})
+
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        original_dedupe = self.service.dedupe_items
+
+        def fail_raw_only(*args, **kwargs):
+            table = kwargs.get("table")
+            if table is None and args:
+                table = args[0]
+            if str(table or "").strip().lower() == "raw":
+                raise RuntimeError("raw dedupe boom")
+            return original_dedupe(*args, **kwargs)
+
+        with patch.object(self.service, "dedupe_items", side_effect=fail_raw_only):
+            report = self.service.run_manual(self._manual_payload(rule_set_id=rule_set_id))
+
+        stored_run = self.service.get_run(int(report["run_id"]))
+
+        self.assertEqual(report["status"], "success")
+        self.assertEqual(report["stats"]["raw_dedupe_failed"], 1)
+        self.assertNotIn("dedupe_failed", report["stats"])
+        self.assertIn("raw dedupe boom", report["errors"][0])
+        self.assertEqual(stored_run["status"], "success")
+        self.assertEqual(stored_run["stats_json"]["raw_dedupe_failed"], 1)
+
+    @patch("backend.collector_service.evaluate_rule_set")
+    @patch("backend.collector_service.normalize_search_payload")
+    @patch("backend.collector_service.run_twitter_search")
     def test_run_job_now_triggers_auto_dedupe_after_successful_store(
         self,
         mock_search,
@@ -739,8 +858,12 @@ class DesktopServiceTests(unittest.TestCase):
             report = self.service.run_job_now(int(job["id"]))
 
         self.assertEqual(report["status"], "success")
+        self.assertIn("raw_dedupe_groups", report["stats"])
         self.assertIn("dedupe_groups", report["stats"])
-        mock_dedupe.assert_called_once()
+        self.assertEqual(
+            [call.kwargs.get("table", "curated") for call in mock_dedupe.call_args_list],
+            ["raw", "curated"],
+        )
 
     def test_list_runs_returns_recent_records_with_pagination(self) -> None:
         first = self.service._create_run(job_id=None, trigger_type="manual")
