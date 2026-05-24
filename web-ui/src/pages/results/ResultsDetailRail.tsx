@@ -10,7 +10,7 @@ type ResultsDetailRailProps = {
   total: number;
 };
 
-function renderFact(label: string, value: string) {
+function renderFact(label: string, value: ReactNode) {
   return (
     <div className="results-detail-fact flat-row">
       <div className="results-detail-fact-label">{label}</div>
@@ -74,7 +74,16 @@ function renderCuratedItem(item: CuratedItemRecord, tableLabel: string) {
           {renderFact("状态", item.state || "--")}
           {renderFact("等级", item.level || "--")}
           {renderFact("采集时间", formatUtcPlus8Time(item.fetched_at))}
-          {renderFact("来源链接", item.source_url || "--")}
+          {renderFact(
+            "来源链接",
+            item.source_url ? (
+              <a href={item.source_url} target="_blank" rel="noreferrer">
+                {item.source_url}
+              </a>
+            ) : (
+              "--"
+            ),
+          )}
           {renderFact("去重键", item.dedupe_key || "--")}
         </div>,
         "results-detail-info-section",
@@ -118,6 +127,16 @@ function renderRawItem(item: RawItemRecord, tableLabel: string) {
           {renderFact("查询名称", item.query_name || "--")}
           {renderFact("运行 ID", String(item.run_id ?? "--"))}
           {renderFact("推文 ID", item.tweet_id || "--")}
+          {renderFact(
+            "推文链接",
+            item.canonical_url ? (
+              <a href={item.canonical_url} target="_blank" rel="noreferrer">
+                {item.canonical_url}
+              </a>
+            ) : (
+              "--"
+            ),
+          )}
           {renderFact("采集时间", formatUtcPlus8Time(item.fetched_at))}
         </div>,
         "results-detail-collect-section",

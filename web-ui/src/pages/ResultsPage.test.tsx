@@ -279,6 +279,10 @@ describe("ResultsPage", () => {
     expect(within(detailRail).getByTestId("results-detail-info-section")).toHaveClass("flat-section");
     expect(within(detailRail).getByText(/author-2/)).toBeInTheDocument();
     expect(within(detailRail).getByText(/rule-2/)).toBeInTheDocument();
+    expect(within(detailRail).getByRole("link", { name: "https://x.com/demo/status/2" })).toHaveAttribute(
+      "href",
+      "https://x.com/demo/status/2",
+    );
     expect(within(screen.getByTestId("results-table-pane")).getByText("Item 2").closest("tr")).toHaveAttribute("data-row-active", "true");
   });
 
@@ -423,6 +427,10 @@ it("keeps table browsing controls and table actions in one compact control layer
     expect(within(detailRail).getByText(/author-1/)).toBeInTheDocument();
     expect(within(detailRail).getByText(/分数 81/)).toBeInTheDocument();
     expect(within(detailRail).getByText(/rule-1/)).toBeInTheDocument();
+    expect(within(detailRail).getByRole("link", { name: "https://x.com/demo/status/1" })).toHaveAttribute(
+      "href",
+      "https://x.com/demo/status/1",
+    );
     expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1").closest("tr")).toHaveAttribute("data-row-active", "true");
   });
 
@@ -460,13 +468,16 @@ it("renders default business columns and utc+8 timestamps", async () => {
     expect(scoreAscButton).toHaveTextContent("↑");
     expect(scoreDescButton).toHaveTextContent("↓");
     expect(within(screen.getByTestId("results-table-pane")).getByText("Raw text 1").closest(".results-cell-content")).toHaveClass("results-cell-content-text");
-    expect(screen.getByRole("link", { name: "https://x.com/i/status/9001" }).closest(".results-cell-content")).toHaveClass("results-cell-content-link");
+    expect(
+      within(screen.getByTestId("results-table-pane"))
+        .getByRole("link", { name: "https://x.com/i/status/9001" })
+        .closest(".results-cell-content"),
+    ).toHaveClass("results-cell-content-link");
     expect(screen.queryByRole("button", { name: "tweet_id asc" })).not.toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).getByText("2026-04-13 08:49:06 UTC+8")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "https://x.com/i/status/9001" })).toHaveAttribute(
-      "href",
-      "https://x.com/i/status/9001",
-    );
+    expect(
+      within(screen.getByTestId("results-table-pane")).getByRole("link", { name: "https://x.com/i/status/9001" }),
+    ).toHaveAttribute("href", "https://x.com/i/status/9001");
   });
 
   it("renders x native created_at_x timestamps in utc+8 across table and detail rail", async () => {
@@ -489,6 +500,33 @@ it("renders default business columns and utc+8 timestamps", async () => {
     const detailRail = screen.getByTestId("results-detail-rail");
     expect(within(detailRail).getByText(/2026-04-22 23:00:56 UTC\+8/)).toBeInTheDocument();
     expect(within(detailRail).queryByText(/Wed Apr 22 15:00:56 \+0000 2026 UTC\+8/)).not.toBeInTheDocument();
+  });
+
+  it("renders the raw detail rail tweet link between tweet id and fetched_at", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeRawItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Raw text 1")).toBeInTheDocument();
+    });
+
+    const detailRail = screen.getByTestId("results-detail-rail");
+    const collectSection = within(detailRail).getByTestId("results-detail-collect-section");
+    const collectRows = Array.from(collectSection.querySelectorAll(".results-detail-fact"));
+    const tweetIdRow = collectRows.find((row) => row.textContent?.includes("推文 ID"));
+    const tweetLinkRow = collectRows.find((row) => row.textContent?.includes("推文链接"));
+    const fetchedAtRow = collectRows.find((row) => row.textContent?.includes("采集时间"));
+
+    expect(tweetIdRow).toBeTruthy();
+    expect(tweetLinkRow).toBeTruthy();
+    expect(fetchedAtRow).toBeTruthy();
+    expect(tweetIdRow?.compareDocumentPosition(tweetLinkRow as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tweetLinkRow?.compareDocumentPosition(fetchedAtRow as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(collectSection).getByRole("link", { name: "https://x.com/i/status/9001" })).toHaveAttribute(
+      "href",
+      "https://x.com/i/status/9001",
+    );
   });
 
   it("shows a hidden column after checking it in the field dropdown", async () => {
