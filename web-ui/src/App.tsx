@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ManualSearchPage } from "./pages/ManualSearchPage";
 import { JobsPage } from "./pages/JobsPage";
@@ -58,6 +58,25 @@ function readStoredActivePage(): NavId {
   }
 }
 
+function readHashActivePage(): NavId | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const raw = window.location.hash.replace(/^#\/?/, "");
+  return isNavId(raw) ? raw : null;
+}
+
+function readInitialActivePage(): NavId {
+  const hashActive = readHashActivePage();
+  if (hashActive) {
+    return hashActive;
+  }
+  if (typeof window !== "undefined" && window.location.hash) {
+    return "dashboard";
+  }
+  return readStoredActivePage();
+}
+
 function writeStoredActivePage(value: NavId) {
   if (typeof window === "undefined") {
     return;
@@ -69,8 +88,45 @@ function writeStoredActivePage(value: NavId) {
   }
 }
 
+function writeHashActivePage(value: NavId) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const nextHash = `#/${value}`;
+  if (window.location.hash === nextHash) {
+    return;
+  }
+  window.history.replaceState(null, "", nextHash);
+}
+
 export function App() {
-  const [active, setActive] = useState<NavId>(() => readStoredActivePage());
+  const [active, setActive] = useState<NavId>(() => readInitialActivePage());
+
+  useEffect(() => {
+    function syncFromHash() {
+      const hashActive = readHashActivePage();
+      if (hashActive) {
+        setActive(hashActive);
+        writeStoredActivePage(hashActive);
+        return;
+      }
+      if (window.location.hash) {
+        setActive("dashboard");
+        writeStoredActivePage("dashboard");
+        writeHashActivePage("dashboard");
+      }
+    }
+
+    syncFromHash();
+    window.addEventListener("hashchange", syncFromHash);
+    return () => window.removeEventListener("hashchange", syncFromHash);
+  }, []);
+
+  function activatePage(value: NavId) {
+    setActive(value);
+    writeStoredActivePage(value);
+    writeHashActivePage(value);
+  }
 
   return (
     <div className="app-shell">
@@ -88,8 +144,7 @@ export function App() {
               data-testid={`nav-${item.id}`}
               aria-current={active === item.id ? "page" : undefined}
               onClick={() => {
-                setActive(item.id);
-                writeStoredActivePage(item.id);
+                activatePage(item.id);
               }}
             >
               {item.label}

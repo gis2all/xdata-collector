@@ -146,9 +146,11 @@ describe("LogsPage", () => {
     });
 
     expect(screen.queryByTestId("logs-run-rail")).not.toBeInTheDocument();
-    const apiGroup = screen.getByRole("heading", { name: "API" }).closest(".logs-service-group");
-    expect(apiGroup).not.toBeNull();
-    expect(within(apiGroup as HTMLElement).getByText("尚未产生日志").closest(".logs-file-state")).toHaveClass("logs-file-state-empty");
+    expect(screen.getByTestId("logs-service-summary-table")).toBeInTheDocument();
+    const apiRow = screen.getByTestId("logs-service-summary-api");
+    expect(within(apiRow).getByText("API")).toBeInTheDocument();
+    expect(within(apiRow).getByText("尚未产生日志")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "API" })?.closest(".logs-service-group") ?? null).toBeNull();
     expect(screen.queryAllByText(TEXT.noLogContent)).toHaveLength(0);
   });
 
@@ -175,7 +177,8 @@ describe("LogsPage", () => {
     expect(screen.queryAllByText("当前状态")).toHaveLength(0);
     expect(screen.queryAllByText("稍后刷新再看。")).toHaveLength(0);
     expect(screen.queryAllByText(TEXT.noLogContent)).toHaveLength(0);
-    expect(screen.getAllByText("尚未产生日志").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("尚未产生日志")).toHaveLength(3);
+    expect(screen.queryAllByText("api.current.out.log")).toHaveLength(0);
   });
 
   it("renders request errors without leaving the page blank", async () => {

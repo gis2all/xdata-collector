@@ -79,8 +79,7 @@ function serviceGroupStatus(files: RuntimeLogFile[]) {
   const errorCount = files.filter((file) => file.error).length;
   if (errorCount) return `读取异常 ${errorCount}`;
   if (files.some((file) => file.content)) return "已有内容";
-  if (files.length) return "空日志";
-  return "尚未采集";
+  return UI_TEXT.noLogGenerated;
 }
 
 function latestUpdatedAt(files: RuntimeLogFile[]) {
@@ -108,6 +107,11 @@ function renderLogFileState(error: string | undefined, content: string | undefin
       <strong>{UI_TEXT.noLogGenerated}</strong>
     </div>
   );
+}
+
+function serviceGroupFileLabel(files: RuntimeLogFile[]) {
+  if (!files.length) return "--";
+  return `${files.length} files`;
 }
 
 export function LogsPage() {
@@ -199,11 +203,45 @@ export function LogsPage() {
           </div>
         </div>
 
+        <div className="logs-service-summary-table workbench-table-shell" data-testid="logs-service-summary-table">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>服务</th>
+                <th>状态</th>
+                <th>文件</th>
+                <th>最近更新</th>
+              </tr>
+            </thead>
+            <tbody>
+              {SERVICE_GROUPS.map((group) => {
+                const files = serviceGroupFiles(runtimeLogs, group.key);
+                const tone = serviceGroupTone(files);
+                const latest = latestUpdatedAt(files);
+                return (
+                  <tr key={group.key} data-testid={`logs-service-summary-${group.key}`}>
+                    <td>{group.label}</td>
+                    <td>
+                      <span className={`dashboard-summary-pill workbench-pill ${tone}`}>{serviceGroupStatus(files)}</span>
+                    </td>
+                    <td>{serviceGroupFileLabel(files)}</td>
+                    <td>{latest ? formatUtcPlus8Time(latest) : UI_TEXT.runtimeNoSnapshot}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
         <div className="logs-service-grid">
           {SERVICE_GROUPS.map((group) => {
             const files = serviceGroupFiles(runtimeLogs, group.key);
             const tone = serviceGroupTone(files);
             const latest = latestUpdatedAt(files);
+            const visibleFiles = files.filter((file) => file.content || file.error);
+            if (!visibleFiles.length) {
+              return null;
+            }
             return (
               <section key={group.key} className="logs-service-group flat-section">
                 <div className="logs-service-group-hero">
@@ -215,7 +253,7 @@ export function LogsPage() {
                 </div>
 
                 <div className="logs-service-stack">
-                  {files.map((file) => (
+                  {visibleFiles.map((file) => (
                     <div key={file.name} className="logs-file-row flat-row">
                       <div className="logs-file-meta">
                         <div>
@@ -228,7 +266,6 @@ export function LogsPage() {
                       {renderLogFileState(file.error, file.content)}
                     </div>
                   ))}
-                  {!files.length && renderLogFileState(undefined, undefined)}
                 </div>
               </section>
             );

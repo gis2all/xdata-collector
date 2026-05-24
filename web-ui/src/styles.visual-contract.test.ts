@@ -84,6 +84,15 @@ describe("visual contract", () => {
     }
   });
 
+  it("keeps legacy shell aliases visually inert when retained for compatibility", () => {
+    for (const selector of [".workbench-summary-panel", ".workbench-subsurface", ".collector-card"]) {
+      const block = lastBlockContainingSelector(selector);
+      expect(block).toContain("border: 0;");
+      expect(block).toContain("box-shadow: none;");
+      expect(block).toContain("border-radius: 0;");
+    }
+  });
+
   it("keeps large workbench surfaces borderless so data lines carry the structure", () => {
     for (const selector of [
       ".workbench-page-header",
@@ -94,6 +103,7 @@ describe("visual contract", () => {
       ".settings-summary",
       ".settings-actions",
       ".settings-editor-section",
+      ".results-control-layer",
       ".results-filter-layer",
       ".results-manager-layer",
       ".results-table-pane",
@@ -141,6 +151,13 @@ describe("visual contract", () => {
     for (const selector of [".workbench-table-shell", ".jobs-table-card", ".results-table-wrap"]) {
       expect(blocksContainingSelector(selector).some((block) => block.includes("border: 1px solid"))).toBe(true);
     }
+  });
+
+  it("keeps the Jobs table readable beside the detail rail", () => {
+    expect(blocksContainingSelector(".jobs-layout").some((block) => block.includes("minmax(320px, 320px)"))).toBe(true);
+    expect(blockFor(".jobs-table")).toContain("min-width: 760px;");
+    expect(blockFor(".jobs-table")).not.toContain("table-layout: fixed;");
+    expect(styles).not.toContain(".jobs-row-actions-stack");
   });
 
   it("keeps key pages free of nested summary panels and subsurfaces", () => {

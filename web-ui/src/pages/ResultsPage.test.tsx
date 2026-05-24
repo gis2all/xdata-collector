@@ -92,7 +92,7 @@ describe("ResultsPage", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the results workbench structure with header, filter layer, manager layer, and main workspace", async () => {
+  it("renders the results workbench structure with one compact toolbar before the main workspace", async () => {
     listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
 
     render(<ResultsPage />);
@@ -103,27 +103,29 @@ describe("ResultsPage", () => {
 
     expect(screen.getByTestId("results-page")).not.toHaveClass("card");
     expect(screen.getByTestId("results-page-header")).toHaveClass("workbench-page-header");
-    expect(screen.getByTestId("results-filter-layer")).toHaveClass("workbench-layer");
-    expect(screen.getByTestId("results-filter-summary-panel")).toHaveClass("flat-meta-strip");
+    expect(screen.getByTestId("results-control-layer")).toHaveClass("workbench-layer");
+    expect(screen.getByTestId("results-control-summary")).toHaveClass("flat-meta-strip");
     expect(screen.getByTestId("results-filter-toolbar-shell")).toHaveClass("flat-actions");
-    expect(screen.getByTestId("results-manager-layer")).toHaveClass("workbench-layer");
-    expect(screen.getByTestId("results-manager-toolbar-shell")).toHaveClass("flat-actions");
+    expect(screen.queryByTestId("results-filter-layer")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("results-manager-layer")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("results-manager-toolbar-shell")).not.toBeInTheDocument();
     expect(screen.getByTestId("results-main-workspace")).toBeInTheDocument();
+    expect(screen.getByTestId("results-main-workspace")).toHaveClass("results-main-workspace-aligned");
     expect(screen.getByTestId("results-table-pane")).toBeInTheDocument();
     expect(screen.getByTestId("results-table-headband")).toHaveClass("flat-meta-strip");
     expect(screen.getByTestId("results-detail-rail")).toHaveClass("workbench-layer");
     expect(screen.getByTestId("results-table-status")).toBeInTheDocument();
     expect(screen.getByTestId("results-filter-toolbar")).toBeInTheDocument();
     expect(screen.getByTestId("results-manager-toolbar")).toBeInTheDocument();
-    expect(screen.getByTestId("results-manager-summary-panel")).toHaveClass("flat-meta-strip");
+    expect(screen.queryByTestId("results-manager-summary-panel")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: TEXT.refresh })).toHaveClass("workbench-primary-action");
     expect(screen.getByRole("button", { name: TEXT.fields })).toHaveClass("workbench-secondary-action");
     expect(screen.getByRole("button", { name: TEXT.resetColumns })).toHaveClass("workbench-secondary-action");
     expect(screen.getByRole("button", { name: TEXT.dedupe })).toHaveClass("workbench-secondary-action");
     expect(screen.getByRole("button", { name: TEXT.batchDelete })).toHaveClass("workbench-danger-action");
-    expect(screen.getByText("当前结果表")).toBeInTheDocument();
-    expect(screen.getByText("当前浏览范围")).toBeInTheDocument();
-    expect(screen.getByText("表格管理")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-control-summary")).getByText("当前结果表")).toBeInTheDocument();
+    expect(screen.queryByText("当前浏览范围")).not.toBeInTheDocument();
+    expect(screen.queryByText("表格管理")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: TEXT.fields }));
     const fieldMenu = screen.getByTestId("results-field-menu");
@@ -139,7 +141,7 @@ describe("ResultsPage", () => {
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("results-manager-layer")).toBeInTheDocument();
+      expect(screen.getByTestId("results-control-layer")).toBeInTheDocument();
     });
 
     expect(screen.queryByText("结果管理")).not.toBeInTheDocument();
@@ -242,40 +244,37 @@ describe("ResultsPage", () => {
     expect(within(detailRail).getByText("\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
   });
 
-  it("keeps table browsing controls in the filter layer and table actions in the manager layer", async () => {
+  it("keeps table browsing controls and table actions in one compact control layer", async () => {
     listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
 
     render(<ResultsPage />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("results-filter-layer")).toBeInTheDocument();
-      expect(screen.getByTestId("results-manager-layer")).toBeInTheDocument();
+      expect(screen.getByTestId("results-control-layer")).toBeInTheDocument();
     });
 
-    const filter = screen.getByTestId("results-filter-layer");
-    const manager = screen.getByTestId("results-manager-layer");
-    const filterSummaryPanel = within(filter).getByTestId("results-filter-summary-panel");
-    const filterToolbarShell = within(filter).getByTestId("results-filter-toolbar-shell");
+    const control = screen.getByTestId("results-control-layer");
+    const controlSummary = within(control).getByTestId("results-control-summary");
+    const filterToolbarShell = within(control).getByTestId("results-filter-toolbar-shell");
     const filterToolbar = within(filterToolbarShell).getByTestId("results-filter-toolbar");
     const filterBrowse = within(filterToolbar).getByTestId("results-filter-browse");
     const filterPrimary = within(filterToolbar).getByTestId("results-filter-primary");
-    const managerToolbarShell = within(manager).getByTestId("results-manager-toolbar-shell");
-    const managerToolbar = within(managerToolbarShell).getByTestId("results-manager-toolbar");
+    const managerToolbar = within(filterToolbar).getByTestId("results-manager-toolbar");
     const managerViewActions = within(managerToolbar).getByTestId("results-manager-view-actions");
     const managerDataActions = within(managerToolbar).getByTestId("results-manager-data-actions");
 
     expect(within(filterBrowse).getByRole("tablist", { name: "results-table-switcher" })).toBeInTheDocument();
     expect(within(filterPrimary).getByRole("button", { name: TEXT.refresh })).toBeInTheDocument();
-    expect(within(filterSummaryPanel).getByTestId("results-filter-summary")).toBeInTheDocument();
+    expect(within(controlSummary).getByTestId("results-filter-summary")).toBeInTheDocument();
     expect(within(managerViewActions).getAllByRole("button").map((button) => button.textContent)).toEqual(["字段", "恢复默认"]);
     expect(within(managerDataActions).getAllByRole("button").map((button) => button.textContent)).toEqual(["批量删除", "全表去重"]);
-    expect(within(manager).queryByLabelText(TEXT.keywordLabel)).not.toBeInTheDocument();
+    expect(within(managerToolbar).queryByLabelText(TEXT.keywordLabel)).not.toBeInTheDocument();
     expect(within(filterBrowse).getByLabelText(TEXT.keywordLabel)).toBeInTheDocument();
-    expect(within(filterSummaryPanel).getByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
-    expect(within(filterSummaryPanel).getByText("\u5173\u952e\u8bcd\uff1a\u5168\u90e8")).toBeInTheDocument();
-    expect(within(manager).queryByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).not.toBeInTheDocument();
-    expect(within(manager).getByText("共 1 条")).toBeInTheDocument();
-    expect(within(manager).getByText("已选 0 条")).toBeInTheDocument();
+    expect(within(controlSummary).getByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
+    expect(within(controlSummary).getByText("\u5173\u952e\u8bcd\uff1a\u5168\u90e8")).toBeInTheDocument();
+    expect(within(managerToolbar).queryByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).not.toBeInTheDocument();
+    expect(within(managerToolbar).getByText("共 1 条")).toBeInTheDocument();
+    expect(within(managerToolbar).getByText("已选 0 条")).toBeInTheDocument();
   });
 
   it("loads the first raw row into the detail rail after switching tables", async () => {
@@ -613,7 +612,7 @@ describe("ResultsPage", () => {
     expect(within(tableStatus).getByText("\u672c\u9875\u5df2\u9009 0 \u6761")).toBeInTheDocument();
     expect(within(tableStatus).getByText("\u6392\u5e8f\uff1aid \u00b7 \u964d\u5e8f")).toBeInTheDocument();
     expect(within(tableStatus).getByText("\u6bcf\u9875 100 \u6761")).toBeInTheDocument();
-    expect(within(screen.getByTestId("results-manager-layer")).getByText("共 132 条")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-manager-toolbar")).getByText("共 132 条")).toBeInTheDocument();
     expect(within(screen.getByTestId("results-filter-summary")).getByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
     expect(screen.getByText("第 1 / 2 页")).toBeInTheDocument();
     expect(screen.getByTestId("results-pagination")).toHaveClass("flat-meta-strip");

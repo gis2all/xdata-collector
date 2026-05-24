@@ -91,7 +91,7 @@ const DELETED_BATCH_ACTIONS: BatchActionSpec[] = [
 ];
 
 const MIN_LIST_PANE_WIDTH = 320;
-const MIN_DRAWER_PANE_WIDTH = 520;
+const MIN_DRAWER_PANE_WIDTH = 320;
 const RESIZER_WIDTH = 12;
 const SPLIT_LAYOUT_BREAKPOINT = 1160;
 
@@ -172,12 +172,6 @@ function draftSourceLabel(kind: DraftSourceKind) {
   if (kind === "pack") return "任务包载入";
   if (kind === "file") return "文件导入";
   return "默认空白";
-}
-
-function statusScopeLabel(status: JobStatusFilter) {
-  if (status === "deleted") return "已删除";
-  if (status === "all") return "全部";
-  return "启用中";
 }
 
 function JobsSectionHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
@@ -908,7 +902,6 @@ export function JobsPage() {
   const drawerDisabled = Boolean(selectedJob?.deleted_at) && drawerMode !== "create";
   const workspaceTitle = selectedJob ? "当前任务工作区" : "新建任务工作区";
   const workspaceMeta = selectedJob ? `任务 #${selectedJob.id}` : "未保存新任务";
-  const manageScopeLabel = statusScopeLabel(status);
   const currentStatusLabel = selectedJob ? jobState(selectedJob) : form.enabled ? "已启用" : "已停用";
   const nextRunLabel = selectedJob?.next_run_at ? formatUtcPlus8Time(selectedJob.next_run_at) : "保存后生成";
   const lastRunLabel = selectedJob?.last_run_status || "尚未运行";
@@ -968,21 +961,6 @@ export function JobsPage() {
       >
         <section className="jobs-list-pane">
           <div className="card jobs-list-tools workbench-layer">
-            <div
-              className="jobs-list-tools-summary flat-meta-strip"
-              data-testid="jobs-list-tools-summary"
-            >
-              <div className="jobs-list-tools-copy workbench-section-copy">
-                <div className="workbench-section-eyebrow">任务列表</div>
-                <div className="workbench-section-title jobs-list-tools-title">筛选与批量管理</div>
-                <div className="kv">先筛选列表，再在表格里批量操作。</div>
-              </div>
-              <div className="jobs-list-tools-pills workbench-pill-row">
-                <span className="jobs-summary-pill workbench-pill">{`当前范围：${manageScopeLabel}`}</span>
-                <span className="jobs-summary-pill workbench-pill">{`共 ${total} 项任务`}</span>
-              </div>
-            </div>
-
             <div
               className="jobs-list-filterbar flat-actions"
               data-testid="jobs-filter-bar"
@@ -1435,8 +1413,7 @@ export function JobsPage() {
               <div className="jobs-empty-hero flat-section">
                 <div>
                   <div className="jobs-empty-eyebrow">{"任务工作区"}</div>
-                  <h4>{"选择或新建任务"}</h4>
-                  <p>{"从左侧选择任务，或新建后继续编辑调度、搜索条件和规则。"}</p>
+                  <h4>{"选择任务"}</h4>
                 </div>
                 <div className="workbench-pill-row">
                   <span className="jobs-summary-pill workbench-pill">{`可用任务包：${taskPacks.length}`}</span>

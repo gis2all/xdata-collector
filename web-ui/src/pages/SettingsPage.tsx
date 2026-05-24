@@ -129,21 +129,15 @@ export function SettingsPage() {
       </section>
 
       {error && (
-        <div className="workbench-feedback workbench-feedback-danger" role="status">
-          <div className="workbench-feedback-copy">
-            <div className="workbench-feedback-eyebrow">配置反馈</div>
-            <strong>{error}</strong>
-            <p>当前编辑器草稿会保留，方便继续修正后再保存或导入。</p>
-          </div>
+        <div className="settings-compact-feedback settings-compact-feedback-danger" data-testid="settings-compact-feedback" role="status">
+          <span>配置反馈</span>
+          <strong>{error}</strong>
         </div>
       )}
       {message && (
-        <div className="workbench-feedback workbench-feedback-success" role="status">
-          <div className="workbench-feedback-copy">
-            <div className="workbench-feedback-eyebrow">配置反馈</div>
-            <strong>{message}</strong>
-            <p>配置摘要和编辑器内容已更新。</p>
-          </div>
+        <div className="settings-compact-feedback settings-compact-feedback-success" data-testid="settings-compact-feedback" role="status">
+          <span>配置反馈</span>
+          <strong>{message}</strong>
         </div>
       )}
 
@@ -189,12 +183,35 @@ export function SettingsPage() {
         </div>
       </section>
 
+      <section className="card settings-editor-section workbench-layer" data-testid="settings-editor-section">
+        <div className="settings-section-header workbench-section-header">
+          <div className="settings-section-copy workbench-section-copy">
+            <div className="settings-section-eyebrow workbench-section-eyebrow">{"JSON \u7f16\u8f91"}</div>
+            <h4 className="workbench-section-title">{"\u914d\u7f6e JSON"}</h4>
+          </div>
+        </div>
+
+        <div className="flat-section settings-editor-surface" data-testid="settings-editor-surface">
+          <label className="field">
+            <span>workspace.json</span>
+            <textarea
+              aria-label="workspace-json"
+              value={editorText}
+              onChange={(event) => setEditorText(event.target.value)}
+              spellCheck={false}
+              rows={28}
+              className="settings-editor"
+              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
+            />
+          </label>
+        </div>
+      </section>
+
       <section className="card settings-actions workbench-layer" data-testid="settings-actions">
         <div className="settings-section-header workbench-section-header">
           <div className="settings-section-copy workbench-section-copy">
             <div className="settings-section-eyebrow workbench-section-eyebrow">{"\u8f7b\u91cf\u914d\u7f6e"}</div>
             <h4 className="workbench-section-title">{"\u5de5\u4f5c\u533a\u64cd\u4f5c"}</h4>
-            <p className="kv">{"\u91cd\u65b0\u52a0\u8f7d\u7528\u4e8e\u53d6\u56de\u5f53\u524d\u914d\u7f6e\uff0c\u5bfc\u51fa\u5237\u65b0\u7528\u4e8e\u540c\u6b65\u670d\u52a1\u7aef\u89c6\u56fe\uff0c\u5bfc\u5165\u4f1a\u76f4\u63a5\u66ff\u6362\u7f16\u8f91\u5668\u8349\u7a3f\u3002"}</p>
           </div>
         </div>
 
@@ -225,36 +242,17 @@ export function SettingsPage() {
 
           <div className="settings-action-group">
             <div className="settings-card-title">{"\u5bfc\u5165\u914d\u7f6e"}</div>
-            <label className="field">
-              <span>{"\u5bfc\u5165\u914d\u7f6e\u6587\u4ef6"}</span>
-              <input aria-label="import-workspace-file" type="file" accept="application/json,.json" onChange={handleImportFile} />
+            <label className="settings-import-button workbench-secondary-action" data-testid="settings-import-button">
+              <span>{"\u9009\u62e9\u6587\u4ef6"}</span>
+              <input
+                className="settings-file-input-hidden"
+                aria-label="import-workspace-file"
+                type="file"
+                accept="application/json,.json"
+                onChange={handleImportFile}
+              />
             </label>
           </div>
-        </div>
-      </section>
-
-      <section className="card settings-editor-section workbench-layer" data-testid="settings-editor-section">
-        <div className="settings-section-header workbench-section-header">
-          <div className="settings-section-copy workbench-section-copy">
-            <div className="settings-section-eyebrow workbench-section-eyebrow">{"JSON \u7f16\u8f91"}</div>
-            <h4 className="workbench-section-title">{"\u914d\u7f6e JSON"}</h4>
-            <p className="kv">{"\u9700\u8981\u65f6\u53ef\u76f4\u63a5\u7f16\u8f91\u5b8c\u6574 JSON\u3002"}</p>
-          </div>
-        </div>
-
-        <div className="flat-section settings-editor-surface" data-testid="settings-editor-surface">
-          <label className="field">
-            <span>workspace.json</span>
-            <textarea
-              aria-label="workspace-json"
-              value={editorText}
-              onChange={(event) => setEditorText(event.target.value)}
-              spellCheck={false}
-              rows={28}
-              className="settings-editor"
-              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
-            />
-          </label>
         </div>
       </section>
     </div>

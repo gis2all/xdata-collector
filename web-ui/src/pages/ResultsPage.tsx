@@ -814,10 +814,10 @@ export function ResultsPage() {
     <div className="results-page" data-testid="results-page">
       <ResultsPageHeader title={TEXT.title} subtitle={TEXT.subtitle} />
 
-      <section className="results-filter-layer workbench-layer" data-testid="results-filter-layer">
-        <div className="results-filter-summary-panel flat-meta-strip" data-testid="results-filter-summary-panel">
+      <section className="results-control-layer workbench-layer" data-testid="results-control-layer">
+        <div className="results-control-summary flat-meta-strip" data-testid="results-control-summary">
           <div className="results-filter-copy workbench-section-copy">
-            <div className="results-filter-title workbench-section-title">当前浏览范围</div>
+            <div className="results-filter-title workbench-section-title">当前结果表</div>
           </div>
           <div className="results-filter-summary workbench-pill-row" data-testid="results-filter-summary">
             <div className="results-summary-pill workbench-pill">{`\u5f53\u524d\u8868\uff1a${tableLabel}`}</div>
@@ -866,55 +866,54 @@ export function ResultsPage() {
                 {TEXT.refresh}
               </button>
             </div>
+            <ResultsTableManager
+              total={total}
+              selectedCount={selectedCount}
+              allMatchingSelected={allMatchingSelected}
+              showSelectAllMatching={showSelectAllMatching}
+              fieldsLabel={TEXT.fields}
+              resetColumnsLabel={TEXT.resetColumns}
+              batchDeleteLabel={TEXT.batchDelete}
+              dedupeLabel={TEXT.dedupe}
+              clearSelectionLabel={TEXT.clearSelection}
+              loading={loading}
+              fieldMenuOpen={fieldMenuOpen}
+              fieldMenu={fieldMenuOpen ? (
+                <div className="results-field-menu" data-testid="results-field-menu">
+                  <div className="results-field-menu-header">
+                    <div className="results-field-menu-copy">
+                      <div className="results-field-menu-title">列显示</div>
+                      <div className="kv">隐藏列会保留宽度设置，重新显示时会恢复。</div>
+                    </div>
+                    <span className="results-summary-pill workbench-pill">{`已选 ${visibleColumnDefinitions.length} 列`}</span>
+                  </div>
+                  <div className="results-field-list">
+                    {columnDefinitions.map((column) => (
+                      <label key={column.key} className="results-field-option">
+                        <input
+                          type="checkbox"
+                          aria-label={`toggle-column-${column.key}`}
+                          checked={visibleColumns.includes(column.key)}
+                          onChange={() => toggleColumnVisibility(column.key)}
+                        />
+                        <span>{column.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              onSelectAllMatching={handleSelectAllMatching}
+              onClearSelection={handleClearSelection}
+              onToggleFields={() => setFieldMenuOpen((current) => !current)}
+              onRestoreDefaultColumns={handleRestoreDefaultColumns}
+              onBatchDelete={() => void handleBatchDelete()}
+              onDedupe={() => void handleDedupe()}
+            />
           </div>
         </div>
       </section>
 
-      <ResultsTableManager
-        total={total}
-        selectedCount={selectedCount}
-        allMatchingSelected={allMatchingSelected}
-        showSelectAllMatching={showSelectAllMatching}
-        fieldsLabel={TEXT.fields}
-        resetColumnsLabel={TEXT.resetColumns}
-        batchDeleteLabel={TEXT.batchDelete}
-        dedupeLabel={TEXT.dedupe}
-        clearSelectionLabel={TEXT.clearSelection}
-        loading={loading}
-        fieldMenuOpen={fieldMenuOpen}
-        fieldMenu={fieldMenuOpen ? (
-          <div className="results-field-menu" data-testid="results-field-menu">
-            <div className="results-field-menu-header">
-              <div className="results-field-menu-copy">
-                <div className="results-field-menu-title">列显示</div>
-                <div className="kv">隐藏列会保留宽度设置，重新显示时会恢复。</div>
-              </div>
-              <span className="results-summary-pill workbench-pill">{`已选 ${visibleColumnDefinitions.length} 列`}</span>
-            </div>
-            <div className="results-field-list">
-              {columnDefinitions.map((column) => (
-                <label key={column.key} className="results-field-option">
-                  <input
-                    type="checkbox"
-                    aria-label={`toggle-column-${column.key}`}
-                    checked={visibleColumns.includes(column.key)}
-                    onChange={() => toggleColumnVisibility(column.key)}
-                  />
-                  <span>{column.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        onSelectAllMatching={handleSelectAllMatching}
-        onClearSelection={handleClearSelection}
-        onToggleFields={() => setFieldMenuOpen((current) => !current)}
-        onRestoreDefaultColumns={handleRestoreDefaultColumns}
-        onBatchDelete={() => void handleBatchDelete()}
-        onDedupe={() => void handleDedupe()}
-      />
-
-      <section className="results-main-workspace" data-testid="results-main-workspace">
+      <section className="results-main-workspace results-main-workspace-aligned" data-testid="results-main-workspace">
         <div className="results-table-pane" data-testid="results-table-pane">
           <div className="results-table-strip flat-meta-strip" data-testid="results-table-headband">
             <div className="results-table-strip-copy">
