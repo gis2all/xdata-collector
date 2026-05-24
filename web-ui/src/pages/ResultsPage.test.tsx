@@ -383,6 +383,8 @@ describe("ResultsPage", () => {
     expect(screen.getByRole("button", { name: TEXT.batchDelete })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: TEXT.dedupe })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: TEXT.fields })).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).queryByText("id")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).queryByText("run_id")).not.toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).getByText("title")).toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).getByText("summary_zh")).toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).getByText("author")).toBeInTheDocument();
@@ -902,9 +904,16 @@ describe("ResultsPage", () => {
       expect(listItemsMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ page: 1, page_size: 100, sort_by: "id", sort_dir: "desc", table: "raw" }),
       );
-      expect(within(screen.getByTestId("results-table-pane")).getByText("tweet_id")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).queryByText("tweet_id")).not.toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("canonical_url")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("author")).toBeInTheDocument();
       expect(within(screen.getByTestId("results-table-pane")).getByText("text")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("created_at_x")).toBeInTheDocument();
       expect(within(screen.getByTestId("results-table-pane")).getByText("views")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("likes")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("replies")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("retweets")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("fetched_at")).toBeInTheDocument();
       expect(within(screen.getByTestId("results-table-pane")).getByText("Raw text 2")).toBeInTheDocument();
     });
 

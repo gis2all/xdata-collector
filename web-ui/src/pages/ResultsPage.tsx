@@ -220,7 +220,7 @@ const RAW_COLUMN_DEFINITIONS: ColumnDefinition[] = [
   {
     key: "tweet_id",
     label: "tweet_id",
-    defaultVisible: true,
+    defaultVisible: false,
     width: 140,
     render: (item) => (item as RawItemRecord).tweet_id || "--",
   },
@@ -278,7 +278,7 @@ const RAW_COLUMN_DEFINITIONS: ColumnDefinition[] = [
   {
     key: "fetched_at",
     label: "fetched_at",
-    defaultVisible: false,
+    defaultVisible: true,
     width: 220,
     render: (item) => formatUtcPlus8Time((item as RawItemRecord).fetched_at),
   },
