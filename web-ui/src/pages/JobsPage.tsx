@@ -1072,7 +1072,6 @@ export function JobsPage() {
                       <th>
                         <label className="field checkbox-row jobs-select-page-label">
                           <input aria-label="jobs-select-page" type="checkbox" checked={allPageSelected} onChange={togglePageSelection} />
-                          <span>{"本页全选"}</span>
                         </label>
                       </th>
                       <th>{"任务"}</th>
@@ -1142,7 +1141,7 @@ export function JobsPage() {
           />
         )}
 
-        <aside className={`jobs-drawer ${drawerOpen ? "open" : ""}`}>
+        <aside className={`jobs-drawer${drawerOpen ? " open" : ""}${drawerOpen ? "" : " jobs-drawer-empty"}`}>
           {drawerOpen ? (
             <div className="jobs-workspace">
               <div className="drawer-header">
@@ -1409,29 +1408,30 @@ export function JobsPage() {
               )}
             </div>
           ) : (
-            <div className="drawer-empty jobs-empty-workspace" data-testid="jobs-empty-workspace">
-              <div className="jobs-empty-hero flat-section">
-                <div>
-                  <div className="jobs-empty-eyebrow">{"任务工作区"}</div>
-                  <h4>{"选择任务"}</h4>
-                </div>
-                <div className="workbench-pill-row">
-                  <span className="jobs-summary-pill workbench-pill">{`可用任务包：${taskPacks.length}`}</span>
-                </div>
-                <div className="jobs-empty-actions">
-                  <button type="button" className="workbench-primary-action" onClick={openCreate}>{"新建任务"}</button>
-                  <button
-                    type="button"
-                    className="ghost workbench-secondary-action"
-                    data-testid="jobs-refresh-empty"
-                    onClick={() => refreshJobs({ keepDrawer: false, reloadSelected: false }).catch(() => undefined)}
-                    disabled={loading}
-                  >
-                    {"刷新列表"}
-                  </button>
+            <div className="jobs-empty-shell" data-testid="jobs-empty-shell">
+              <div className="drawer-empty jobs-empty-workspace" data-testid="jobs-empty-workspace">
+                <div className="jobs-empty-hero flat-section">
+                  <div>
+                    <div className="jobs-empty-eyebrow">{"任务工作区"}</div>
+                    <h4>{"选择任务"}</h4>
+                  </div>
+                  <div className="workbench-pill-row">
+                    <span className="jobs-summary-pill workbench-pill">{`可用任务包：${taskPacks.length}`}</span>
+                  </div>
+                  <div className="jobs-empty-actions">
+                    <button type="button" className="workbench-primary-action" onClick={openCreate}>{"新建任务"}</button>
+                    <button
+                      type="button"
+                      className="ghost workbench-secondary-action"
+                      data-testid="jobs-refresh-empty"
+                      onClick={() => refreshJobs({ keepDrawer: false, reloadSelected: false }).catch(() => undefined)}
+                      disabled={loading}
+                    >
+                      {"刷新列表"}
+                    </button>
+                  </div>
                 </div>
               </div>
-
             </div>
           )}
         </aside>

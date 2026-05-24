@@ -99,6 +99,7 @@ describe("visual contract", () => {
       ".workbench-layer",
       ".manual-section-card",
       ".jobs-list-tools",
+      ".jobs-empty-workspace",
       ".logs-section",
       ".settings-summary",
       ".settings-actions",
@@ -155,9 +156,38 @@ describe("visual contract", () => {
 
   it("keeps the Jobs table readable beside the detail rail", () => {
     expect(blocksContainingSelector(".jobs-layout").some((block) => block.includes("minmax(320px, 320px)"))).toBe(true);
+    expect(blocksContainingSelector(".jobs-layout").some((block) => block.includes("align-items: stretch;"))).toBe(true);
     expect(blockFor(".jobs-table")).toContain("min-width: 760px;");
     expect(blockFor(".jobs-table")).not.toContain("table-layout: fixed;");
     expect(styles).not.toContain(".jobs-row-actions-stack");
+  });
+
+  it("keeps the Jobs empty workspace shell flat and sticky", () => {
+    expect(blockFor(".jobs-empty-shell")).toContain("background: #ffffff;");
+    expect(blockFor(".jobs-empty-shell")).toContain("border-radius: 0;");
+    expect(blockFor(".jobs-empty-shell")).toContain("box-shadow: none;");
+    expect(blockFor(".jobs-empty-workspace")).toContain("background: transparent;");
+    expect(blockFor(".jobs-empty-workspace")).toContain("flex: 1 1 auto;");
+    expect(blocksContainingSelector(".jobs-drawer").some((block) => block.includes("position: sticky;"))).toBe(true);
+    expect(blocksContainingSelector(".jobs-drawer").some((block) => block.includes("top: 16px;"))).toBe(true);
+  });
+
+  it("keeps the Results workspace split stretchable with a dedicated rail resizer", () => {
+    expect(blocksContainingSelector(".results-main-workspace").some((block) => block.includes("minmax(380px, 420px)"))).toBe(true);
+    expect(blocksContainingSelector(".results-main-workspace").some((block) => block.includes("align-items: stretch;"))).toBe(true);
+    expect(blockFor(".results-resizer")).toContain("cursor: col-resize;");
+    expect(blocksContainingSelector(".results-resizer::before").some((block) => block.includes("width: 1px;"))).toBe(true);
+  });
+
+  it("keeps the Results control layer aligned to the same horizontal gutter as nearby sections", () => {
+    expect(blocksContainingSelector(".results-control-layer").some((block) => block.includes("padding: 12px 18px;"))).toBe(true);
+  });
+
+  it("keeps table selection checkboxes consistent in size and left aligned", () => {
+    expect(blockFor(".jobs-select-page-label")).toContain("justify-content: flex-start;");
+    expect(blockFor(".results-th-cell > .row:first-child")).toContain("justify-content: flex-start;");
+    expect(blockFor(".table input[type=\"checkbox\"]")).toContain("width: 16px;");
+    expect(blockFor(".table input[type=\"checkbox\"]")).toContain("height: 16px;");
   });
 
   it("keeps key pages free of nested summary panels and subsurfaces", () => {

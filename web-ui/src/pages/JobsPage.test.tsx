@@ -218,6 +218,17 @@ describe("JobsPage", () => {
     expect(pagination.compareDocumentPosition(tableWrap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it("keeps the page-select header as checkbox-only chrome", async () => {
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(listJobsMock).toHaveBeenCalled();
+    });
+
+    expect(screen.getByLabelText("jobs-select-page")).toBeInTheDocument();
+    expect(within(screen.getByTestId("jobs-table-wrap")).queryByText("本页全选")).not.toBeInTheDocument();
+  });
+
   it("does not persist a dragged width after remount", async () => {
     Object.defineProperty(window, "innerWidth", { value: 1440, writable: true });
 
@@ -249,9 +260,14 @@ describe("JobsPage", () => {
       expect(listJobsMock).toHaveBeenCalled();
     });
 
+    const emptyShell = screen.getByTestId("jobs-empty-shell");
+    expect(emptyShell).toBeInTheDocument();
+    expect(emptyShell).toHaveClass("jobs-empty-shell");
+
     const emptyWorkspace = screen.getByTestId("jobs-empty-workspace");
     expect(emptyWorkspace).toBeInTheDocument();
     expect(emptyWorkspace).toHaveClass("jobs-empty-workspace");
+    expect(emptyWorkspace.parentElement).toBe(emptyShell);
     expect(within(emptyWorkspace).getByText("选择任务")).toBeInTheDocument();
     expect(within(emptyWorkspace).getByText("可用任务包：1")).toBeInTheDocument();
     expect(within(emptyWorkspace).getByRole("button", { name: "新建任务" })).toBeInTheDocument();

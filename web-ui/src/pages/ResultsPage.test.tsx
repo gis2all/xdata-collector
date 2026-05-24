@@ -135,6 +135,55 @@ describe("ResultsPage", () => {
     expect(screen.getByText("列显示")).toBeInTheDocument();
   });
 
+  it("renders a draggable workspace resizer on wide screens", async () => {
+    Object.defineProperty(window, "innerWidth", { value: 1440, writable: true });
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("results-main-workspace")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("results-resizer")).toBeInTheDocument();
+  });
+
+  it("updates the workspace split width in real time while dragging the resizer", async () => {
+    Object.defineProperty(window, "innerWidth", { value: 1440, writable: true });
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    const layout = await screen.findByTestId("results-main-workspace");
+    const resizer = screen.getByTestId("results-resizer");
+    Object.defineProperty(layout, "getBoundingClientRect", {
+      value: () => ({ left: 0, top: 0, width: 1400, height: 820, right: 1400, bottom: 820, x: 0, y: 0, toJSON: () => ({}) }),
+    });
+
+    fireEvent.mouseDown(resizer, { clientX: 900 });
+    fireEvent.mouseMove(window, { clientX: 760 });
+
+    expect(layout).toHaveStyle({ gridTemplateColumns: "760px 12px minmax(380px, 1fr)" });
+    expect(layout.className).toContain("dragging");
+
+    fireEvent.mouseUp(window);
+
+    expect(layout.className).not.toContain("dragging");
+  });
+
+  it("does not render the workspace resizer in stacked layout on narrower screens", async () => {
+    Object.defineProperty(window, "innerWidth", { value: 1100, writable: true });
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("results-main-workspace")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId("results-resizer")).not.toBeInTheDocument();
+  });
+
   it("keeps results controls terse without explanatory copy blocks", async () => {
     listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
 
@@ -447,6 +496,19 @@ describe("ResultsPage", () => {
 
     const titleHeader = within(screen.getByTestId("results-table-pane")).getByText("title").closest("th");
     expect(titleHeader).toHaveStyle({ width: "220px" });
+  });
+
+  it("keeps the page-select header as checkbox-only chrome", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("results-table-pane")).getByText("title")).toBeInTheDocument();
+    });
+
+    expect(screen.getByLabelText(TEXT.selectPage)).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).queryByText(TEXT.selectPage)).not.toBeInTheDocument();
   });
 
   it("resizes a visible column in real time and writes the new width to local storage", async () => {

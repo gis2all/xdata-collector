@@ -328,6 +328,12 @@ textarea::placeholder {
   text-align: left;
   padding: 10px 12px;
 }
+.table input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 16px;
+}
 .table th {
   font-size: 12px;
   font-weight: 700;
@@ -876,7 +882,7 @@ textarea::placeholder {
 .jobs-page-header h3 { margin: 0 0 8px; font-size: 28px; line-height: 1.15; }
 .jobs-page-header .kv { max-width: 64ch; line-height: 1.55; }
 .jobs-page-header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.jobs-layout { display: grid; grid-template-columns: minmax(0, 1fr) 12px minmax(320px, 320px); gap: 0; align-items: start; min-height: 0; }
+.jobs-layout { display: grid; grid-template-columns: minmax(0, 1fr) 12px minmax(320px, 320px); gap: 0; align-items: stretch; min-height: 0; }
 .jobs-layout.dragging { cursor: col-resize; }
 .jobs-list-pane { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .jobs-list-tools {
@@ -1005,6 +1011,7 @@ textarea::placeholder {
 .jobs-resizer.dragging::before,
 .jobs-layout.dragging .jobs-resizer::before { background: #2563eb; width: 2px; }
 .jobs-drawer { min-width: 0; padding-left: 0; position: sticky; top: 16px; align-self: start; }
+.jobs-drawer-empty { align-self: stretch; display: flex; }
 .jobs-workspace { display: flex; flex-direction: column; gap: 14px; }
 .drawer-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 0; padding: 4px 4px 0; }
 .drawer-header h4 { margin: 0 0 4px; font-size: 20px; line-height: 1.2; }
@@ -1082,19 +1089,32 @@ textarea::placeholder {
   border: 1px dashed #cbd5e1;
   border-radius: 0;
 }
+.jobs-empty-shell {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0;
+  background: #ffffff;
+  border-radius: 0;
+  box-shadow: none;
+}
 .jobs-empty-workspace {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 10px;
   min-height: 0;
-  padding: 10px 0;
+  padding: 20px;
   border: 0;
   background: transparent;
   box-shadow: none;
 }
 .jobs-empty-hero {
+  display: flex;
+  flex: 1 1 auto;
+  align-content: flex-start;
   gap: 10px;
-  padding: 8px 0;
+  padding: 0;
 }
 .jobs-empty-eyebrow {
   font-size: 12px;
@@ -1158,7 +1178,7 @@ textarea::placeholder {
 .job-name { font-weight: 600; color: #0f172a; }
 .row-deleted { opacity: 0.72; }
 .checkbox-field { min-width: 80px; justify-content: center; }
-.jobs-select-page-label { justify-content: flex-start; gap: 8px; white-space: nowrap; }
+.jobs-select-page-label { justify-content: flex-start; align-items: center; gap: 0; white-space: nowrap; min-width: 0; padding: 0; }
 .jobs-pack-context-hint { margin-bottom: 16px; }
 .jobs-pack-manager-grid { align-items: start; }
 .jobs-pack-actions-grid { gap: 16px; }
@@ -2067,9 +2087,9 @@ textarea::placeholder {
   box-sizing: border-box;
   overflow-x: hidden;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(380px, 420px);
-  gap: 18px;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) 12px minmax(380px, 420px);
+  gap: 0;
+  align-items: stretch;
 }
 
 .results-main-workspace-aligned {
@@ -2099,6 +2119,33 @@ textarea::placeholder {
   position: sticky;
   top: 12px;
   padding: 14px;
+}
+
+.results-resizer {
+  position: relative;
+  align-self: stretch;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.results-resizer::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+  background: #cbd5e1;
+  transition: background 0.16s ease, width 0.16s ease;
+}
+
+.results-resizer:hover::before,
+.results-resizer.dragging::before,
+.results-main-workspace.dragging .results-resizer::before {
+  background: #2563eb;
+  width: 2px;
 }
 
 .results-field-picker { position: relative; display: inline-flex; }
@@ -2251,6 +2298,7 @@ textarea::placeholder {
   position: relative;
   padding-right: 16px;
 }
+.results-th-cell > .row:first-child { justify-content: flex-start; gap: 0; }
 .results-th {
   display: flex;
   align-items: center;
@@ -3075,7 +3123,7 @@ textarea,
 }
 
 .results-control-layer {
-  padding: 12px 0;
+  padding: 12px 18px;
   gap: 10px;
   border: 0;
 }

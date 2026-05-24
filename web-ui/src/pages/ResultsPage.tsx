@@ -22,6 +22,10 @@ const RESULTS_COLUMN_WIDTHS_KEY = "results.columnWidths.v1";
 const PAGE_SIZE = 100;
 const RESULTS_SELECT_COLUMN_WIDTH = 92;
 const RESULTS_OPERATION_COLUMN_WIDTH = 88;
+const RESULTS_SPLIT_LAYOUT_BREAKPOINT = 1180;
+const RESULTS_MIN_TABLE_PANE_WIDTH = 720;
+const RESULTS_MIN_DETAIL_PANE_WIDTH = 380;
+const RESULTS_RESIZER_WIDTH = 12;
 
 const TEXT = {
   title: "\u7ed3\u679c\u67e5\u8be2",
@@ -457,7 +461,12 @@ export function ResultsPage() {
   const [message, setMessage] = useState("");
   const [isResizingColumn, setIsResizingColumn] = useState(false);
   const [resizingColumnId, setResizingColumnId] = useState<string | null>(null);
+  const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? RESULTS_SPLIT_LAYOUT_BREAKPOINT : window.innerWidth));
+  const [leftPaneWidth, setLeftPaneWidth] = useState<number | null>(null);
+  const [isResizingWorkspace, setIsResizingWorkspace] = useState(false);
   const resizeStateRef = useRef<ColumnResizeState | null>(null);
+  const workspaceLayoutRef = useRef<HTMLElement | null>(null);
+  const workspaceDragBoundsRef = useRef<{ left: number; width: number } | null>(null);
 
   const columnDefinitions = COLUMN_DEFINITIONS_BY_TABLE[table];
   const visibleColumnDefinitions = columnDefinitions.filter((column) => visibleColumns.includes(column.key));
@@ -488,6 +497,7 @@ export function ResultsPage() {
   const tableName = TABLE_NAMES[table];
   const tableLabel = TABLE_LABELS[table];
   const activeKeywordLabel = appliedKeyword || "\u5168\u90e8";
+  const isSplitLayout = viewportWidth > RESULTS_SPLIT_LAYOUT_BREAKPOINT;
   const dedupeConfirmText = `\u786e\u5b9a\u5bf9\u6574\u4e2a ${tableName} \u8868\u6267\u884c\u53bb\u91cd\u5417\uff1f\u6b64\u64cd\u4f5c\u4f1a\u5220\u9664\u91cd\u590d\u884c\u3002`;
   const batchDeleteConfirm = allMatchingSelected
     ? "\u786e\u5b9a\u786c\u5220\u9664\u5f53\u524d\u7b5b\u9009\u7ed3\u679c\u7684\u5168\u90e8\u8bb0\u5f55\u5417\uff1f\u6b64\u64cd\u4f5c\u65e0\u6cd5\u6062\u590d\u3002"
@@ -500,6 +510,22 @@ export function ResultsPage() {
   useEffect(() => {
     writeColumnWidths(columnWidthsByTable);
   }, [columnWidthsByTable]);
+
+  function applyWorkspacePaneWidth(nextWidth: number | null) {
+    setLeftPaneWidth(nextWidth);
+    if (!workspaceLayoutRef.current) return;
+    workspaceLayoutRef.current.style.gridTemplateColumns = nextWidth === null
+      ? ""
+      : `${nextWidth}px ${RESULTS_RESIZER_WIDTH}px minmax(${RESULTS_MIN_DETAIL_PANE_WIDTH}px, 1fr)`;
+  }
+
+  function updateDraggedWorkspaceWidth(clientX: number | undefined) {
+    const bounds = workspaceDragBoundsRef.current;
+    if (!bounds || typeof clientX !== "number" || Number.isNaN(clientX)) return;
+    const maxWidth = Math.max(RESULTS_MIN_TABLE_PANE_WIDTH, bounds.width - RESULTS_MIN_DETAIL_PANE_WIDTH - RESULTS_RESIZER_WIDTH);
+    const nextWidth = Math.min(Math.max(clientX - bounds.left, RESULTS_MIN_TABLE_PANE_WIDTH), maxWidth);
+    applyWorkspacePaneWidth(nextWidth);
+  }
 
   useEffect(() => {
     function updateResizedColumnWidth(clientX: number | undefined) {
@@ -558,6 +584,54 @@ export function ResultsPage() {
       document.body.style.cursor = "";
     };
   }, []);
+
+  useEffect(() => {
+    function handleWindowResize() {
+      setViewportWidth(window.innerWidth);
+    }
+
+    function handleWorkspacePointerMove(event: PointerEvent) {
+      updateDraggedWorkspaceWidth(event.clientX);
+    }
+
+    function handleWorkspaceMouseMove(event: MouseEvent) {
+      updateDraggedWorkspaceWidth(event.clientX);
+    }
+
+    function stopWorkspaceResizing() {
+      workspaceDragBoundsRef.current = null;
+      setIsResizingWorkspace(false);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    }
+
+    window.addEventListener("resize", handleWindowResize);
+    window.addEventListener("pointermove", handleWorkspacePointerMove);
+    window.addEventListener("pointerup", stopWorkspaceResizing);
+    window.addEventListener("pointercancel", stopWorkspaceResizing);
+    window.addEventListener("mousemove", handleWorkspaceMouseMove);
+    window.addEventListener("mouseup", stopWorkspaceResizing);
+
+    return () => {
+      window.removeEventListener("resize", handleWindowResize);
+      window.removeEventListener("pointermove", handleWorkspacePointerMove);
+      window.removeEventListener("pointerup", stopWorkspaceResizing);
+      window.removeEventListener("pointercancel", stopWorkspaceResizing);
+      window.removeEventListener("mousemove", handleWorkspaceMouseMove);
+      window.removeEventListener("mouseup", stopWorkspaceResizing);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isSplitLayout) return;
+    setIsResizingWorkspace(false);
+    applyWorkspacePaneWidth(null);
+    workspaceDragBoundsRef.current = null;
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+  }, [isSplitLayout]);
 
   async function load(options?: {
     table?: ItemTable;
@@ -810,6 +884,25 @@ export function ResultsPage() {
     document.body.style.cursor = "col-resize";
   }
 
+  function startWorkspaceResizing() {
+    if (!isSplitLayout || !workspaceLayoutRef.current) return;
+    const bounds = workspaceLayoutRef.current.getBoundingClientRect();
+    workspaceDragBoundsRef.current = { left: bounds.left, width: bounds.width };
+    setIsResizingWorkspace(true);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+  }
+
+  function handleWorkspaceResizerPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    startWorkspaceResizing();
+    event.preventDefault();
+  }
+
+  function handleWorkspaceResizerMouseDown(event: React.MouseEvent<HTMLDivElement>) {
+    startWorkspaceResizing();
+    event.preventDefault();
+  }
+
   return (
     <div className="results-page" data-testid="results-page">
       <ResultsPageHeader title={TEXT.title} subtitle={TEXT.subtitle} />
@@ -913,7 +1006,11 @@ export function ResultsPage() {
         </div>
       </section>
 
-      <section className="results-main-workspace results-main-workspace-aligned" data-testid="results-main-workspace">
+      <section
+        ref={workspaceLayoutRef}
+        className={`results-main-workspace results-main-workspace-aligned${isResizingWorkspace ? " dragging" : ""}`}
+        data-testid="results-main-workspace"
+      >
         <div className="results-table-pane" data-testid="results-table-pane">
           <div className="results-table-strip flat-meta-strip" data-testid="results-table-headband">
             <div className="results-table-strip-copy">
@@ -995,7 +1092,6 @@ export function ResultsPage() {
                         checked={allSelectedOnPage}
                         onChange={toggleSelectAll}
                       />
-                      <span>{TEXT.selectPage}</span>
                     </label>
                   </th>
                   {resolvedVisibleColumnDefinitions.map((column) => (
@@ -1082,6 +1178,18 @@ export function ResultsPage() {
           )}
           {!loading && items.length === 0 && <div className="drawer-empty">{TEXT.empty}</div>}
         </div>
+
+        {isSplitLayout && (
+          <div
+            className={`results-resizer${isResizingWorkspace ? " dragging" : ""}`}
+            data-testid="results-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整结果区域宽度"
+            onPointerDown={handleWorkspaceResizerPointerDown}
+            onMouseDown={handleWorkspaceResizerMouseDown}
+          />
+        )}
 
         <aside className="results-detail-rail workbench-layer" data-testid="results-detail-rail">
           <ResultsDetailRail
