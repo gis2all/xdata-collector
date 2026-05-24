@@ -29,12 +29,11 @@ describe("RuleSetEditor", () => {
     expect(screen.queryByText("RULE BLOCKS")).not.toBeInTheDocument();
     expect(screen.getByLabelText("add-scoring-rule")).toHaveClass("workbench-secondary-action");
     expect(screen.getByLabelText("add-scoring-rule")).not.toHaveClass("ghost");
-    expect(screen.getByLabelText("delete-rule-exclude-trade-gated")).toHaveClass("workbench-danger-action");
-    expect(screen.getByLabelText("add-condition-exclude-trade-gated")).toHaveClass("workbench-secondary-action");
-    expect(screen.getByLabelText("add-condition-exclude-trade-gated")).not.toHaveClass("ghost");
-    expect(screen.getByLabelText("delete-condition-exclude-trade-gated-0")).toHaveClass("workbench-danger-action");
-    expect(screen.getByTestId("rule-card-exclude-trade-gated")).toHaveClass("flat-section");
-    expect(screen.getByTestId("rule-card-exclude-trade-gated")).not.toHaveClass("collector-card");
+    expect(screen.getByText("0 / 0 条规则启用")).toBeInTheDocument();
+    expect(screen.queryByLabelText("delete-rule-exclude-trade-gated")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("add-condition-exclude-trade-gated")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("delete-condition-exclude-trade-gated-0")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("rule-card-exclude-trade-gated")).not.toBeInTheDocument();
   });
 
   it("writes back rule and condition mutations through the shared editor shell", () => {
@@ -52,20 +51,6 @@ describe("RuleSetEditor", () => {
       expect.objectContaining({
         rules: expect.arrayContaining([
           expect.objectContaining({ name: "\u65b0\u89c4\u5219" }),
-        ]),
-      }),
-    );
-
-    fireEvent.click(screen.getByLabelText("add-condition-exclude-trade-gated"));
-    expect(onDraftChange).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        rules: expect.arrayContaining([
-          expect.objectContaining({
-            id: "exclude-trade-gated",
-            conditions: expect.arrayContaining([
-              expect.objectContaining({ type: "text_contains_any" }),
-            ]),
-          }),
         ]),
       }),
     );

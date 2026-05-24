@@ -105,7 +105,7 @@ const EMPTY_EXECUTION_SUMMARY: ExecutionSummary = {
 function draftSourceLabel(kind: DraftSourceKind) {
   if (kind === "pack") return "任务包载入";
   if (kind === "file") return "文件导入";
-  return "默认空白";
+  return "默认草稿";
 }
 
 function executionStatusLabel(status: ExecutionStatus) {
@@ -230,7 +230,7 @@ export function ManualSearchPage() {
     }
 
     resetToBlankDraft();
-    setMessage("已重置为默认空白任务");
+    setMessage("已重置为默认草稿");
   }
 
   async function refreshTaskPacks() {

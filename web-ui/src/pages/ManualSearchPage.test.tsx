@@ -163,9 +163,11 @@ describe("ManualSearchPage", () => {
     expect(within(header).queryByRole("button", { name: "刷新任务包列表" })).not.toBeInTheDocument();
     expect(screen.getByText("当前草稿：未绑定草稿").closest(".manual-rail-hero")).toHaveClass("flat-section");
     expect(within(screen.getByTestId("manual-execution-rail")).getByText("草稿状态").closest(".manual-rail-grid")).toHaveClass("flat-row-list");
-    expect(screen.getByText("当前来源：默认空白")).toBeInTheDocument();
+    expect(screen.getByText("当前来源：默认草稿")).toBeInTheDocument();
     expect(screen.getByText("当前绑定：--")).toBeInTheDocument();
     expect(screen.getByText("当前草稿：未绑定草稿")).toBeInTheDocument();
+    expect(screen.getByText("规则：0")).toBeInTheDocument();
+    expect(screen.getByText("等级：3")).toBeInTheDocument();
     expect(screen.getByText("关键词片段：0")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "包含关键词" })).toHaveAttribute("placeholder", "逗号或换行分隔，如：空投, quest, points");
     expect(screen.getByText("最近状态：未执行")).toBeInTheDocument();
@@ -268,7 +270,7 @@ describe("ManualSearchPage", () => {
     fireEvent.click(screen.getByTestId("manual-load-pack"));
 
     await waitFor(() => {
-      expect(screen.getByText("当前来源：默认空白")).toBeInTheDocument();
+      expect(screen.getByText("当前来源：默认草稿")).toBeInTheDocument();
     });
 
     expect(screen.getByText("当前绑定：--")).toBeInTheDocument();

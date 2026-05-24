@@ -52,27 +52,7 @@ export const DEFAULT_RULE_SET_DEFINITION: RuleSetDefinition = {
     { id: "A", label: "\u9ad8\u4f18\u5148\u7ea7", min_score: 60, color: "#ea580c" },
     { id: "B", label: "\u89c2\u5bdf", min_score: 30, color: "#2563eb" },
   ],
-  rules: [
-    {
-      id: "exclude-trade-gated",
-      name: "\u6392\u9664\u4ea4\u6613\u95e8\u69db",
-      enabled: true,
-      operator: "AND",
-      conditions: [{ type: "text_contains_any", values: ["trade", "stake", "\u5145\u503c", "\u4ea4\u6613"] }],
-      effect: { action: "exclude", score: 0, level: "" },
-    },
-    {
-      id: "trusted-author-action",
-      name: "\u5b98\u65b9\u8d26\u53f7 + \u884c\u52a8\u8bcd",
-      enabled: true,
-      operator: "AND",
-      conditions: [
-        { type: "author_in", values: ["galxe", "layer3xyz", "kaitoai"] },
-        { type: "text_contains_any", values: ["claim", "quest", "airdrop", "\u79ef\u5206", "\u7a7a\u6295"] },
-      ],
-      effect: { action: "score", score: 65, level: "A" },
-    },
-  ],
+  rules: [],
 };
 
 export function splitCommaLines(value: string): string[] {
