@@ -28,8 +28,10 @@ describe("RuleSetEditor", () => {
     expect(screen.queryByText("LEVELS")).not.toBeInTheDocument();
     expect(screen.queryByText("RULE BLOCKS")).not.toBeInTheDocument();
     expect(screen.getByLabelText("add-scoring-rule")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByLabelText("add-scoring-rule")).not.toHaveClass("ghost");
     expect(screen.getByLabelText("delete-rule-exclude-trade-gated")).toHaveClass("workbench-danger-action");
     expect(screen.getByLabelText("add-condition-exclude-trade-gated")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByLabelText("add-condition-exclude-trade-gated")).not.toHaveClass("ghost");
     expect(screen.getByLabelText("delete-condition-exclude-trade-gated-0")).toHaveClass("workbench-danger-action");
     expect(screen.getByTestId("rule-card-exclude-trade-gated")).toHaveClass("flat-section");
     expect(screen.getByTestId("rule-card-exclude-trade-gated")).not.toHaveClass("collector-card");

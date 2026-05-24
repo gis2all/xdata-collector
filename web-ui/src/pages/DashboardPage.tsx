@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { DatabaseHealth, HealthSnapshot, XHealth, health } from "../api";
 import { formatUtcPlus8Time } from "../time";
 
@@ -115,11 +115,7 @@ export function DashboardPage() {
     }
   }
 
-  useEffect(() => {
-    loadHealth().catch(() => undefined);
-  }, []);
-
-  const summaryTitle = state ? "最近状态" : loading ? "正在校验" : "尚未校验";
+  const summaryTitle = state ? "最近状态" : "尚未校验";
   const updatedAtLabel = state?.summary.source === "runtime_snapshot"
     ? "运行快照更新"
     : "当前展示更新";
@@ -136,7 +132,7 @@ export function DashboardPage() {
       <section className="card dashboard-page-header workbench-page-header" data-testid="dashboard-page-header">
         <div className="dashboard-page-header-copy workbench-page-header-copy">
           <h3>{"运行总览"}</h3>
-          <p className="kv">{"进入页面会自动校验本地数据库与 X 会话，必要时可手动重新加载。"}</p>
+          <p className="kv">{"页面刷新不会主动探测，点击重新加载才会更新当前状态。"}</p>
         </div>
         <div className="dashboard-page-header-actions workbench-page-header-actions">
           <button type="button" className="workbench-primary-action" onClick={loadHealth} disabled={loading}>

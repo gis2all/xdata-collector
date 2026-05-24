@@ -25,6 +25,15 @@ function blockFor(selector: string) {
   return styles.slice(start, end + 1);
 }
 
+function exactBlockFor(selector: string) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = styles.match(new RegExp(`${escaped}\\s*\\{[^}]*\\}`));
+  if (!match) {
+    throw new Error(`Missing exact CSS selector: ${selector}`);
+  }
+  return match[0];
+}
+
 function selectorsWithProperty(property: string) {
   const matches = Array.from(styles.matchAll(/([^{}]+)\{([^{}]*)\}/g));
   return matches
@@ -137,6 +146,24 @@ describe("visual contract", () => {
     expect(blockFor(".flat-row")).not.toContain("border-top:");
     expect(blockFor(".flat-row")).not.toContain("border-bottom:");
     expect(blockFor(".flat-row:not(:last-child)")).toContain("border-bottom:");
+  });
+
+  it("separates interactive secondary actions from passive status pills", () => {
+    expect(exactBlockFor(".workbench-secondary-action")).toContain("min-height: 40px;");
+    expect(exactBlockFor(".workbench-secondary-action")).toContain("font-weight: 700;");
+    expect(exactBlockFor(".workbench-secondary-action")).toContain("background: #edf4ff;");
+    expect(exactBlockFor(".workbench-pill")).toContain("min-height: 28px;");
+    expect(exactBlockFor(".workbench-pill")).toContain("font-weight: 600;");
+    expect(exactBlockFor(".workbench-pill")).toContain("background: #f8fafc;");
+    expect(exactBlockFor(".workbench-pill")).not.toContain("background: #edf4ff;");
+  });
+
+  it("does not mix action semantics on the same element", () => {
+    for (const file of flatWorkbenchFiles) {
+      const source = readFileSync(file, "utf8");
+      expect(source, `${file} should not mix ghost and workbench secondary classes`).not.toContain("ghost workbench-secondary-action");
+      expect(source, `${file} should not mix generic danger and workbench danger classes`).not.toContain("danger workbench-danger-action");
+    }
   });
 
   it("limits horizontal divider lines to data scanning surfaces", () => {

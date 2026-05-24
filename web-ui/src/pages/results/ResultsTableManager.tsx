@@ -47,7 +47,7 @@ export function ResultsTableManager({
         <div className="results-field-picker">
           <button
             type="button"
-            className="ghost workbench-secondary-action"
+            className="workbench-secondary-action"
             aria-haspopup="dialog"
             aria-expanded={fieldMenuOpen}
             onClick={onToggleFields}
@@ -56,7 +56,7 @@ export function ResultsTableManager({
           </button>
           {fieldMenu}
         </div>
-        <button type="button" className="ghost workbench-secondary-action" onClick={onRestoreDefaultColumns}>
+        <button type="button" className="workbench-secondary-action" onClick={onRestoreDefaultColumns}>
           {resetColumnsLabel}
         </button>
       </div>
@@ -68,7 +68,7 @@ export function ResultsTableManager({
         {showSelectAllMatching && (
           <button
             type="button"
-            className="ghost workbench-secondary-action"
+            className="workbench-secondary-action"
             aria-label="select-all-matching"
             onClick={onSelectAllMatching}
           >
@@ -78,7 +78,7 @@ export function ResultsTableManager({
         {(selectedCount > 0 || allMatchingSelected) && (
           <button
             type="button"
-            className="ghost workbench-secondary-action"
+            className="workbench-secondary-action"
             aria-label="clear-selection"
             onClick={onClearSelection}
           >
@@ -87,13 +87,13 @@ export function ResultsTableManager({
         )}
         <button
           type="button"
-          className="danger workbench-danger-action"
+          className="workbench-danger-action"
           onClick={onBatchDelete}
           disabled={loading || !selectedCount}
         >
           {batchDeleteLabel}
         </button>
-        <button type="button" className="ghost workbench-secondary-action" onClick={onDedupe} disabled={loading}>
+        <button type="button" className="workbench-secondary-action" onClick={onDedupe} disabled={loading}>
           {dedupeLabel}
         </button>
       </div>

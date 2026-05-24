@@ -120,6 +120,7 @@ describe("ResultsPage", () => {
     expect(screen.queryByTestId("results-manager-summary-panel")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: TEXT.refresh })).toHaveClass("workbench-primary-action");
     expect(screen.getByRole("button", { name: TEXT.fields })).toHaveClass("workbench-secondary-action");
+    expect(screen.getByRole("button", { name: TEXT.fields })).not.toHaveClass("ghost");
     expect(screen.getByRole("button", { name: TEXT.resetColumns })).toHaveClass("workbench-secondary-action");
     expect(screen.getByRole("button", { name: TEXT.dedupe })).toHaveClass("workbench-secondary-action");
     expect(screen.getByRole("button", { name: TEXT.batchDelete })).toHaveClass("workbench-danger-action");
@@ -684,6 +685,7 @@ describe("ResultsPage", () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "results-prev-page" })).toHaveClass("workbench-secondary-action");
+    expect(screen.getByRole("button", { name: "results-prev-page" })).not.toHaveClass("ghost");
     expect(screen.getByRole("button", { name: "results-next-page" })).toHaveClass("workbench-secondary-action");
 
     fireEvent.click(screen.getByRole("button", { name: "results-next-page" }));

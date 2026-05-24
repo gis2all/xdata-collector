@@ -461,7 +461,7 @@ export function ManualSearchPage() {
                 <div className="collector-toolbar">
                   <button
                     type="button"
-                    className="ghost workbench-secondary-action"
+                    className="workbench-secondary-action"
                     data-testid="manual-reset-draft"
                     onClick={resetDraft}
                   >
@@ -469,7 +469,7 @@ export function ManualSearchPage() {
                   </button>
                   <button
                     type="button"
-                    className="ghost workbench-secondary-action"
+                    className="workbench-secondary-action"
                     data-testid="manual-refresh-task-packs"
                     onClick={() => refreshTaskPacks().catch(() => undefined)}
                   >
@@ -514,7 +514,7 @@ export function ManualSearchPage() {
                     </select>
                     <button
                       type="button"
-                      className="ghost workbench-secondary-action"
+                      className="workbench-secondary-action"
                       data-testid="manual-load-pack"
                       onClick={() => importSelectedPack().catch(() => undefined)}
                     >
@@ -527,7 +527,7 @@ export function ManualSearchPage() {
                   <div className="collector-toolbar manual-pack-toolbar manual-action-toolbar">
                     <button
                       type="button"
-                      className="ghost workbench-secondary-action"
+                      className="workbench-secondary-action"
                       data-testid="manual-import-file-pack"
                       onClick={() => {
                         pendingFileActionRef.current = "draft";
@@ -538,7 +538,7 @@ export function ManualSearchPage() {
                     </button>
                     <button
                       type="button"
-                      className="ghost workbench-secondary-action"
+                      className="workbench-secondary-action"
                       data-testid="manual-import-and-save-pack"
                       onClick={() => {
                         pendingFileActionRef.current = "save_new";
@@ -579,7 +579,7 @@ export function ManualSearchPage() {
                   <div className="collector-toolbar manual-pack-toolbar manual-action-toolbar">
                     <button
                       type="button"
-                      className="ghost workbench-secondary-action"
+                      className="workbench-secondary-action"
                       data-testid="manual-save-as-pack"
                       onClick={() => savePack("create").catch(() => undefined)}
                       disabled={savingPack}
@@ -603,7 +603,7 @@ export function ManualSearchPage() {
                   <div className="collector-toolbar manual-pack-toolbar manual-action-toolbar">
                     <button
                       type="button"
-                      className="danger workbench-danger-action"
+                      className="workbench-danger-action"
                       data-testid="manual-delete-pack"
                       onClick={() => handleDeleteCurrentPack().catch(() => undefined)}
                       disabled={deletingPack || !currentPack?.pack_name}
@@ -777,7 +777,7 @@ export function ManualSearchPage() {
             <div className="kv manual-rail-caption">完整执行输出会在下方全宽结果区展开，不会挤压右侧执行轨。</div>
             <button
               type="button"
-              className="ghost manual-results-link workbench-secondary-action"
+              className="manual-results-link workbench-secondary-action"
               data-testid="manual-scroll-results"
               onClick={scrollToResults}
             >

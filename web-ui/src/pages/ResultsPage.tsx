@@ -1051,7 +1051,7 @@ export function ResultsPage() {
               <div className="row">
                 <button
                   type="button"
-                  className="ghost workbench-secondary-action"
+                  className="workbench-secondary-action"
                   aria-label="results-prev-page"
                   disabled={loading || page <= 1}
                   onClick={() => void load({ table, page: page - 1 })}
@@ -1061,7 +1061,7 @@ export function ResultsPage() {
                 <span className="kv">{`\u7b2c ${page} / ${totalPages} \u9875`}</span>
                 <button
                   type="button"
-                  className="ghost workbench-secondary-action"
+                  className="workbench-secondary-action"
                   aria-label="results-next-page"
                   disabled={loading || page >= totalPages}
                   onClick={() => void load({ table, page: page + 1 })}
@@ -1154,7 +1154,7 @@ export function ResultsPage() {
                       <div className="table-actions">
                         <button
                           type="button"
-                          className="danger workbench-danger-action"
+                          className="workbench-danger-action"
                           aria-label={`delete-item-${item.id}`}
                           onClick={() => void handleDeleteOne(item)}
                           disabled={loading}

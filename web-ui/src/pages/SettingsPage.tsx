@@ -1,4 +1,4 @@
-import { ChangeEvent, useMemo, useEffect, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { exportWorkspace, getWorkspace, importWorkspace, updateWorkspace, WorkspaceConfig } from "../api";
 import { formatUtcPlus8Time } from "../time";
 
@@ -39,6 +39,7 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   async function loadWorkspace() {
     setLoading(true);
@@ -221,7 +222,7 @@ export function SettingsPage() {
             <div className="collector-toolbar settings-card-actions">
               <button
                 type="button"
-                className="ghost workbench-secondary-action"
+                className="workbench-secondary-action"
                 aria-label="reload-workspace"
                 onClick={() => loadWorkspace().catch(() => undefined)}
                 disabled={loading}
@@ -230,7 +231,7 @@ export function SettingsPage() {
               </button>
               <button
                 type="button"
-                className="ghost workbench-secondary-action"
+                className="workbench-secondary-action"
                 aria-label="export-workspace"
                 onClick={handleExportRefresh}
                 disabled={loading}
@@ -242,16 +243,23 @@ export function SettingsPage() {
 
           <div className="settings-action-group">
             <div className="settings-card-title">{"\u5bfc\u5165\u914d\u7f6e"}</div>
-            <label className="settings-import-button workbench-secondary-action" data-testid="settings-import-button">
-              <span>{"\u9009\u62e9\u6587\u4ef6"}</span>
-              <input
-                className="settings-file-input-hidden"
-                aria-label="import-workspace-file"
-                type="file"
-                accept="application/json,.json"
-                onChange={handleImportFile}
-              />
-            </label>
+            <button
+              type="button"
+              className="settings-import-button workbench-secondary-action"
+              data-testid="settings-import-button"
+              onClick={() => importInputRef.current?.click()}
+              disabled={loading}
+            >
+              {"\u4ece\u6587\u4ef6\u5bfc\u5165"}
+            </button>
+            <input
+              ref={importInputRef}
+              className="settings-file-input-hidden"
+              aria-label="import-workspace-file"
+              type="file"
+              accept="application/json,.json"
+              onChange={handleImportFile}
+            />
           </div>
         </div>
       </section>

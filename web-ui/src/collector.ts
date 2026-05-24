@@ -19,7 +19,7 @@ export function defaultMetricFilters(): MetricFilters {
 }
 
 export const DEFAULT_SEARCH_SPEC: SearchSpec = {
-  all_keywords: ["BTC"],
+  all_keywords: [],
   exact_phrases: [],
   any_keywords: [],
   exclude_keywords: [],

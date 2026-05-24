@@ -864,13 +864,13 @@ export function JobsPage() {
         <div className="table-actions jobs-row-actions">
           <button
             type="button"
-            className="ghost workbench-secondary-action"
+            className="workbench-secondary-action"
             data-testid={`job-row-open-${job.id}`}
             onClick={() => openJobWorkspace(job)}
           >
             {"打开"}
           </button>
-          <button type="button" className="ghost workbench-secondary-action" onClick={() => handleRestore(job)}>{"恢复"}</button>
+          <button type="button" className="workbench-secondary-action" onClick={() => handleRestore(job)}>{"恢复"}</button>
         </div>
       );
     }
@@ -878,7 +878,7 @@ export function JobsPage() {
       <div className="table-actions jobs-row-actions">
         <button
           type="button"
-          className="ghost workbench-secondary-action"
+          className="workbench-secondary-action"
           data-testid={`job-row-open-${job.id}`}
           onClick={() => openJobWorkspace(job)}
         >
@@ -886,13 +886,13 @@ export function JobsPage() {
         </button>
         <button
           type="button"
-          className="ghost workbench-secondary-action"
+          className="workbench-secondary-action"
           onClick={() => handleRunNow(job)}
           disabled={!job.enabled}
         >
           {"立即运行"}
         </button>
-        <button type="button" className="ghost workbench-secondary-action" onClick={() => handleToggle(job)}>
+        <button type="button" className="workbench-secondary-action" onClick={() => handleToggle(job)}>
           {job.enabled ? "停用任务" : "启用任务"}
         </button>
       </div>
@@ -926,15 +926,15 @@ export function JobsPage() {
         <button type="button" className="workbench-primary-action" aria-label="submit-job" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
       ) : selectedJob.deleted_at ? (
         <>
-          <button type="button" className="ghost workbench-secondary-action" onClick={() => handleRestore(selectedJob)}>{"恢复任务"}</button>
-          <button type="button" className="danger workbench-danger-action" onClick={() => handlePurge(selectedJob)}>{"彻底删除"}</button>
+          <button type="button" className="workbench-secondary-action" onClick={() => handleRestore(selectedJob)}>{"恢复任务"}</button>
+          <button type="button" className="workbench-danger-action" onClick={() => handlePurge(selectedJob)}>{"彻底删除"}</button>
         </>
       ) : (
         <>
           <button type="button" className="workbench-primary-action" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
-          <button type="button" className="ghost workbench-secondary-action" onClick={() => handleRunNow(selectedJob)}>{"立即运行"}</button>
-          <button type="button" className="ghost workbench-secondary-action" onClick={() => handleToggle(selectedJob)}>{selectedJob.enabled ? "停用任务" : "启用任务"}</button>
-          <button type="button" className="danger workbench-danger-action" onClick={() => handleDelete(selectedJob)}>{"删除任务"}</button>
+          <button type="button" className="workbench-secondary-action" onClick={() => handleRunNow(selectedJob)}>{"立即运行"}</button>
+          <button type="button" className="workbench-secondary-action" onClick={() => handleToggle(selectedJob)}>{selectedJob.enabled ? "停用任务" : "启用任务"}</button>
+          <button type="button" className="workbench-danger-action" onClick={() => handleDelete(selectedJob)}>{"删除任务"}</button>
         </>
       )}
     </div>
@@ -972,7 +972,7 @@ export function JobsPage() {
                   <input value={queryInput} onChange={(e) => setQueryInput(e.target.value)} placeholder={"按任务名称搜索"} aria-label="搜索任务" />
                 </label>
                 <div className="jobs-filter-actions">
-                  <button type="button" className="ghost workbench-secondary-action" data-testid="jobs-search-button" onClick={submitQuery}>{"搜索"}</button>
+                  <button type="button" className="workbench-secondary-action" data-testid="jobs-search-button" onClick={submitQuery}>{"搜索"}</button>
                 </div>
                 <label className="field jobs-filter-field jobs-filter-status">
                   <span>{"状态"}</span>
@@ -1003,7 +1003,7 @@ export function JobsPage() {
                 {showSelectAllMatching && (
                   <button
                     type="button"
-                    className="ghost workbench-secondary-action"
+                    className="workbench-secondary-action"
                     aria-label="select-all-matching-jobs"
                     onClick={selectAllMatchingJobs}
                   >
@@ -1013,7 +1013,7 @@ export function JobsPage() {
                 {selectedCount > 0 && (
                   <button
                     type="button"
-                    className="ghost workbench-secondary-action"
+                    className="workbench-secondary-action"
                     aria-label="clear-job-selection"
                     onClick={clearSelection}
                   >
@@ -1026,8 +1026,8 @@ export function JobsPage() {
                     type="button"
                     className={
                       item.tone === "danger"
-                        ? "danger workbench-danger-action"
-                        : "ghost workbench-secondary-action"
+                        ? "workbench-danger-action"
+                        : "workbench-secondary-action"
                     }
                     disabled={!isBatchActionEnabled(item.action)}
                     onClick={() => handleBatchAction(item.action).catch(() => undefined)}
@@ -1047,7 +1047,7 @@ export function JobsPage() {
               <div className="row">
                 <button
                   type="button"
-                  className="ghost workbench-secondary-action"
+                  className="workbench-secondary-action"
                   disabled={page <= 1}
                   onClick={() => refreshJobs({ page: page - 1 }).catch(() => undefined)}
                 >
@@ -1056,7 +1056,7 @@ export function JobsPage() {
                 <span className="kv">{"第 "}{page}{" / "}{totalPages}{" 页"}</span>
                 <button
                   type="button"
-                  className="ghost workbench-secondary-action"
+                  className="workbench-secondary-action"
                   disabled={page >= totalPages}
                   onClick={() => refreshJobs({ page: page + 1 }).catch(() => undefined)}
                 >
@@ -1155,7 +1155,7 @@ export function JobsPage() {
                 <div className="drawer-header-actions">
                   <button
                     type="button"
-                    className="ghost workbench-secondary-action"
+                    className="workbench-secondary-action"
                     data-testid="jobs-close-workspace"
                     onClick={() => { setSelectedJob(null); setDrawerMode("create"); resetForm(); setDrawerOpen(false); }}
                   >
@@ -1241,7 +1241,7 @@ export function JobsPage() {
                       </select>
                       <button
                         type="button"
-                        className="ghost workbench-secondary-action"
+                        className="workbench-secondary-action"
                         aria-label="job-load-pack"
                         onClick={() => handleImportPack().catch(() => undefined)}
                         disabled={drawerDisabled}
@@ -1250,7 +1250,7 @@ export function JobsPage() {
                       </button>
                       <button
                         type="button"
-                        className="ghost workbench-secondary-action"
+                        className="workbench-secondary-action"
                         aria-label="job-import-file-pack"
                         onClick={() => { pendingFileActionRef.current = "draft"; fileInputRef.current?.click(); }}
                         disabled={drawerDisabled}
@@ -1259,7 +1259,7 @@ export function JobsPage() {
                       </button>
                       <button
                         type="button"
-                        className="ghost workbench-secondary-action"
+                        className="workbench-secondary-action"
                         aria-label="job-import-and-save-pack"
                         onClick={() => { pendingFileActionRef.current = "save_new"; fileInputRef.current?.click(); }}
                         disabled={drawerDisabled || savingPack}
@@ -1288,7 +1288,7 @@ export function JobsPage() {
                     <div className="collector-toolbar" style={{ marginTop: 12, flexWrap: "wrap" }}>
                       <button
                         type="button"
-                        className="ghost workbench-secondary-action"
+                        className="workbench-secondary-action"
                         aria-label="job-save-as-pack"
                         onClick={() => handleSavePack("create").catch(() => undefined)}
                         disabled={drawerDisabled || savingPack}
@@ -1298,7 +1298,7 @@ export function JobsPage() {
                       <button type="button" className="workbench-primary-action" aria-label="job-save-current-pack" onClick={() => handleSavePack("overwrite").catch(() => undefined)} disabled={drawerDisabled || savingPack || !form.pack_name}>{"保存到当前任务包"}</button>
                       <button
                         type="button"
-                        className="danger workbench-danger-action"
+                        className="workbench-danger-action"
                         aria-label="job-delete-pack"
                         onClick={() => handleDeleteCurrentPack().catch(() => undefined)}
                         disabled={drawerDisabled || deletingPack || !currentTaskPack?.pack_name}
@@ -1425,7 +1425,7 @@ export function JobsPage() {
                     <button type="button" className="workbench-primary-action" onClick={openCreate}>{"新建任务"}</button>
                     <button
                       type="button"
-                      className="ghost workbench-secondary-action"
+                      className="workbench-secondary-action"
                       data-testid="jobs-refresh-empty"
                       onClick={() => refreshJobs({ keepDrawer: false, reloadSelected: false }).catch(() => undefined)}
                       disabled={loading}

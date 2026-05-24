@@ -33,6 +33,12 @@ def find_xreach_cli() -> str:
     raise RuntimeError("xreach not found. Install with `npm i -g xreach-cli`.")
 
 
+def _windows_subprocess_run_kwargs() -> dict[str, Any]:
+    if os.name != "nt":
+        return {}
+    return {"creationflags": subprocess.CREATE_NO_WINDOW}
+
+
 def run_twitter_search(query: str, max_results: int, timeout_seconds: int = 60) -> dict[str, Any] | list[Any]:
     command = [
         find_twitter_cli(),
@@ -55,6 +61,7 @@ def run_twitter_search(query: str, max_results: int, timeout_seconds: int = 60) 
         encoding="utf-8",
         env=env,
         timeout=timeout_seconds,
+        **_windows_subprocess_run_kwargs(),
     )
 
     output = completed.stdout.strip()
@@ -106,6 +113,7 @@ def run_xreach_search(query: str, max_results: int, timeout_seconds: int = 60) -
         encoding="utf-8",
         env=env,
         timeout=timeout_seconds,
+        **_windows_subprocess_run_kwargs(),
     )
     if completed.returncode != 0:
         raise RuntimeError(

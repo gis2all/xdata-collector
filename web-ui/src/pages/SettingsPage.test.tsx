@@ -63,6 +63,7 @@ describe("SettingsPage", () => {
     expect(screen.getByText("0")).toBeInTheDocument();
     expect(screen.getByLabelText("save-workspace")).toHaveClass("workbench-primary-action");
     expect(screen.getByLabelText("reload-workspace")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByLabelText("reload-workspace")).not.toHaveClass("ghost");
     expect(screen.getByLabelText("export-workspace")).toHaveClass("workbench-secondary-action");
     expect(screen.getByTestId("settings-import-button")).toHaveClass("workbench-secondary-action");
     expect(screen.getByLabelText("import-workspace-file")).toHaveClass("settings-file-input-hidden");

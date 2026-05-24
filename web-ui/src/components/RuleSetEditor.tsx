@@ -121,7 +121,7 @@ function ConditionEditor({
         <div className="collector-condition-card-index">{`\u6761\u4ef6 ${index + 1}`}</div>
         <button
           type="button"
-          className="danger workbench-danger-action"
+          className="workbench-danger-action"
           aria-label={`delete-condition-${ruleId}-${index}`}
           disabled={disabled}
           onClick={onDelete}
@@ -249,7 +249,7 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, disabled = false 
           </div>
           <button
             type="button"
-            className="ghost workbench-secondary-action"
+            className="workbench-secondary-action"
             aria-label="add-scoring-rule"
             disabled={disabled}
             onClick={() => onDraftChange({ ...current, rules: [...current.rules, newRule(levelOptions)] })}
@@ -285,7 +285,7 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, disabled = false 
                   </label>
                   <button
                     type="button"
-                    className="danger workbench-danger-action"
+                    className="workbench-danger-action"
                     aria-label={`delete-rule-${rule.id}`}
                     disabled={disabled}
                     onClick={() => onDraftChange({ ...current, rules: current.rules.filter((_, idx) => idx !== index) })}
@@ -366,7 +366,7 @@ export function RuleSetEditor({ ruleSet, draft, onDraftChange, disabled = false 
 
               <button
                 type="button"
-                className="ghost workbench-secondary-action"
+                className="workbench-secondary-action"
                 aria-label={`add-condition-${rule.id}`}
                 disabled={disabled}
                 onClick={() =>

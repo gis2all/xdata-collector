@@ -294,6 +294,8 @@ describe("JobsPage", () => {
 
     fireEvent.click(screen.getByTestId("create-job-button"));
     expect(screen.getByLabelText("submit-job").closest(".jobs-workspace")).toHaveClass("jobs-workspace-create");
+    expect(screen.getByRole("textbox", { name: "包含关键词" })).toHaveAttribute("placeholder", "逗号或换行分隔，如：空投, quest, points");
+    expect(within(screen.getByText("关键词片段").closest(".flat-row") as HTMLElement).getByText("0 项")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("job-name"), { target: { value: "scheduled-alpha" } });
     fireEvent.change(screen.getByLabelText("job-interval"), { target: { value: "120" } });
     fireEvent.change(screen.getByLabelText("job-pack-select"), { target: { value: "alpha-watch" } });
@@ -334,6 +336,7 @@ describe("JobsPage", () => {
     expect(screen.getByLabelText("job-save-as-pack")).toBeInTheDocument();
     expect(screen.getByLabelText("job-save-current-pack")).toBeInTheDocument();
     expect(screen.getByTestId("jobs-close-workspace")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("jobs-close-workspace")).not.toHaveClass("ghost");
     expect(screen.getByLabelText("job-load-pack")).toHaveClass("workbench-secondary-action");
     expect(screen.getByLabelText("job-import-file-pack")).toHaveClass("workbench-secondary-action");
     expect(screen.getByLabelText("job-import-and-save-pack")).toHaveClass("workbench-secondary-action");
@@ -374,6 +377,7 @@ describe("JobsPage", () => {
     expect(manageBar).not.toHaveClass("workbench-subsurface");
     expect(filterBar).toHaveClass("flat-actions");
     expect(screen.getByTestId("jobs-search-button")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("jobs-search-button")).not.toHaveClass("ghost");
     expect(within(filterQueryGroup).getByLabelText("搜索任务")).toBeInTheDocument();
     expect(within(filterQueryGroup).getByTestId("jobs-search-button")).toBeInTheDocument();
     expect(within(filterQueryGroup).getByLabelText("任务状态")).toBeInTheDocument();

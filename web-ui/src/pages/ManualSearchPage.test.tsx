@@ -151,7 +151,9 @@ describe("ManualSearchPage", () => {
     expect(within(header).getByRole("button", { name: "立即执行任务" })).toBeInTheDocument();
     expect(within(header).getByRole("button", { name: "立即执行任务" })).toHaveClass("workbench-primary-action");
     expect(screen.getByTestId("manual-reset-draft")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("manual-reset-draft")).not.toHaveClass("ghost");
     expect(screen.getByTestId("manual-refresh-task-packs")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("manual-refresh-task-packs")).not.toHaveClass("ghost");
     expect(within(header).queryByRole("button", { name: "清空当前草稿" })).not.toBeInTheDocument();
     expect(within(header).queryByRole("button", { name: "刷新任务包列表" })).not.toBeInTheDocument();
     expect(screen.getByText("当前草稿：未绑定草稿").closest(".manual-rail-hero")).toHaveClass("flat-section");
@@ -159,10 +161,13 @@ describe("ManualSearchPage", () => {
     expect(screen.getByText("当前来源：默认空白")).toBeInTheDocument();
     expect(screen.getByText("当前绑定：--")).toBeInTheDocument();
     expect(screen.getByText("当前草稿：未绑定草稿")).toBeInTheDocument();
+    expect(screen.getByText("关键词片段：0")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "包含关键词" })).toHaveAttribute("placeholder", "逗号或换行分隔，如：空投, quest, points");
     expect(screen.getByText("最近状态：未执行")).toBeInTheDocument();
     expect(screen.getByText("最近执行：尚未执行")).toBeInTheDocument();
     expect(screen.getAllByText("尚未执行").length).toBeGreaterThan(0);
     expect(screen.getByTestId("manual-scroll-results")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("manual-scroll-results")).not.toHaveClass("ghost");
     expect(screen.queryByText("复制规则集")).not.toBeInTheDocument();
     expect(screen.queryByText("保存规则集")).not.toBeInTheDocument();
     expect(screen.queryByText("删除规则集")).not.toBeInTheDocument();
@@ -221,6 +226,7 @@ describe("ManualSearchPage", () => {
     expect(screen.getByTestId("manual-save-as-pack")).toBeInTheDocument();
     expect(screen.getByTestId("manual-save-current-pack")).toBeInTheDocument();
     expect(screen.getByTestId("manual-load-pack")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("manual-load-pack")).not.toHaveClass("ghost");
     expect(screen.getByTestId("manual-import-file-pack")).toHaveClass("workbench-secondary-action");
     expect(screen.getByTestId("manual-import-and-save-pack")).toHaveClass("workbench-secondary-action");
     expect(screen.getByTestId("manual-save-as-pack")).toHaveClass("workbench-secondary-action");

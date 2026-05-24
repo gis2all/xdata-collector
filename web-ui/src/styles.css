@@ -192,24 +192,20 @@ button {
   padding: 0 14px;
   border-radius: 0;
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 14px;
   line-height: 1.2;
-  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.14);
   transition:
     background 0.16s ease,
     border-color 0.16s ease,
     color 0.16s ease,
-    box-shadow 0.16s ease,
     transform 0.16s ease;
 }
 button:hover:not(:disabled) {
   background: #1d4ed8;
-  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.18);
 }
 button:active:not(:disabled) {
   transform: translateY(1px);
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
 }
 button:focus-visible,
 input:focus-visible,
@@ -223,31 +219,27 @@ button:disabled {
   border-color: #dbe7f8;
   color: #eff6ff;
   cursor: not-allowed;
-  box-shadow: none;
 }
 button:disabled:hover { background: #dbe7f8; }
 button.ghost {
-  background: #ffffff;
-  color: #334155;
-  border-color: #dbe4f0;
-  box-shadow: 0 6px 14px rgba(148, 163, 184, 0.08);
+  background: transparent;
+  color: #64748b;
+  border-color: #dbe4ee;
+  font-weight: 600;
 }
 button.ghost:hover {
-  background: #ffffff;
-  color: #0f172a;
+  background: #f8fafc;
+  color: #334155;
   border-color: #cbd5e1;
-  box-shadow: 0 8px 18px rgba(148, 163, 184, 0.12);
 }
 button.danger {
-  background: #fff5f5;
+  background: #fff1f2;
   color: #b91c1c;
-  border-color: #fecaca;
-  box-shadow: 0 6px 14px rgba(248, 113, 113, 0.10);
+  border-color: #f2b8bf;
 }
 button.danger:hover {
-  background: #fff5f5;
-  border-color: #fda4af;
-  box-shadow: 0 8px 18px rgba(248, 113, 113, 0.16);
+  background: #ffe7ea;
+  border-color: #ec9aa5;
 }
 button.active {
   background: #0f172a;
@@ -378,13 +370,13 @@ textarea::placeholder {
   display: inline-flex;
   align-items: center;
   min-height: 28px;
-  padding: 0 10px;
+  padding: 0 8px;
   border-radius: 0;
-  border: 1px solid #dbe4f0;
-  background: var(--workbench-surface-muted);
-  color: #334155;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.1;
 }
 .badge.s { background: #fff1f2; border-color: #fecdd3; color: #be123c; }
@@ -497,12 +489,12 @@ textarea::placeholder {
 .workbench-pill {
   display: inline-flex;
   align-items: center;
-  min-height: 32px;
-  padding: 0 11px;
+  min-height: 28px;
+  padding: 0 8px;
   border-radius: 0;
-  border: 1px solid #dbe4f0;
-  background: var(--workbench-surface-muted);
-  color: #334155;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
   font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
@@ -533,45 +525,75 @@ textarea::placeholder {
 }
 
 .workbench-primary-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
   min-height: 40px;
   padding: 0 14px;
   border-radius: 0;
   border-color: #1d4ed8;
   background: #2563eb;
-  box-shadow: 0 10px 18px rgba(37, 99, 235, 0.18);
+  color: #ffffff;
+  font-weight: 700;
 }
 
 .workbench-primary-action:hover:not(:disabled) {
   background: #1d4ed8;
   border-color: #1e40af;
-  box-shadow: 0 12px 22px rgba(37, 99, 235, 0.22);
 }
 
 .workbench-secondary-action {
-  background: #ffffff;
-  color: #334155;
-  border-color: #dbe4f0;
-  box-shadow: 0 8px 16px rgba(148, 163, 184, 0.08);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  min-height: 40px;
+  padding: 0 14px;
+  background: #edf4ff;
+  color: #0f172a;
+  border-color: #b9c9df;
+  font-weight: 700;
 }
 
 .workbench-secondary-action:hover:not(:disabled) {
-  background: #ffffff;
+  background: #e1ecff;
   color: #0f172a;
-  border-color: #cbd5e1;
-  box-shadow: 0 10px 18px rgba(148, 163, 184, 0.12);
+  border-color: #9fb3cf;
 }
 
 .workbench-danger-action {
-  background: #fff5f5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  min-height: 40px;
+  padding: 0 14px;
+  background: #fff1f2;
   color: #b91c1c;
-  border-color: #fecaca;
-  box-shadow: 0 8px 16px rgba(248, 113, 113, 0.10);
+  border-color: #f2b8bf;
+  font-weight: 700;
 }
 
 .workbench-danger-action:hover:not(:disabled) {
+  background: #ffe7ea;
+  color: #991b1b;
+  border-color: #ec9aa5;
+}
+
+.workbench-secondary-action:disabled {
+  background: #f3f6fb;
+  border-color: #dbe4ee;
+  color: #94a3b8;
+}
+
+.workbench-danger-action:disabled {
   background: #fff5f5;
-  border-color: #fda4af;
-  box-shadow: 0 10px 18px rgba(248, 113, 113, 0.16);
+  border-color: #fde2e4;
+  color: #d29aa0;
 }
 
 .workbench-summary-panel {
@@ -981,12 +1003,12 @@ textarea::placeholder {
 .jobs-summary-pill {
   display: inline-flex;
   align-items: center;
-  min-height: 32px;
-  padding: 0 10px;
+  min-height: 28px;
+  padding: 0 8px;
   border-radius: 0;
   background: #f8fafc;
-  border: 1px solid #dbe4f0;
-  color: #334155;
+  border: 1px solid #e2e8f0;
+  color: #475569;
   font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
@@ -1042,10 +1064,10 @@ textarea::placeholder {
   white-space: nowrap;
 }
 .table-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.table-actions button { padding: 6px 10px; }
+.table-actions button { min-height: 34px; padding: 6px 10px; font-size: 13px; }
 .jobs-row-actions { justify-content: flex-start; align-items: center; }
 .jobs-row-actions button { white-space: nowrap; }
-.jobs-row-actions .ghost { background: #f8fafc; }
+.jobs-row-actions .workbench-secondary-action { background: #f3f7ff; }
 .jobs-resizer { position: relative; align-self: stretch; cursor: col-resize; touch-action: none; user-select: none; }
 .jobs-resizer::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; transform: translateX(-50%); background: #cbd5e1; transition: background 0.16s ease, width 0.16s ease; }
 .jobs-resizer:hover::before,
@@ -1923,6 +1945,14 @@ textarea::placeholder {
   align-items: flex-start;
 }
 
+.settings-import-button {
+  align-self: flex-start;
+}
+
+.settings-file-input-hidden {
+  display: none;
+}
+
 .settings-action-card .field + .field {
   margin-top: 12px;
 }
@@ -2402,6 +2432,7 @@ textarea::placeholder {
 .results-sort-button {
   width: 22px;
   min-width: 22px;
+  min-height: 18px;
   height: 18px;
   padding: 0;
   display: inline-flex;
@@ -2762,7 +2793,7 @@ textarea,
 .workbench-pill,
 .dashboard-summary-pill,
 .results-summary-pill {
-  min-height: 24px;
+  min-height: 28px;
   padding: 0 8px;
 }
 

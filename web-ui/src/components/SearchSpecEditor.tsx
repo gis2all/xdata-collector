@@ -36,11 +36,17 @@ const TEXT = {
   summaryTitle: "\u67e5\u8be2\u6458\u8981",
   summaryDescription: "\u57fa\u4e8e\u5f53\u524d\u8349\u7a3f\u5b9e\u65f6\u7ec4\u88c5\u51fa\u7684\u67e5\u8be2\u9884\u89c8\u3002",
   allKeywords: "\u5305\u542b\u5173\u952e\u8bcd",
+  allKeywordsPlaceholder: "\u9017\u53f7\u6216\u6362\u884c\u5206\u9694\uff0c\u5982\uff1a\u7a7a\u6295, quest, points",
   exactPhrases: "\u7cbe\u786e\u77ed\u8bed",
+  exactPhrasesPlaceholder: "\u9017\u53f7\u6216\u6362\u884c\u5206\u9694\uff0c\u5982\uff1asocial mining, daily check-in",
   anyKeywords: "\u4efb\u610f\u8bcd (OR)",
+  anyKeywordsPlaceholder: "\u9017\u53f7\u6216\u6362\u884c\u5206\u9694\uff0c\u5982\uff1atestnet, faucet, rewards",
   excludeKeywords: "\u6392\u9664\u8bcd",
+  excludeKeywordsPlaceholder: "\u9017\u53f7\u6216\u6362\u884c\u5206\u9694\uff0c\u5982\uff1atrade, swap, \u5408\u7ea6",
   authorsInclude: "\u4f5c\u8005\u767d\u540d\u5355",
+  authorsIncludePlaceholder: "\u9017\u53f7\u6216\u6362\u884c\u5206\u9694\uff0c\u5982\uff1agalxe, layer3xyz, kaitoai",
   authorsExclude: "\u4f5c\u8005\u9ed1\u540d\u5355",
+  authorsExcludePlaceholder: "\u9017\u53f7\u6216\u6362\u884c\u5206\u9694\uff0c\u5982\uff1abinance, bybit_official, bitgetglobal",
   language: "\u8bed\u8a00",
   publishedRange: "\u53d1\u5e03\u65f6\u95f4\u8303\u56f4",
   maxDaysHint: "\u6700\u5927 100 \u5929",
@@ -199,19 +205,39 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
             <div className="collector-grid collector-grid-2">
               <label className="field">
                 <span>{TEXT.allKeywords}</span>
-                <textarea value={joinCommaLines(value.all_keywords)} onChange={(e) => update("all_keywords", splitCommaLines(e.target.value))} disabled={disabled} />
+                <textarea
+                  value={joinCommaLines(value.all_keywords)}
+                  onChange={(e) => update("all_keywords", splitCommaLines(e.target.value))}
+                  disabled={disabled}
+                  placeholder={TEXT.allKeywordsPlaceholder}
+                />
               </label>
               <label className="field">
                 <span>{TEXT.exactPhrases}</span>
-                <textarea value={joinCommaLines(value.exact_phrases)} onChange={(e) => update("exact_phrases", splitCommaLines(e.target.value))} disabled={disabled} />
+                <textarea
+                  value={joinCommaLines(value.exact_phrases)}
+                  onChange={(e) => update("exact_phrases", splitCommaLines(e.target.value))}
+                  disabled={disabled}
+                  placeholder={TEXT.exactPhrasesPlaceholder}
+                />
               </label>
               <label className="field">
                 <span>{TEXT.anyKeywords}</span>
-                <textarea value={joinCommaLines(value.any_keywords)} onChange={(e) => update("any_keywords", splitCommaLines(e.target.value))} disabled={disabled} />
+                <textarea
+                  value={joinCommaLines(value.any_keywords)}
+                  onChange={(e) => update("any_keywords", splitCommaLines(e.target.value))}
+                  disabled={disabled}
+                  placeholder={TEXT.anyKeywordsPlaceholder}
+                />
               </label>
               <label className="field">
                 <span>{TEXT.excludeKeywords}</span>
-                <textarea value={joinCommaLines(value.exclude_keywords)} onChange={(e) => update("exclude_keywords", splitCommaLines(e.target.value))} disabled={disabled} />
+                <textarea
+                  value={joinCommaLines(value.exclude_keywords)}
+                  onChange={(e) => update("exclude_keywords", splitCommaLines(e.target.value))}
+                  disabled={disabled}
+                  placeholder={TEXT.excludeKeywordsPlaceholder}
+                />
               </label>
             </div>
           </div>
@@ -222,11 +248,21 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
             <div className="collector-grid collector-grid-2">
               <label className="field">
                 <span>{TEXT.authorsInclude}</span>
-                <textarea value={joinCommaLines(value.authors_include)} onChange={(e) => update("authors_include", splitCommaLines(e.target.value))} disabled={disabled} />
+                <textarea
+                  value={joinCommaLines(value.authors_include)}
+                  onChange={(e) => update("authors_include", splitCommaLines(e.target.value))}
+                  disabled={disabled}
+                  placeholder={TEXT.authorsIncludePlaceholder}
+                />
               </label>
               <label className="field">
                 <span>{TEXT.authorsExclude}</span>
-                <textarea value={joinCommaLines(value.authors_exclude)} onChange={(e) => update("authors_exclude", splitCommaLines(e.target.value))} disabled={disabled} />
+                <textarea
+                  value={joinCommaLines(value.authors_exclude)}
+                  onChange={(e) => update("authors_exclude", splitCommaLines(e.target.value))}
+                  disabled={disabled}
+                  placeholder={TEXT.authorsExcludePlaceholder}
+                />
               </label>
             </div>
           </div>

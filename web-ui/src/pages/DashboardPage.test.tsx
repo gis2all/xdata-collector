@@ -63,120 +63,101 @@ describe("DashboardPage", () => {
     window.localStorage.clear();
   });
 
-  it("renders the dashboard workbench structure, restores the last displayed state, and refreshes automatically", async () => {
+  it("restores cached state without auto-refreshing", () => {
     window.localStorage.setItem(DASHBOARD_HEALTH_STATE_KEY, JSON.stringify(healthySnapshot));
-    healthMock.mockResolvedValue(healthySnapshot);
 
     render(<DashboardPage />);
 
     expect(screen.getByTestId("dashboard-page-header")).toBeInTheDocument();
-    expect(screen.getByText("进入页面会自动校验本地数据库与 X 会话，必要时可手动重新加载。")).toBeInTheDocument();
-    expect(screen.queryByText("查看本地数据库与 X 会话的最近状态，点击“重新加载”才会更新。")).not.toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "重新加载" })).toHaveClass("workbench-primary-action");
-    });
-    expect(screen.getByTestId("dashboard-summary")).toBeInTheDocument();
+    expect(screen.getByText("页面刷新不会主动探测，点击重新加载才会更新当前状态。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新加载" })).toHaveClass("workbench-primary-action");
     expect(screen.getByTestId("dashboard-summary")).toHaveClass("dashboard-width-lock");
-    expect(screen.getByTestId("dashboard-panels")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-panels")).toHaveClass("dashboard-width-lock");
-    expect(screen.getByTestId("dashboard-db-info")).toBeInTheDocument();
-    expect(screen.getByTestId("dashboard-x-info")).toBeInTheDocument();
+    expect(within(screen.getByTestId("dashboard-summary")).getByText("最近状态")).toBeInTheDocument();
     expect(within(screen.getByTestId("dashboard-db-info")).getByTestId("dashboard-db-detail-list")).toHaveClass("flat-row-list");
     expect(within(screen.getByTestId("dashboard-x-info")).getByTestId("dashboard-x-detail-list")).toHaveClass("flat-row-list");
-    expect(within(screen.getByTestId("dashboard-summary")).getByText("\u6700\u8fd1\u72b6\u6001")).toBeInTheDocument();
-    expect(screen.getAllByText("\u5df2\u8fde\u63a5").length).toBeGreaterThan(0);
-    await waitFor(() => {
-      expect(healthMock).toHaveBeenCalledTimes(1);
-    });
+    expect(screen.getAllByText("已连接").length).toBeGreaterThan(0);
+    expect(healthMock).not.toHaveBeenCalled();
     expect(healthSnapshotMock).not.toHaveBeenCalled();
   });
 
-  it("auto-loads the dashboard instead of keeping a large not-yet-checked block", async () => {
-    healthMock.mockResolvedValue(healthySnapshot);
-
+  it("keeps a compact not-yet-checked state when no cache exists", () => {
     render(<DashboardPage />);
 
     expect(screen.getByTestId("dashboard-page-header")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-summary")).toBeInTheDocument();
-    expect(within(screen.getByTestId("dashboard-summary")).queryByText("\u70b9\u51fb\u201c\u91cd\u65b0\u52a0\u8f7d\u201d\u83b7\u53d6\u6700\u65b0\u72b6\u6001\u3002")).not.toBeInTheDocument();
-    await waitFor(() => {
-      expect(healthMock).toHaveBeenCalledTimes(1);
-    });
-    expect(screen.getByTestId("dashboard-panels")).toBeInTheDocument();
-    expect(screen.getAllByText("\u5df2\u8fde\u63a5").length).toBeGreaterThan(0);
+    expect(within(screen.getByTestId("dashboard-summary")).getByText("尚未校验")).toBeInTheDocument();
+    expect(within(screen.getByTestId("dashboard-summary")).getByText("等待手动刷新")).toBeInTheDocument();
+    expect(screen.queryByTestId("dashboard-panels")).not.toBeInTheDocument();
+    expect(healthMock).not.toHaveBeenCalled();
     expect(healthSnapshotMock).not.toHaveBeenCalled();
   });
 
-  it("stores healthy results after clicking reload", async () => {
+  it("calls health only after clicking reload and stores healthy results", async () => {
     healthMock.mockResolvedValue(healthySnapshot);
 
     render(<DashboardPage />);
 
+    expect(healthMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+
     await waitFor(() => {
       expect(healthMock).toHaveBeenCalledTimes(1);
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "\u91cd\u65b0\u52a0\u8f7d" }));
-
-    await waitFor(() => {
-      expect(healthMock).toHaveBeenCalledTimes(2);
     });
 
     expect(window.localStorage.getItem(DASHBOARD_HEALTH_STATE_KEY)).toContain("backend_snapshot");
     expect(screen.getByTestId("dashboard-panels")).toBeInTheDocument();
     expect(screen.getByTestId("dashboard-db-info")).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-x-info")).toBeInTheDocument();
   });
 
-  it("stores failed health results after clicking reload", async () => {
+  it("stores failed probe results after clicking reload", async () => {
     healthMock.mockResolvedValue(failedSnapshot);
 
     render(<DashboardPage />);
 
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+
     await waitFor(() => {
       expect(healthMock).toHaveBeenCalledTimes(1);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "\u91cd\u65b0\u52a0\u8f7d" }));
-
-    await waitFor(() => {
-      expect(healthMock).toHaveBeenCalledTimes(2);
-    });
-
     expect(window.localStorage.getItem(DASHBOARD_HEALTH_STATE_KEY)).toContain("db probe failed");
-    expect(screen.getAllByText("\u6700\u8fd1\u6821\u9a8c\u5931\u8d25").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("最近校验失败").length).toBeGreaterThan(0);
   });
 
-  it("keeps the previous displayed state when the reload request itself fails", async () => {
+  it("keeps the previous displayed state when reload itself fails", async () => {
     window.localStorage.setItem(DASHBOARD_HEALTH_STATE_KEY, JSON.stringify(healthySnapshot));
     healthMock.mockRejectedValue(new Error("network down"));
 
     render(<DashboardPage />);
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "\u91cd\u65b0\u52a0\u8f7d" })).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "\u91cd\u65b0\u52a0\u8f7d" }));
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
 
     await waitFor(() => {
-      expect(screen.getByText("\u9519\u8bef: network down")).toBeInTheDocument();
+      expect(screen.getByText("错误: network down")).toBeInTheDocument();
     });
 
     expect(screen.getByTestId("dashboard-panels")).toBeInTheDocument();
     expect(window.localStorage.getItem(DASHBOARD_HEALTH_STATE_KEY)).toContain("backend_snapshot");
+    expect(healthMock).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps auto-refresh failures compact when there is no cached state", async () => {
+  it("keeps reload failures compact when there is no cached state", async () => {
     healthMock.mockRejectedValue(new Error("network down"));
 
     render(<DashboardPage />);
 
+    expect(healthMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+
     await waitFor(() => {
-      expect(screen.getByText("\u9519\u8bef: network down")).toBeInTheDocument();
+      expect(screen.getByText("错误: network down")).toBeInTheDocument();
     });
 
     expect(screen.getByTestId("dashboard-summary")).toHaveClass("flat-meta-strip");
-    expect(screen.queryByText("\u70b9\u51fb\u201c\u91cd\u65b0\u52a0\u8f7d\u201d\u83b7\u53d6\u6700\u65b0\u72b6\u6001\u3002")).not.toBeInTheDocument();
     expect(screen.queryByTestId("dashboard-panels")).not.toBeInTheDocument();
   });
 });

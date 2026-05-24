@@ -1,4 +1,5 @@
-﻿import unittest
+import subprocess
+import unittest
 from pathlib import PureWindowsPath
 from unittest.mock import patch
 
@@ -164,6 +165,26 @@ class TwitterCliRuntimeTests(unittest.TestCase):
         self.assertEqual(kwargs["env"]["PYTHONIOENCODING"], "utf-8")
         self.assertEqual(kwargs["env"]["NO_COLOR"], "1")
 
+    def test_windows_twitter_cli_run_uses_create_no_window(self) -> None:
+        with patch("backend.twitter_cli.os.name", "nt"), patch(
+            "backend.twitter_cli.find_twitter_cli",
+            return_value="twitter.exe",
+        ), patch(
+            "backend.twitter_cli.subprocess.CREATE_NO_WINDOW",
+            0x08000000,
+            create=True,
+        ), patch(
+            "backend.twitter_cli.subprocess.run"
+        ) as run_mock:
+            run_mock.return_value.returncode = 0
+            run_mock.return_value.stdout = "[]"
+            run_mock.return_value.stderr = ""
+
+            run_twitter_search("Binance Alpha", 5)
+
+        _, kwargs = run_mock.call_args
+        self.assertEqual(kwargs["creationflags"], subprocess.CREATE_NO_WINDOW)
+
     def test_search_falls_back_to_xreach_when_twitter_cli_fails(self) -> None:
         class _Completed:
             def __init__(self, returncode: int, stdout: str, stderr: str = "") -> None:
@@ -197,7 +218,47 @@ class TwitterCliRuntimeTests(unittest.TestCase):
         self.assertEqual(payload["items"][0]["id"], "999")
         self.assertEqual(run_mock.call_count, 2)
 
+    def test_windows_xreach_fallback_also_uses_create_no_window(self) -> None:
+        class _Completed:
+            def __init__(self, returncode: int, stdout: str, stderr: str = "") -> None:
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+
+        with patch("backend.twitter_cli.os.name", "nt"), patch(
+            "backend.twitter_cli.find_twitter_cli",
+            return_value="twitter.exe",
+        ), patch(
+            "backend.twitter_cli.find_xreach_cli",
+            return_value="xreach.cmd",
+        ), patch(
+            "backend.twitter_cli.subprocess.CREATE_NO_WINDOW",
+            0x08000000,
+            create=True,
+        ), patch(
+            "backend.twitter_cli.subprocess.run"
+        ) as run_mock:
+            run_mock.side_effect = [
+                _Completed(
+                    1,
+                    '{"ok": false, "error": {"code": "not_found", "message": "404"}}',
+                    "",
+                ),
+                _Completed(
+                    0,
+                    '{"items":[{"id":"999","text":"claim now","createdAt":"2026-04-12T00:00:00Z","user":{"screenName":"Alpha"}}]}',
+                    "",
+                ),
+            ]
+
+            run_twitter_search("airdrop", 5)
+
+        self.assertEqual(run_mock.call_count, 2)
+        first_kwargs = run_mock.call_args_list[0].kwargs
+        second_kwargs = run_mock.call_args_list[1].kwargs
+        self.assertEqual(first_kwargs["creationflags"], subprocess.CREATE_NO_WINDOW)
+        self.assertEqual(second_kwargs["creationflags"], subprocess.CREATE_NO_WINDOW)
+
 
 if __name__ == "__main__":
     unittest.main()
-
