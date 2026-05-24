@@ -1079,17 +1079,20 @@ textarea::placeholder {
 .jobs-drawer { min-width: 0; padding-left: 0; position: sticky; top: 16px; align-self: start; }
 .jobs-drawer-create { align-self: stretch; display: flex; }
 .jobs-drawer-empty { align-self: stretch; display: flex; }
-.jobs-workspace { display: flex; flex-direction: column; gap: 14px; }
-.jobs-workspace-create {
+.jobs-workspace {
   display: flex;
   flex: 1 1 auto;
+  flex-direction: column;
+  gap: 14px;
   min-height: 0;
   padding: 20px;
   box-sizing: border-box;
   background: #ffffff;
 }
 .jobs-workspace-create .drawer-header,
-.jobs-workspace-create .drawer-footer {
+.jobs-workspace-create .drawer-footer,
+.jobs-workspace .drawer-header,
+.jobs-workspace .drawer-footer {
   padding: 0;
 }
 .drawer-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 0; padding: 4px 4px 0; }
@@ -2467,8 +2470,7 @@ textarea::placeholder {
   transition: background 0.16s ease, width 0.16s ease;
 }
 .results-column-resizer:hover::before,
-.results-column-resizer.dragging::before,
-.results-table-wrap.dragging .results-column-resizer::before {
+.results-column-resizer.dragging::before {
   background: #2563eb;
   width: 2px;
 }

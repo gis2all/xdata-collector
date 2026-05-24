@@ -593,16 +593,24 @@ it("renders default business columns and utc+8 timestamps", async () => {
     });
 
     const titleHeader = within(screen.getByTestId("results-table-pane")).getByText("title").closest("th");
+    const summaryHeader = within(screen.getByTestId("results-table-pane")).getByText("summary_zh").closest("th");
+    const sourceHeader = within(screen.getByTestId("results-table-pane")).getByText("source_url").closest("th");
     const titleResizer = screen.getByRole("separator", { name: "resize-column-title" });
+    expect(titleHeader).toHaveStyle({ width: "220px" });
+    expect(summaryHeader).toHaveStyle({ width: "260px" });
+    expect(sourceHeader).toHaveStyle({ width: "240px" });
 
     fireEvent.mouseDown(titleResizer, { clientX: 220 });
     fireEvent.mouseMove(window, { clientX: 300 });
 
     expect(titleHeader).toHaveStyle({ width: "300px" });
+    expect(summaryHeader).toHaveStyle({ width: "180px" });
+    expect(sourceHeader).toHaveStyle({ width: "240px" });
 
     fireEvent.mouseUp(window);
 
     expect(window.localStorage.getItem(RESULTS_COLUMN_WIDTHS_KEY)).toContain("\"title\":300");
+    expect(window.localStorage.getItem(RESULTS_COLUMN_WIDTHS_KEY)).toContain("\"summary_zh\":180");
   });
 
   it("restores resized column widths from local storage on first render", async () => {
@@ -691,6 +699,48 @@ it("renders default business columns and utc+8 timestamps", async () => {
 
     const summaryHeader = await within(screen.getByRole("table")).findByText("summary_zh");
     expect(summaryHeader.closest("th")).toHaveStyle({ width: "340px" });
+  });
+
+  it("stops shrinking at the adjacent column minimum width", async () => {
+    listItemsMock
+      .mockResolvedValueOnce(makePage([makeRawItem(1)]))
+      .mockResolvedValueOnce(makePage([makeItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Raw text 1")).toBeInTheDocument();
+    });
+
+    await switchToCuratedTable();
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("results-table-pane")).getByText("title")).toBeInTheDocument();
+    });
+
+    const titleHeader = within(screen.getByTestId("results-table-pane")).getByText("title").closest("th");
+    const summaryHeader = within(screen.getByTestId("results-table-pane")).getByText("summary_zh").closest("th");
+    const titleResizer = screen.getByRole("separator", { name: "resize-column-title" });
+
+    fireEvent.mouseDown(titleResizer, { clientX: 260 });
+    fireEvent.mouseMove(window, { clientX: 520 });
+
+    expect(titleHeader).toHaveStyle({ width: "340px" });
+    expect(summaryHeader).toHaveStyle({ width: "140px" });
+
+    fireEvent.mouseUp(window);
+  });
+
+  it("does not render a resize handle for the last visible business column", async () => {
+    listItemsMock.mockResolvedValue(makePage([makeRawItem(1)]));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("results-table-pane")).getByText("fetched_at")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole("separator", { name: "resize-column-fetched_at" })).not.toBeInTheDocument();
   });
 
   it("requests server-side sorting when a visible sort control is clicked", async () => {

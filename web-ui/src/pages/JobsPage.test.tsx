@@ -515,6 +515,12 @@ describe("JobsPage", () => {
       expect(screen.getByTestId("jobs-primary-actions")).toBeInTheDocument();
     });
 
+    const workspace = screen.getByTestId("jobs-primary-actions").closest(".jobs-workspace");
+    expect(workspace).toBeInTheDocument();
+    expect(workspace).not.toHaveClass("jobs-workspace-create");
+    expect(workspace?.querySelector(".drawer-header")).toBeInTheDocument();
+    expect(workspace?.querySelector(".jobs-current-task-section")).toBeInTheDocument();
+
     expect(screen.queryByRole("button", { name: "\u67e5\u770b" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "\u7f16\u8f91" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "\u6253\u5f00" })).toBeInTheDocument();

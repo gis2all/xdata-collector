@@ -74,10 +74,13 @@ type ColumnWidthsByTable = Record<ItemTable, Partial<Record<ItemSortField, numbe
 
 type ColumnResizeState = {
   table: ItemTable;
-  key: ItemSortField;
+  leftKey: ItemSortField;
+  rightKey: ItemSortField;
   startX: number;
-  startWidth: number;
-  minWidth: number;
+  leftStartWidth: number;
+  rightStartWidth: number;
+  leftMinWidth: number;
+  rightMinWidth: number;
 };
 
 function truncate(value: unknown, maxLength = 120) {
@@ -507,20 +510,27 @@ export function ResultsPage() {
       if (!resizeState || typeof clientX !== "number" || Number.isNaN(clientX)) {
         return;
       }
-      const nextWidth = Math.max(
-        resizeState.minWidth,
-        Math.round(resizeState.startWidth + (clientX - resizeState.startX)),
+      const delta = clientX - resizeState.startX;
+      const pairTotal = resizeState.leftStartWidth + resizeState.rightStartWidth;
+      const nextLeftWidth = Math.min(
+        Math.max(Math.round(resizeState.leftStartWidth + delta), resizeState.leftMinWidth),
+        pairTotal - resizeState.rightMinWidth,
       );
+      const nextRightWidth = pairTotal - nextLeftWidth;
       setColumnWidthsByTable((current) => {
         const tableWidths = current[resizeState.table];
-        if (tableWidths?.[resizeState.key] === nextWidth) {
+        if (
+          tableWidths?.[resizeState.leftKey] === nextLeftWidth &&
+          tableWidths?.[resizeState.rightKey] === nextRightWidth
+        ) {
           return current;
         }
         return {
           ...current,
           [resizeState.table]: {
             ...tableWidths,
-            [resizeState.key]: nextWidth,
+            [resizeState.leftKey]: nextLeftWidth,
+            [resizeState.rightKey]: nextRightWidth,
           },
         };
       });
@@ -848,19 +858,26 @@ export function ResultsPage() {
     }));
   }
 
-  function startColumnResize(column: ColumnDefinition & { currentWidth: number }, clientX: number | undefined) {
-    if (typeof clientX !== "number" || Number.isNaN(clientX)) {
+  function startColumnResize(
+    leftColumn: ColumnDefinition & { currentWidth: number },
+    rightColumn: ColumnDefinition & { currentWidth: number } | undefined,
+    clientX: number | undefined,
+  ) {
+    if (typeof clientX !== "number" || Number.isNaN(clientX) || !rightColumn) {
       return;
     }
     resizeStateRef.current = {
       table,
-      key: column.key,
+      leftKey: leftColumn.key,
+      rightKey: rightColumn.key,
       startX: clientX,
-      startWidth: column.currentWidth,
-      minWidth: getColumnMinWidth(column),
+      leftStartWidth: leftColumn.currentWidth,
+      rightStartWidth: rightColumn.currentWidth,
+      leftMinWidth: getColumnMinWidth(leftColumn),
+      rightMinWidth: getColumnMinWidth(rightColumn),
     };
     setIsResizingColumn(true);
-    setResizingColumnId(`${table}:${column.key}`);
+    setResizingColumnId(`${table}:${leftColumn.key}`);
     document.body.style.userSelect = "none";
     document.body.style.cursor = "col-resize";
   }
@@ -1074,7 +1091,10 @@ export function ResultsPage() {
                       />
                     </label>
                   </th>
-                  {resolvedVisibleColumnDefinitions.map((column) => (
+                  {resolvedVisibleColumnDefinitions.map((column, index) => {
+                    const nextColumn = resolvedVisibleColumnDefinitions[index + 1];
+                    const canResize = nextColumn != null;
+                    return (
                     <th
                       key={column.key}
                       className="results-th-cell"
@@ -1086,22 +1106,25 @@ export function ResultsPage() {
                           void handleSort(field, direction);
                         })}
                       </div>
-                      <div
-                        className={`results-column-resizer${resizingColumnId === `${table}:${column.key}` ? " dragging" : ""}`}
-                        role="separator"
-                        aria-orientation="vertical"
-                        aria-label={`resize-column-${column.key}`}
-                        onPointerDown={(event) => {
-                          startColumnResize(column, event.clientX);
-                          event.preventDefault();
-                        }}
-                        onMouseDown={(event) => {
-                          startColumnResize(column, event.clientX);
-                          event.preventDefault();
-                        }}
-                      />
+                      {canResize ? (
+                        <div
+                          className={`results-column-resizer${resizingColumnId === `${table}:${column.key}` ? " dragging" : ""}`}
+                          role="separator"
+                          aria-orientation="vertical"
+                          aria-label={`resize-column-${column.key}`}
+                          onPointerDown={(event) => {
+                            startColumnResize(column, nextColumn, event.clientX);
+                            event.preventDefault();
+                          }}
+                          onMouseDown={(event) => {
+                            startColumnResize(column, nextColumn, event.clientX);
+                            event.preventDefault();
+                          }}
+                        />
+                      ) : null}
                     </th>
-                  ))}
+                  );
+                  })}
                   <th className="results-th-cell" style={{ width: RESULTS_OPERATION_COLUMN_WIDTH, minWidth: RESULTS_OPERATION_COLUMN_WIDTH }}>
                     {TEXT.operation}
                   </th>
