@@ -37,6 +37,11 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 - Static UI：`127.0.0.1:5178`
 - Scheduler：无端口，默认 `tick-seconds=30`
 - `services.py` 默认只管理 API、Scheduler、Dev UI，不包含 `run/static_web_server.py`
+- 默认调试方式是 Windows 本机启动，不是 Docker：
+  - `python services.py start`
+  - `python services.py restart`
+  - UI 验证默认看 `http://127.0.0.1:5177/`
+  - API / 健康验证默认看 `http://127.0.0.1:8765/health`
 
 ### 4. X 认证依赖
 
@@ -105,6 +110,13 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 - `x_items_curated`
 
 不要再把 jobs、rule sets、health snapshot 或 search runs 写回 SQLite 当主真相。
+
+补充口径：
+
+- `x_items_raw` 和 `x_items_curated` 都保留 `fetched_at`
+- 每次成功写入 raw 后，会自动对 `x_items_raw` 执行一次全表去重
+- 每次成功写入 curated 后，会自动对 `x_items_curated` 执行一次全表去重
+- raw 自动去重统计会写入运行结果 `stats`，使用 `raw_dedupe_*` 一组键
 
 ## 核心架构
 
@@ -179,10 +191,18 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 2. 草稿正文由两部分组成：
    - 搜索条件
    - 规则
-3. 可以载入已有任务包，也可以从本地 JSON 文件导入到当前草稿
-4. 前端调用 `POST /manual/run`
-5. `run_manual()` 组装查询、拉取 X 结果、写 raw、评估规则、写 curated
-6. 成功 run 后会自动对 `x_items_curated` 执行全表去重
+3. 默认存在一个排在第一位的 `默认草稿` 选项：
+   - 它的内部标识是 `__default_draft__`
+   - 它表示未绑定任务包的空白草稿
+   - 它不可删除
+4. 可以载入已有任务包，也可以从本地 JSON 文件导入到当前草稿
+5. 列表型输入当前采用“编辑期保留原始文本、失焦后再规范化”的策略：
+   - 逗号、中文逗号、换行才是分隔符
+   - 普通空格保留在单个条目内部
+   - 支持多词短语，不会再吞空格或逗号
+6. 前端调用 `POST /manual/run`
+7. `run_manual()` 组装查询、拉取 X 结果、写 raw、评估规则、写 curated
+8. 成功 run 后会自动对 `x_items_raw` 和 `x_items_curated` 执行全表去重
 
 ### 2. 自动任务
 
@@ -194,9 +214,21 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 
 ### 3. 结果浏览
 
-1. `ResultsPage` 以 `table=curated|raw` 切换数据源
+1. `ResultsPage` 以 `table=curated|raw` 切换数据源，默认选中 `raw`
 2. 排序、删除、批量删除、去重都作用于当前选中的表
 3. 结果页支持列显隐、本地视图记忆和列宽拖拽
+4. 当前默认字段口径：
+   - raw 默认首屏包含 `canonical_url`、`author`、`text`、`created_at_x`、`fetched_at`
+   - curated 默认首屏包含 `title`、`summary_zh`、`level`、`score`、`source_url`、`author`、`created_at_x`、`fetched_at`
+5. `canonical_url` 和 `source_url` 在表格里都应渲染为可点击超链接
+6. 右侧详情轨当前口径：
+   - raw 详情在 `推文 ID` 和 `采集时间` 之间显示 `推文链接`
+   - curated 详情里的 `来源链接` 也是可点击超链接
+7. 列宽拖拽采用“相邻对冲”模型：
+   - 只移动当前分界线
+   - 只影响分界线左右两列
+   - 不联动其他列
+8. 列宽本地记忆键为 `results.columnWidths.v1`
 
 ### 4. 运行总览
 
@@ -204,12 +236,28 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 2. 首屏只恢复浏览器本地上次展示状态
 3. 只有点击 `重新加载` 才会调用 `GET /health`
 4. `GET /health/snapshot` 是后端只读快照接口，不是 Dashboard 首屏默认来源
+5. Dashboard 首屏展示缓存键为 `dashboard.healthSnapshot.v1`
+6. Windows 下 `twitter-cli` 和 `xreach` 子进程统一使用无窗口方式启动，避免刷新或主动校验时弹出黑窗
+
+### 5. 全局导航
+
+1. 前端导航采用 hash 深链，不引入额外路由依赖
+2. 当前有效页面：
+   - `#/dashboard`
+   - `#/manual`
+   - `#/jobs`
+   - `#/results`
+   - `#/logs`
+   - `#/settings`
+3. 非法 hash 回到 `dashboard`
+4. `localStorage` 只作为兜底，不覆盖 hash
 
 ## 编辑时的约束
 
 - 当前端设计、样式调整、页面布局重构或组件视觉变更发生时，优先遵循根目录 `DESIGN.md`；如果当前实现已经改变了页面真相，应在同一轮同步更新 `DESIGN.md`，避免规范继续落后。
 - 如果 `DESIGN.md` 与现有实现临时冲突，先保证信息清晰、操作顺手和工作台效率，再把规范补齐到当前真相。
 - 文档、路径、启动命令默认以根目录 `install.py` / `services.py` 为准
+- 后续 UI 调试、截图和联调默认走 Windows 本机服务，不默认切回 Docker
 - 临时 spec / plan / design 文档统一落在 `artifacts/design/{specs,plans}`；根目录 `docs/` 不再作为方案文档入口
 - 不要把 `workspace.json` 重新做成“搜索草稿 + presets + rule sets + jobs 全内联快照”
 - 不要把 `config/` 默认绑定到具体业务任务；仓库基线只保留通用配置
@@ -220,6 +268,12 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 - 写中文 Markdown / TSX / JSON 时，注意 Windows PowerShell 的乱码和 BOM 风险
 
 ## Git 与提交边界
+
+协作规则补充：
+
+- 没有用户明确允许时，不要主动提交本地 commit
+- 没有用户明确允许时，不要主动推送远端
+- 如果用户只说“提交至本地”，只做本地 commit，不做 push
 
 默认应该提交：
 
