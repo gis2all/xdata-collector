@@ -131,6 +131,8 @@ class NormalizeSearchPayloadTests(unittest.TestCase):
 
 
 class TwitterCliRuntimeTests(unittest.TestCase):
+    CREATE_NO_WINDOW_FLAG = 0x08000000
+
     def test_finds_twitter_cli_in_default_pipx_location(self) -> None:
         with patch("backend.twitter_cli.shutil.which", return_value=None), patch(
             "backend.twitter_cli.Path.home",
@@ -171,7 +173,7 @@ class TwitterCliRuntimeTests(unittest.TestCase):
             return_value="twitter.exe",
         ), patch(
             "backend.twitter_cli.subprocess.CREATE_NO_WINDOW",
-            0x08000000,
+            self.CREATE_NO_WINDOW_FLAG,
             create=True,
         ), patch(
             "backend.twitter_cli.subprocess.run"
@@ -183,7 +185,7 @@ class TwitterCliRuntimeTests(unittest.TestCase):
             run_twitter_search("Binance Alpha", 5)
 
         _, kwargs = run_mock.call_args
-        self.assertEqual(kwargs["creationflags"], subprocess.CREATE_NO_WINDOW)
+        self.assertEqual(kwargs["creationflags"], self.CREATE_NO_WINDOW_FLAG)
 
     def test_search_falls_back_to_xreach_when_twitter_cli_fails(self) -> None:
         class _Completed:
@@ -233,7 +235,7 @@ class TwitterCliRuntimeTests(unittest.TestCase):
             return_value="xreach.cmd",
         ), patch(
             "backend.twitter_cli.subprocess.CREATE_NO_WINDOW",
-            0x08000000,
+            self.CREATE_NO_WINDOW_FLAG,
             create=True,
         ), patch(
             "backend.twitter_cli.subprocess.run"
@@ -256,8 +258,8 @@ class TwitterCliRuntimeTests(unittest.TestCase):
         self.assertEqual(run_mock.call_count, 2)
         first_kwargs = run_mock.call_args_list[0].kwargs
         second_kwargs = run_mock.call_args_list[1].kwargs
-        self.assertEqual(first_kwargs["creationflags"], subprocess.CREATE_NO_WINDOW)
-        self.assertEqual(second_kwargs["creationflags"], subprocess.CREATE_NO_WINDOW)
+        self.assertEqual(first_kwargs["creationflags"], self.CREATE_NO_WINDOW_FLAG)
+        self.assertEqual(second_kwargs["creationflags"], self.CREATE_NO_WINDOW_FLAG)
 
 
 if __name__ == "__main__":
