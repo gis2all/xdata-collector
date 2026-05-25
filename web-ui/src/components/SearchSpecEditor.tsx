@@ -1,5 +1,8 @@
 import { LanguageMode, RangeFilter, RangeMode, SearchSpec } from "../api";
-import { buildQueryPreview, joinCommaLines, splitCommaLines } from "../collector";
+import { useMemo } from "react";
+
+import { buildQueryPreview, joinCommaLinesForTextarea, splitCommaLines } from "../collector";
+import { useDelimitedInputDraft } from "./useDelimitedInputDraft";
 
 type Props = {
   value: SearchSpec;
@@ -21,31 +24,32 @@ const RANGE_MODE_OPTIONS: Array<{ value: RangeMode; label: string }> = [
 ];
 
 const TEXT = {
-  keywordsEyebrow: "QUERY SETUP",
   keywordsTitle: "\u5173\u952e\u8bcd\u4e0e\u4f5c\u8005\u8303\u56f4",
   keywordsDescription: "\u5148\u5b9a\u4e49\u67e5\u8be2\u8bcd\u7ec4\u5408\uff0c\u518d\u8865\u5145\u4f5c\u8005\u767d\u540d\u5355\u6216\u9ed1\u540d\u5355\u7ea6\u675f\u3002",
   keywordPanelTitle: "\u5173\u952e\u8bcd\u7ec4\u5408",
   keywordPanelDescription: "\u7528\u4e8e\u7ec4\u51fa X \u641c\u7d22\u8bed\u53e5\u7684\u4e3b\u8981\u6587\u672c\u6761\u4ef6\u3002",
   authorPanelTitle: "\u4f5c\u8005\u8303\u56f4",
   authorPanelDescription: "\u7528\u4e8e\u6536\u7d27\u6216\u6392\u9664\u7279\u5b9a\u8d26\u53f7\u6765\u6e90\u3002",
-  scopeEyebrow: "SCOPE",
   scopeTitle: "\u8303\u56f4\u4e0e\u4ea7\u51fa\u63a7\u5236",
   scopeDescription: "\u786e\u5b9a\u8bed\u8a00\u3001\u65f6\u95f4\u7a97\u53e3\u548c\u5355\u6b21\u62c9\u53d6\u4e0a\u9650\u3002",
-  metricsEyebrow: "METRICS",
   metricsTitle: "\u4e92\u52a8\u6307\u6807\u9608\u503c",
   metricsDescription: "\u7ed9\u6d4f\u89c8\u3001\u70b9\u8d5e\u3001\u56de\u590d\u548c\u8f6c\u63a8\u8bbe\u5b9a\u4e0b\u9650\u6216\u533a\u95f4\u3002",
-  behaviorEyebrow: "BEHAVIOR",
   behaviorTitle: "\u8865\u5145\u7ea6\u675f",
   behaviorDescription: "\u5904\u7406\u8f6c\u63a8/\u56de\u590d\u53ca\u5a92\u4f53/\u94fe\u63a5\u7b49\u884c\u4e3a\u7ea6\u675f\uff0c\u5e76\u53ef\u8865\u5145\u539f\u751f X \u641c\u7d22\u8bed\u6cd5\u3002",
-  summaryEyebrow: "PREVIEW",
   summaryTitle: "\u67e5\u8be2\u6458\u8981",
   summaryDescription: "\u57fa\u4e8e\u5f53\u524d\u8349\u7a3f\u5b9e\u65f6\u7ec4\u88c5\u51fa\u7684\u67e5\u8be2\u9884\u89c8\u3002",
   allKeywords: "\u5305\u542b\u5173\u952e\u8bcd",
+  allKeywordsPlaceholder: "\u9017\u53f7\u6216\u6362\u884c\u5206\u9694\uff0c\u5982\uff1a\u7a7a\u6295, quest, points",
   exactPhrases: "\u7cbe\u786e\u77ed\u8bed",
+  exactPhrasesPlaceholder: "\u9017\u53f7\u6216\u6362\u884c\u5206\u9694\uff0c\u5982\uff1asocial mining, daily check-in",
   anyKeywords: "\u4efb\u610f\u8bcd (OR)",
+  anyKeywordsPlaceholder: "\u9017\u53f7\u6216\u6362\u884c\u5206\u9694\uff0c\u5982\uff1atestnet, faucet, rewards",
   excludeKeywords: "\u6392\u9664\u8bcd",
+  excludeKeywordsPlaceholder: "\u9017\u53f7\u6216\u6362\u884c\u5206\u9694\uff0c\u5982\uff1atrade, swap, \u5408\u7ea6",
   authorsInclude: "\u4f5c\u8005\u767d\u540d\u5355",
+  authorsIncludePlaceholder: "\u9017\u53f7\u6216\u6362\u884c\u5206\u9694\uff0c\u5982\uff1agalxe, layer3xyz, kaitoai",
   authorsExclude: "\u4f5c\u8005\u9ed1\u540d\u5355",
+  authorsExcludePlaceholder: "\u9017\u53f7\u6216\u6362\u884c\u5206\u9694\uff0c\u5982\uff1abinance, bybit_official, bitgetglobal",
   language: "\u8bed\u8a00",
   publishedRange: "\u53d1\u5e03\u65f6\u95f4\u8303\u56f4",
   maxDaysHint: "\u6700\u5927 100 \u5929",
@@ -94,16 +98,39 @@ type RangeFieldProps = {
 };
 
 type SectionHeaderProps = {
-  eyebrow: string;
   title: string;
   description: string;
 };
 
-function SectionHeader({ eyebrow, title, description }: SectionHeaderProps) {
+function DelimitedTextarea(props: {
+  value: string[] | undefined;
+  onValueChange: (items: string[]) => void;
+  disabled: boolean;
+  placeholder: string;
+}) {
+  const draft = useDelimitedInputDraft({
+    value: props.value,
+    parse: splitCommaLines,
+    format: joinCommaLinesForTextarea,
+    onValueChange: props.onValueChange,
+  });
+
+  return (
+    <textarea
+      value={draft.draft}
+      onChange={(e) => draft.handleChange(e.target.value)}
+      onFocus={draft.handleFocus}
+      onBlur={draft.handleBlur}
+      disabled={props.disabled}
+      placeholder={props.placeholder}
+    />
+  );
+}
+
+function SectionHeader({ title, description }: SectionHeaderProps) {
   return (
     <div className="collector-editor-section-header">
       <div className="collector-editor-section-copy">
-        <div className="collector-editor-section-eyebrow">{eyebrow}</div>
         <div className="collector-editor-section-title">{title}</div>
         <div className="collector-editor-section-description">{description}</div>
       </div>
@@ -192,11 +219,10 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
   return (
     <div className="collector-panel collector-editor-shell search-spec-editor" data-testid="search-spec-editor">
       <section
-        className="collector-editor-section collector-editor-section-highlight workbench-subsurface"
+        className="collector-editor-section collector-editor-section-highlight flat-section"
         data-testid="search-spec-section-keywords"
       >
         <SectionHeader
-          eyebrow={TEXT.keywordsEyebrow}
           title={TEXT.keywordsTitle}
           description={TEXT.keywordsDescription}
         />
@@ -207,19 +233,39 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
             <div className="collector-grid collector-grid-2">
               <label className="field">
                 <span>{TEXT.allKeywords}</span>
-                <textarea value={joinCommaLines(value.all_keywords)} onChange={(e) => update("all_keywords", splitCommaLines(e.target.value))} disabled={disabled} />
+                <DelimitedTextarea
+                  value={value.all_keywords}
+                  onValueChange={(items) => update("all_keywords", items)}
+                  disabled={disabled}
+                  placeholder={TEXT.allKeywordsPlaceholder}
+                />
               </label>
               <label className="field">
                 <span>{TEXT.exactPhrases}</span>
-                <textarea value={joinCommaLines(value.exact_phrases)} onChange={(e) => update("exact_phrases", splitCommaLines(e.target.value))} disabled={disabled} />
+                <DelimitedTextarea
+                  value={value.exact_phrases}
+                  onValueChange={(items) => update("exact_phrases", items)}
+                  disabled={disabled}
+                  placeholder={TEXT.exactPhrasesPlaceholder}
+                />
               </label>
               <label className="field">
                 <span>{TEXT.anyKeywords}</span>
-                <textarea value={joinCommaLines(value.any_keywords)} onChange={(e) => update("any_keywords", splitCommaLines(e.target.value))} disabled={disabled} />
+                <DelimitedTextarea
+                  value={value.any_keywords}
+                  onValueChange={(items) => update("any_keywords", items)}
+                  disabled={disabled}
+                  placeholder={TEXT.anyKeywordsPlaceholder}
+                />
               </label>
               <label className="field">
                 <span>{TEXT.excludeKeywords}</span>
-                <textarea value={joinCommaLines(value.exclude_keywords)} onChange={(e) => update("exclude_keywords", splitCommaLines(e.target.value))} disabled={disabled} />
+                <DelimitedTextarea
+                  value={value.exclude_keywords}
+                  onValueChange={(items) => update("exclude_keywords", items)}
+                  disabled={disabled}
+                  placeholder={TEXT.excludeKeywordsPlaceholder}
+                />
               </label>
             </div>
           </div>
@@ -230,20 +276,29 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
             <div className="collector-grid collector-grid-2">
               <label className="field">
                 <span>{TEXT.authorsInclude}</span>
-                <textarea value={joinCommaLines(value.authors_include)} onChange={(e) => update("authors_include", splitCommaLines(e.target.value))} disabled={disabled} />
+                <DelimitedTextarea
+                  value={value.authors_include}
+                  onValueChange={(items) => update("authors_include", items)}
+                  disabled={disabled}
+                  placeholder={TEXT.authorsIncludePlaceholder}
+                />
               </label>
               <label className="field">
                 <span>{TEXT.authorsExclude}</span>
-                <textarea value={joinCommaLines(value.authors_exclude)} onChange={(e) => update("authors_exclude", splitCommaLines(e.target.value))} disabled={disabled} />
+                <DelimitedTextarea
+                  value={value.authors_exclude}
+                  onValueChange={(items) => update("authors_exclude", items)}
+                  disabled={disabled}
+                  placeholder={TEXT.authorsExcludePlaceholder}
+                />
               </label>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="collector-editor-section workbench-subsurface" data-testid="search-spec-section-scope">
+      <section className="collector-editor-section flat-section" data-testid="search-spec-section-scope">
         <SectionHeader
-          eyebrow={TEXT.scopeEyebrow}
           title={TEXT.scopeTitle}
           description={TEXT.scopeDescription}
         />
@@ -273,9 +328,8 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
         </div>
       </section>
 
-      <section className="collector-editor-section workbench-subsurface" data-testid="search-spec-section-metrics">
+      <section className="collector-editor-section flat-section" data-testid="search-spec-section-metrics">
         <SectionHeader
-          eyebrow={TEXT.metricsEyebrow}
           title={TEXT.metricsTitle}
           description={TEXT.metricsDescription}
         />
@@ -287,9 +341,8 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
         </div>
       </section>
 
-      <section className="collector-editor-section workbench-subsurface" data-testid="search-spec-section-behavior">
+      <section className="collector-editor-section flat-section" data-testid="search-spec-section-behavior">
         <SectionHeader
-          eyebrow={TEXT.behaviorEyebrow}
           title={TEXT.behaviorTitle}
           description={TEXT.behaviorDescription}
         />
@@ -318,11 +371,10 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
       </section>
 
       <section
-        className="collector-query-preview collector-editor-section collector-editor-section-highlight workbench-summary-panel"
+        className="collector-query-preview collector-editor-section collector-editor-section-highlight flat-section"
         data-testid="search-spec-query-summary"
       >
         <SectionHeader
-          eyebrow={TEXT.summaryEyebrow}
           title={TEXT.summaryTitle}
           description={TEXT.summaryDescription}
         />

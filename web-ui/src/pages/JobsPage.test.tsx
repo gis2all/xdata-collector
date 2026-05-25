@@ -189,7 +189,7 @@ describe("JobsPage", () => {
     fireEvent.mouseDown(resizer, { clientX: 760 });
     fireEvent.mouseMove(window, { clientX: 700 });
 
-    expect(layout).toHaveStyle({ gridTemplateColumns: "700px 12px minmax(520px, 1fr)" });
+    expect(layout).toHaveStyle({ gridTemplateColumns: "700px 20px minmax(320px, 1fr)" });
     expect(layout.className).toContain("dragging");
 
     fireEvent.mouseUp(window);
@@ -218,6 +218,17 @@ describe("JobsPage", () => {
     expect(pagination.compareDocumentPosition(tableWrap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it("keeps the page-select header as checkbox-only chrome", async () => {
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(listJobsMock).toHaveBeenCalled();
+    });
+
+    expect(screen.getByLabelText("jobs-select-page")).toBeInTheDocument();
+    expect(within(screen.getByTestId("jobs-table-wrap")).queryByText("本页全选")).not.toBeInTheDocument();
+  });
+
   it("does not persist a dragged width after remount", async () => {
     Object.defineProperty(window, "innerWidth", { value: 1440, writable: true });
 
@@ -232,7 +243,7 @@ describe("JobsPage", () => {
     fireEvent.mouseMove(window, { clientX: 680 });
     fireEvent.mouseUp(window);
 
-    expect(firstLayout).toHaveStyle({ gridTemplateColumns: "680px 12px minmax(520px, 1fr)" });
+    expect(firstLayout).toHaveStyle({ gridTemplateColumns: "680px 20px minmax(320px, 1fr)" });
 
     first.unmount();
 
@@ -242,20 +253,28 @@ describe("JobsPage", () => {
     expect(secondLayout.style.gridTemplateColumns).toBe("");
   });
 
-  it("renders a guided empty workspace before a task is opened", async () => {
+  it("renders a compact empty workspace before a task is opened", async () => {
     render(<JobsPage />);
 
     await waitFor(() => {
       expect(listJobsMock).toHaveBeenCalled();
     });
 
+    const emptyShell = screen.getByTestId("jobs-empty-shell");
+    expect(emptyShell).toBeInTheDocument();
+    expect(emptyShell).toHaveClass("jobs-empty-shell");
+
     const emptyWorkspace = screen.getByTestId("jobs-empty-workspace");
     expect(emptyWorkspace).toBeInTheDocument();
-    expect(within(emptyWorkspace).getByText("选择或新建任务")).toBeInTheDocument();
-    expect(within(emptyWorkspace).getByText("从左侧选择任务，或新建后继续编辑调度、搜索条件和规则。")).toBeInTheDocument();
+    expect(emptyWorkspace).toHaveClass("jobs-empty-workspace");
+    expect(emptyWorkspace.parentElement).toBe(emptyShell);
+    expect(within(emptyWorkspace).getByText("选择任务")).toBeInTheDocument();
+    expect(within(emptyWorkspace).getByText("可用任务包：1")).toBeInTheDocument();
     expect(within(emptyWorkspace).getByRole("button", { name: "新建任务" })).toBeInTheDocument();
     expect(within(emptyWorkspace).getByRole("button", { name: "刷新列表" })).toBeInTheDocument();
     expect(within(emptyWorkspace).getByTestId("jobs-refresh-empty")).toHaveClass("workbench-secondary-action");
+    expect(within(emptyWorkspace).queryByText("选择或新建任务")).not.toBeInTheDocument();
+    expect(within(emptyWorkspace).queryByText("从左侧选择任务，或新建后继续编辑调度、搜索条件和规则。")).not.toBeInTheDocument();
     expect(within(emptyWorkspace).queryByText("1. 打开或新建任务")).not.toBeInTheDocument();
     expect(within(emptyWorkspace).queryByText("这个工作区会承接的操作")).not.toBeInTheDocument();
   });
@@ -274,6 +293,9 @@ describe("JobsPage", () => {
     expect(screen.queryByRole("columnheader", { name: "查询摘要" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("create-job-button"));
+    expect(screen.getByLabelText("submit-job").closest(".jobs-workspace")).toHaveClass("jobs-workspace-create");
+    expect(screen.getByRole("textbox", { name: "包含关键词" })).toHaveAttribute("placeholder", "逗号或换行分隔，如：空投, quest, points");
+    expect(within(screen.getByText("关键词片段").closest(".flat-row") as HTMLElement).getByText("0 项")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("job-name"), { target: { value: "scheduled-alpha" } });
     fireEvent.change(screen.getByLabelText("job-interval"), { target: { value: "120" } });
     fireEvent.change(screen.getByLabelText("job-pack-select"), { target: { value: "alpha-watch" } });
@@ -291,10 +313,10 @@ describe("JobsPage", () => {
     expect(screen.getByRole("heading", { name: "规则" })).toBeInTheDocument();
     expect(screen.getByText("绑定状态：已绑定本地任务包")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "当前任务" }).closest(".jobs-section-header")).toHaveClass("workbench-section-header");
-    expect(screen.getByRole("heading", { name: "当前任务" }).closest(".drawer-section")).toHaveClass("workbench-layer");
+    expect(screen.getByRole("heading", { name: "当前任务" }).closest(".jobs-current-task-section")).toHaveClass("workbench-layer");
     expect(screen.getByTestId("create-job-button")).toHaveClass("workbench-primary-action");
     expect(within(screen.getByTestId("jobs-primary-actions")).getByLabelText("submit-job")).toHaveClass("workbench-primary-action");
-    expect(screen.getByText("当前状态：已启用").closest(".jobs-current-task-hero")).toHaveClass("workbench-summary-panel");
+    expect(screen.getByText("当前状态：已启用").closest(".jobs-current-task-hero")).toHaveClass("flat-section");
     expect(screen.queryByText("工作区模式")).not.toBeInTheDocument();
     expect(screen.queryByText("新建任务草稿")).not.toBeInTheDocument();
     expect(screen.queryByText("编辑已保存任务")).not.toBeInTheDocument();
@@ -304,7 +326,7 @@ describe("JobsPage", () => {
         .getByRole("heading", { name: "任务包操作" })
         .compareDocumentPosition(screen.getByRole("heading", { name: "任务正文摘要" })),
     ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(screen.getByText("关键词片段").closest(".jobs-task-body-grid")).toHaveClass("workbench-summary-grid");
+    expect(screen.getByText("关键词片段").closest(".jobs-task-body-grid")).toHaveClass("flat-row-list");
     expect(screen.getByText("当前绑定：alpha-watch")).toBeInTheDocument();
     expect(screen.getByText("绑定状态：已绑定本地任务包")).toBeInTheDocument();
     expect(screen.getByText("草稿状态：未修改")).toBeInTheDocument();
@@ -314,6 +336,7 @@ describe("JobsPage", () => {
     expect(screen.getByLabelText("job-save-as-pack")).toBeInTheDocument();
     expect(screen.getByLabelText("job-save-current-pack")).toBeInTheDocument();
     expect(screen.getByTestId("jobs-close-workspace")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("jobs-close-workspace")).not.toHaveClass("ghost");
     expect(screen.getByLabelText("job-load-pack")).toHaveClass("workbench-secondary-action");
     expect(screen.getByLabelText("job-import-file-pack")).toHaveClass("workbench-secondary-action");
     expect(screen.getByLabelText("job-import-and-save-pack")).toHaveClass("workbench-secondary-action");
@@ -334,7 +357,7 @@ describe("JobsPage", () => {
     expect(payload.rule_set.name).toBe("Default Rule Set");
   });
 
-  it("separates page header, filter layer, and list manage layer", async () => {
+  it("keeps the list tools focused on filters and bulk actions without a summary banner", async () => {
     render(<JobsPage />);
 
     await waitFor(() => {
@@ -344,18 +367,24 @@ describe("JobsPage", () => {
     expect(screen.getByRole("heading", { name: "自动任务" })).toBeInTheDocument();
     expect(screen.getByText("自动任务负责调度，任务正文来自当前绑定任务包。")).toBeInTheDocument();
     expect(screen.getByTestId("create-job-button")).toBeInTheDocument();
-    const listToolsSummary = screen.getByTestId("jobs-list-tools-summary");
-    expect(listToolsSummary).toBeInTheDocument();
-    expect(screen.getByText("筛选与批量管理")).toBeInTheDocument();
-    expect(screen.getByTestId("jobs-filter-bar")).toBeInTheDocument();
+    expect(screen.queryByTestId("jobs-list-tools-summary")).not.toBeInTheDocument();
+    expect(screen.queryByText("筛选与批量管理")).not.toBeInTheDocument();
+    const filterBar = screen.getByTestId("jobs-filter-bar");
+    expect(filterBar).toBeInTheDocument();
+    const filterQueryGroup = screen.getByTestId("jobs-filter-query-group");
     const manageBar = screen.getByTestId("jobs-manage-bar");
     expect(manageBar).toBeInTheDocument();
     expect(manageBar).not.toHaveClass("workbench-subsurface");
+    expect(filterBar).toHaveClass("flat-actions");
     expect(screen.getByTestId("jobs-search-button")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("jobs-search-button")).not.toHaveClass("ghost");
+    expect(within(filterQueryGroup).getByLabelText("搜索任务")).toBeInTheDocument();
+    expect(within(filterQueryGroup).getByTestId("jobs-search-button")).toBeInTheDocument();
+    expect(within(filterQueryGroup).getByLabelText("任务状态")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "批量启用" })).toHaveClass("workbench-secondary-action");
     expect(screen.getByRole("button", { name: "批量删除" })).toHaveClass("workbench-danger-action");
-    expect(within(listToolsSummary).getByText("\u5171 0 \u9879\u4efb\u52a1")).toBeInTheDocument();
-    expect(within(listToolsSummary).getByText("\u5f53\u524d\u8303\u56f4\uff1a\u542f\u7528\u4e2d")).toBeInTheDocument();
+    expect(screen.queryByText("\u5171 0 \u9879\u4efb\u52a1")).not.toBeInTheDocument();
+    expect(screen.queryByText("\u5f53\u524d\u8303\u56f4\uff1a\u542f\u7528\u4e2d")).not.toBeInTheDocument();
     expect(within(manageBar).getByText("\u5148\u5728\u8868\u683c\u4e2d\u52fe\u9009\u4efb\u52a1\uff0c\u518d\u6267\u884c\u6279\u91cf\u64cd\u4f5c\u3002")).toBeInTheDocument();
   });
 
@@ -485,6 +514,12 @@ describe("JobsPage", () => {
     await waitFor(() => {
       expect(screen.getByTestId("jobs-primary-actions")).toBeInTheDocument();
     });
+
+    const workspace = screen.getByTestId("jobs-primary-actions").closest(".jobs-workspace");
+    expect(workspace).toBeInTheDocument();
+    expect(workspace).not.toHaveClass("jobs-workspace-create");
+    expect(workspace?.querySelector(".drawer-header")).toBeInTheDocument();
+    expect(workspace?.querySelector(".jobs-current-task-section")).toBeInTheDocument();
 
     expect(screen.queryByRole("button", { name: "\u67e5\u770b" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "\u7f16\u8f91" })).not.toBeInTheDocument();

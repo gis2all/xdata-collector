@@ -1,8 +1,36 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { SearchSpecEditor } from "./SearchSpecEditor";
+import type { SearchSpec } from "../api";
 import { DEFAULT_SEARCH_SPEC, cloneSearchSpec } from "../collector";
+
+const PLACEHOLDERS = {
+  allKeywords: "逗号或换行分隔，如：空投, quest, points",
+  exactPhrases: "逗号或换行分隔，如：social mining, daily check-in",
+  anyKeywords: "逗号或换行分隔，如：testnet, faucet, rewards",
+  excludeKeywords: "逗号或换行分隔，如：trade, swap, 合约",
+  authorsInclude: "逗号或换行分隔，如：galxe, layer3xyz, kaitoai",
+  authorsExclude: "逗号或换行分隔，如：binance, bybit_official, bitgetglobal",
+} as const;
+
+function SearchSpecEditorHarness(props: {
+  initialValue?: Partial<SearchSpec>;
+  onValueChange?: (next: SearchSpec) => void;
+}) {
+  const [value, setValue] = useState(() => cloneSearchSpec(props.initialValue ?? DEFAULT_SEARCH_SPEC));
+
+  return (
+    <SearchSpecEditor
+      value={value}
+      onChange={(next) => {
+        props.onValueChange?.(next);
+        setValue(next);
+      }}
+    />
+  );
+}
 
 describe("SearchSpecEditor", () => {
   it("renders grouped workbench sections for keywords, scope, metrics, behavior, and query summary", () => {
@@ -13,9 +41,29 @@ describe("SearchSpecEditor", () => {
     expect(screen.getByTestId("search-spec-section-scope")).toHaveClass("collector-editor-section");
     expect(screen.getByTestId("search-spec-section-metrics")).toHaveClass("collector-editor-section");
     expect(screen.getByTestId("search-spec-section-behavior")).toHaveClass("collector-editor-section");
-    expect(screen.getByTestId("search-spec-query-summary")).toHaveClass("workbench-summary-panel");
-    expect(screen.getByText("QUERY SETUP")).toBeInTheDocument();
-    expect(screen.getByText("PREVIEW")).toBeInTheDocument();
+    expect(screen.getByTestId("search-spec-section-keywords")).toHaveClass("flat-section");
+    expect(screen.getByTestId("search-spec-section-scope")).toHaveClass("flat-section");
+    expect(screen.getByTestId("search-spec-section-metrics")).toHaveClass("flat-section");
+    expect(screen.getByTestId("search-spec-section-behavior")).toHaveClass("flat-section");
+    expect(screen.getByTestId("search-spec-query-summary")).toHaveClass("flat-section");
+    expect(screen.getByTestId("search-spec-query-summary")).not.toHaveClass("workbench-summary-panel");
+    expect(screen.getByText("关键词与作者范围")).toBeInTheDocument();
+    expect(screen.getByText("范围与产出控制")).toBeInTheDocument();
+    expect(screen.getByText("互动指标阈值")).toBeInTheDocument();
+    expect(screen.getByText("补充约束")).toBeInTheDocument();
+    expect(screen.getByText("查询摘要")).toBeInTheDocument();
+    expect(screen.queryByText("QUERY SETUP")).not.toBeInTheDocument();
+    expect(screen.queryByText("SCOPE")).not.toBeInTheDocument();
+    expect(screen.queryByText("METRICS")).not.toBeInTheDocument();
+    expect(screen.queryByText("BEHAVIOR")).not.toBeInTheDocument();
+    expect(screen.queryByText("PREVIEW")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "包含关键词" })).toHaveAttribute("placeholder", PLACEHOLDERS.allKeywords);
+    expect(screen.getByRole("textbox", { name: "精确短语" })).toHaveAttribute("placeholder", PLACEHOLDERS.exactPhrases);
+    expect(screen.getByRole("textbox", { name: "任意词 (OR)" })).toHaveAttribute("placeholder", PLACEHOLDERS.anyKeywords);
+    expect(screen.getByRole("textbox", { name: "排除词" })).toHaveAttribute("placeholder", PLACEHOLDERS.excludeKeywords);
+    expect(screen.getByRole("textbox", { name: "作者白名单" })).toHaveAttribute("placeholder", PLACEHOLDERS.authorsInclude);
+    expect(screen.getByRole("textbox", { name: "作者黑名单" })).toHaveAttribute("placeholder", PLACEHOLDERS.authorsExclude);
+    expect(screen.queryByDisplayValue("BTC")).not.toBeInTheDocument();
   });
 
   it("defaults language to zh_en and writes back range filters", () => {
@@ -46,5 +94,72 @@ describe("SearchSpecEditor", () => {
         }),
       }),
     );
+  });
+
+  it("keeps in-progress spaces and commas while editing while still emitting parsed arrays", () => {
+    const onValueChange = vi.fn();
+    render(<SearchSpecEditorHarness onValueChange={onValueChange} />);
+
+    const phrasesField = screen.getByPlaceholderText(/social mining, daily check-in/i);
+    fireEvent.change(phrasesField, { target: { value: "social " } });
+    expect(phrasesField).toHaveValue("social ");
+    expect(onValueChange).toHaveBeenLastCalledWith(expect.objectContaining({ exact_phrases: ["social"] }));
+
+    fireEvent.change(phrasesField, { target: { value: "social mining, " } });
+    expect(phrasesField).toHaveValue("social mining, ");
+    expect(onValueChange).toHaveBeenLastCalledWith(expect.objectContaining({ exact_phrases: ["social mining"] }));
+
+    const authorsField = screen.getByPlaceholderText(/galxe, layer3xyz, kaitoai/i);
+    fireEvent.change(authorsField, { target: { value: "galxe, layer3xyz" } });
+    expect(authorsField).toHaveValue("galxe, layer3xyz");
+    expect(onValueChange).toHaveBeenLastCalledWith(expect.objectContaining({ authors_include: ["galxe", "layer3xyz"] }));
+  });
+
+  it("normalizes textarea list inputs to one item per line on blur", () => {
+    render(<SearchSpecEditorHarness />);
+
+    const phrasesField = screen.getByPlaceholderText(/social mining, daily check-in/i);
+    fireEvent.change(phrasesField, { target: { value: "social mining, daily check-in" } });
+
+    expect(phrasesField).toHaveValue("social mining, daily check-in");
+
+    fireEvent.blur(phrasesField);
+
+    expect(phrasesField).toHaveValue("social mining\ndaily check-in");
+  });
+
+  it("replaces stale draft text when external search spec data is loaded", () => {
+    function ExternalUpdateHarness() {
+      const [value, setValue] = useState(() => cloneSearchSpec(DEFAULT_SEARCH_SPEC));
+
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() =>
+              setValue(
+                cloneSearchSpec({
+                  ...DEFAULT_SEARCH_SPEC,
+                  exact_phrases: ["beta phrase", "gamma phrase"],
+                }),
+              )
+            }
+          >
+            load-pack
+          </button>
+          <SearchSpecEditor value={value} onChange={setValue} />
+        </>
+      );
+    }
+
+    render(<ExternalUpdateHarness />);
+
+    const phrasesField = screen.getByPlaceholderText(/social mining, daily check-in/i);
+    fireEvent.change(phrasesField, { target: { value: "social mining, " } });
+    expect(phrasesField).toHaveValue("social mining, ");
+
+    fireEvent.click(screen.getByRole("button", { name: "load-pack" }));
+
+    expect(phrasesField).toHaveValue("beta phrase\ngamma phrase");
   });
 });

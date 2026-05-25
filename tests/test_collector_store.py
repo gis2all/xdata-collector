@@ -55,6 +55,7 @@ class CollectorStoreTests(unittest.TestCase):
             self.assertIn("score", curated_columns)
             self.assertIn("reasons_json", curated_columns)
             self.assertIn("rule_set_id", curated_columns)
+            self.assertIn("fetched_at", curated_columns)
 
     def test_connect_is_idempotent_for_existing_database(self) -> None:
         with TemporaryDirectory() as tmp:

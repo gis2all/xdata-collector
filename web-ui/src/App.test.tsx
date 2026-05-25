@@ -31,10 +31,12 @@ const ACTIVE_PAGE_STORAGE_KEY = "app.activePage.v1";
 describe("App", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    window.history.replaceState(null, "", "/");
   });
 
   afterEach(() => {
     window.localStorage.clear();
+    window.history.replaceState(null, "", "/");
   });
 
   it("defaults to dashboard when no saved active page exists", () => {
@@ -53,6 +55,16 @@ describe("App", () => {
     expect(screen.getByTestId("mock-results")).toBeInTheDocument();
   });
 
+  it("prefers a valid hash route over the saved active page on first render", () => {
+    window.localStorage.setItem(ACTIVE_PAGE_STORAGE_KEY, "dashboard");
+    window.history.replaceState(null, "", "/#/logs");
+
+    render(<App />);
+
+    expect(screen.getByTestId("panel-logs")).toHaveAttribute("aria-hidden", "false");
+    expect(screen.getByTestId("mock-logs")).toBeInTheDocument();
+  });
+
   it("writes the current active page to local storage when navigation changes", () => {
     render(<App />);
 
@@ -60,6 +72,7 @@ describe("App", () => {
 
     expect(screen.getByTestId("panel-jobs")).toHaveAttribute("aria-hidden", "false");
     expect(window.localStorage.getItem(ACTIVE_PAGE_STORAGE_KEY)).toBe("jobs");
+    expect(window.location.hash).toBe("#/jobs");
   });
 
   it("keeps the clicked nav item marked as the current page", () => {
@@ -99,6 +112,17 @@ describe("App", () => {
     expect(screen.getByTestId("mock-dashboard")).toBeInTheDocument();
   });
 
+  it("falls back to dashboard when the hash route is invalid", () => {
+    window.localStorage.setItem(ACTIVE_PAGE_STORAGE_KEY, "results");
+    window.history.replaceState(null, "", "/#/unknown-page");
+
+    render(<App />);
+
+    expect(screen.getByTestId("panel-dashboard")).toHaveAttribute("aria-hidden", "false");
+    expect(screen.getByTestId("mock-dashboard")).toBeInTheDocument();
+    expect(window.location.hash).toBe("#/dashboard");
+  });
+
   it("renders the fixed rail shell structure", () => {
     render(<App />);
 
@@ -132,5 +156,57 @@ describe("App", () => {
     } finally {
       getItemSpy.mockRestore();
     }
+  });
+});
+
+describe("App dashboard side effects", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    window.localStorage.clear();
+    window.history.replaceState(null, "", "/#/manual");
+  });
+
+  afterEach(() => {
+    window.localStorage.clear();
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("does not trigger dashboard health probing when the manual page is the active hash route", async () => {
+    vi.doUnmock("./pages/DashboardPage");
+    vi.doMock("./pages/ManualSearchPage", () => ({
+      ManualSearchPage: () => <div data-testid="manual-shell">manual-page</div>,
+    }));
+    vi.doMock("./pages/JobsPage", () => ({
+      JobsPage: () => <div data-testid="jobs-shell">jobs-page</div>,
+    }));
+    vi.doMock("./pages/ResultsPage", () => ({
+      ResultsPage: () => <div data-testid="results-shell">results-page</div>,
+    }));
+    vi.doMock("./pages/LogsPage", () => ({
+      LogsPage: () => <div data-testid="logs-shell">logs-page</div>,
+    }));
+    vi.doMock("./pages/SettingsPage", () => ({
+      SettingsPage: () => <div data-testid="settings-shell">settings-page</div>,
+    }));
+    vi.doMock("./api", async () => {
+      const actual = await vi.importActual<typeof import("./api")>("./api");
+      return {
+        ...actual,
+        health: vi.fn(),
+        healthSnapshot: vi.fn(),
+      };
+    });
+
+    const { App: RealApp } = await import("./App");
+    const api = await import("./api");
+    const healthMock = vi.mocked(api.health);
+    const healthSnapshotMock = vi.mocked(api.healthSnapshot);
+
+    render(<RealApp />);
+
+    expect(screen.getByTestId("panel-manual")).toHaveAttribute("aria-hidden", "false");
+    expect(screen.getByTestId("manual-shell")).toBeInTheDocument();
+    expect(healthMock).not.toHaveBeenCalled();
+    expect(healthSnapshotMock).not.toHaveBeenCalled();
   });
 });

@@ -10,18 +10,18 @@ const SERVICE_GROUPS = [
 
 const UI_TEXT = {
   title: "运行日志",
-  subtitle: "先看当前服务进程日志快照，再集中查看最近采集运行记录和错误详情。",
+  subtitle: "服务日志与采集记录。",
   refresh: "刷新",
   refreshing: "刷新中...",
   loading: "正在加载日志...",
   loadError: "日志加载失败",
   runtimeSnapshot: "服务快照",
   runtimeTitle: "服务进程日志",
-  runtimeHint: "展示 runtime/logs/current 下的 API、Scheduler 和 Web UI 日志。",
+  runtimeHint: "API、Scheduler、Web UI 当前日志。",
   runtimeNoSnapshot: "暂无快照",
   runsWorkbench: "运行记录",
   runsTitle: "采集运行日志",
-  runsHint: "来自 runtime/history/search_runs.jsonl，左侧浏览记录，右侧查看当前运行详情。",
+  runsHint: "最近采集运行记录。",
   noRuns: "暂无采集运行记录",
   runWorkbench: "当前运行",
   runWorkbenchHint: "集中查看当前运行的触发方式、统计摘要和错误内容。",
@@ -37,6 +37,7 @@ const UI_TEXT = {
   selectRun: "请选择一条运行记录",
   readError: "读取失败：",
   noLogContent: "暂无内容",
+  noLogGenerated: "尚未产生日志",
   groups: "服务分组",
   contentReady: "已有内容",
   readErrors: "读取异常",
@@ -78,8 +79,7 @@ function serviceGroupStatus(files: RuntimeLogFile[]) {
   const errorCount = files.filter((file) => file.error).length;
   if (errorCount) return `读取异常 ${errorCount}`;
   if (files.some((file) => file.content)) return "已有内容";
-  if (files.length) return "暂无内容";
-  return "尚未采集";
+  return UI_TEXT.noLogGenerated;
 }
 
 function latestUpdatedAt(files: RuntimeLogFile[]) {
@@ -104,11 +104,14 @@ function renderLogFileState(error: string | undefined, content: string | undefin
 
   return (
     <div className="logs-file-state logs-file-state-empty">
-      <div className="logs-file-state-eyebrow">当前状态</div>
-      <strong>{UI_TEXT.noLogContent}</strong>
-      <p>稍后刷新再看。</p>
+      <strong>{UI_TEXT.noLogGenerated}</strong>
     </div>
   );
+}
+
+function serviceGroupFileLabel(files: RuntimeLogFile[]) {
+  if (!files.length) return "--";
+  return `${files.length} files`;
 }
 
 export function LogsPage() {
@@ -200,13 +203,47 @@ export function LogsPage() {
           </div>
         </div>
 
+        <div className="logs-service-summary-table workbench-table-shell" data-testid="logs-service-summary-table">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>服务</th>
+                <th>状态</th>
+                <th>文件</th>
+                <th>最近更新</th>
+              </tr>
+            </thead>
+            <tbody>
+              {SERVICE_GROUPS.map((group) => {
+                const files = serviceGroupFiles(runtimeLogs, group.key);
+                const tone = serviceGroupTone(files);
+                const latest = latestUpdatedAt(files);
+                return (
+                  <tr key={group.key} data-testid={`logs-service-summary-${group.key}`}>
+                    <td>{group.label}</td>
+                    <td>
+                      <span className={`dashboard-summary-pill workbench-pill ${tone}`}>{serviceGroupStatus(files)}</span>
+                    </td>
+                    <td>{serviceGroupFileLabel(files)}</td>
+                    <td>{latest ? formatUtcPlus8Time(latest) : UI_TEXT.runtimeNoSnapshot}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
         <div className="logs-service-grid">
           {SERVICE_GROUPS.map((group) => {
             const files = serviceGroupFiles(runtimeLogs, group.key);
             const tone = serviceGroupTone(files);
             const latest = latestUpdatedAt(files);
+            const visibleFiles = files.filter((file) => file.content || file.error);
+            if (!visibleFiles.length) {
+              return null;
+            }
             return (
-              <section key={group.key} className="drawer-section logs-service-group workbench-subsurface">
+              <section key={group.key} className="logs-service-group flat-section">
                 <div className="logs-service-group-hero">
                   <div className="logs-service-group-copy">
                     <h5>{group.label}</h5>
@@ -216,8 +253,8 @@ export function LogsPage() {
                 </div>
 
                 <div className="logs-service-stack">
-                  {files.map((file) => (
-                    <div key={file.name} className="logs-file-card">
+                  {visibleFiles.map((file) => (
+                    <div key={file.name} className="logs-file-row flat-row">
                       <div className="logs-file-meta">
                         <div>
                           <strong>{file.name}</strong>
@@ -229,7 +266,6 @@ export function LogsPage() {
                       {renderLogFileState(file.error, file.content)}
                     </div>
                   ))}
-                  {!files.length && renderLogFileState(undefined, undefined)}
                 </div>
               </section>
             );
@@ -257,7 +293,7 @@ export function LogsPage() {
         ) : (
           <div className="logs-runs-layout">
             <div className="logs-runs-list">
-              <div className="logs-runs-manager workbench-summary-panel" data-testid="logs-runs-manager">
+              <div className="logs-runs-manager flat-meta-strip" data-testid="logs-runs-manager">
                 <span className="dashboard-summary-pill workbench-pill neutral">{`${UI_TEXT.triggerType}：${selectedRun?.trigger_type || "--"}`}</span>
                 <span className={`dashboard-summary-pill workbench-pill ${selectedRun ? statusClass(selectedRun.status) : "neutral"}`}>{`${UI_TEXT.status}：${selectedRun?.status || "--"}`}</span>
                 <span className="dashboard-summary-pill workbench-pill neutral">{`${UI_TEXT.statsSummary}：${selectedRun ? summarizeStats(selectedRun.stats_json) : "--"}`}</span>
@@ -298,7 +334,7 @@ export function LogsPage() {
             </div>
 
             {selectedRun ? (
-              <aside className="drawer-section logs-run-detail" data-testid="logs-run-rail">
+              <aside className="logs-run-detail flat-section" data-testid="logs-run-rail">
                 <div className="logs-run-hero">
                   <div className="logs-section-eyebrow workbench-section-eyebrow">{UI_TEXT.runWorkbench}</div>
                   <h5 className="logs-run-title">{selectedRun.job_id ? `任务 #${selectedRun.job_id}` : `运行 #${selectedRun.id}`}</h5>
@@ -312,46 +348,46 @@ export function LogsPage() {
 
                 <div className="logs-run-section-title">{UI_TEXT.runDetail}</div>
                 <div className="logs-detail-grid">
-                  <div className="dashboard-detail-item">
+                  <div className="flat-row">
                     <span>Run ID</span>
                     <strong>#{selectedRun.id}</strong>
                   </div>
-                  <div className="dashboard-detail-item">
+                  <div className="flat-row">
                     <span>{UI_TEXT.triggerType}</span>
                     <strong>{selectedRun.trigger_type}</strong>
                   </div>
-                  <div className="dashboard-detail-item">
+                  <div className="flat-row">
                     <span>{UI_TEXT.status}</span>
                     <strong>{selectedRun.status}</strong>
                   </div>
-                  <div className="dashboard-detail-item">
+                  <div className="flat-row">
                     <span>{UI_TEXT.job}</span>
                     <strong>{selectedRun.job_id ? `#${selectedRun.job_id}` : "--"}</strong>
                   </div>
-                  <div className="dashboard-detail-item">
+                  <div className="flat-row">
                     <span>{UI_TEXT.startedAt}</span>
                     <strong>{formatUtcPlus8Time(selectedRun.started_at)}</strong>
                   </div>
-                  <div className="dashboard-detail-item">
+                  <div className="flat-row">
                     <span>{UI_TEXT.endedAt}</span>
                     <strong>{formatUtcPlus8Time(selectedRun.ended_at)}</strong>
                   </div>
-                  <div className="dashboard-detail-item dashboard-detail-item-wide">
+                  <div className="flat-row flat-row-wide">
                     <span>{UI_TEXT.statsSummary}</span>
                     <strong>{summarizeStats(selectedRun.stats_json)}</strong>
                   </div>
                 </div>
-                <div className="logs-detail-block workbench-subsurface workbench-subsurface-muted">
+                <div className="logs-detail-block flat-section">
                   <div className="logs-run-section-title">{UI_TEXT.errorInfo}</div>
                   <pre className="logs-pre">{selectedRun.error_text || UI_TEXT.noError}</pre>
                 </div>
-                <div className="logs-detail-block workbench-subsurface workbench-subsurface-muted">
+                <div className="logs-detail-block flat-section">
                   <div className="logs-run-section-title">stats_json</div>
                   <pre className="logs-pre">{JSON.stringify(selectedRun.stats_json || {}, null, 2)}</pre>
                 </div>
               </aside>
             ) : (
-              <div className="drawer-section logs-run-detail">{UI_TEXT.selectRun}</div>
+              <div className="logs-run-detail flat-section">{UI_TEXT.selectRun}</div>
             )}
           </div>
         )}

@@ -124,6 +124,11 @@ describe("ManualSearchPage", () => {
       expect(listTaskPacksMock).toHaveBeenCalled();
     });
 
+    const select = await screen.findByLabelText("manual-pack-select");
+    const options = within(select).getAllByRole("option");
+    expect(options[0]).toHaveTextContent("默认草稿");
+    expect(options[0]).toHaveValue("__default_draft__");
+
     const header = screen.getByTestId("manual-page-header");
     expect(screen.getByRole("heading", { name: "手动执行任务" })).toBeInTheDocument();
     expect(header).toHaveClass("workbench-page-header");
@@ -135,7 +140,7 @@ describe("ManualSearchPage", () => {
     expect(screen.getByRole("heading", { name: "执行摘要" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "执行结果" })).toBeInTheDocument();
     expect(screen.queryByTestId("manual-pack-state-grid")).not.toBeInTheDocument();
-    expect(screen.getByTestId("manual-pack-context-hint")).toHaveClass("workbench-subsurface");
+    expect(screen.getByTestId("manual-pack-context-hint")).toHaveClass("flat-meta-strip");
     expect(screen.getByTestId("manual-pack-load-card")).toBeInTheDocument();
     expect(screen.getByTestId("manual-pack-save-card")).toBeInTheDocument();
     expect(screen.getByTestId("manual-search-editor-surface")).toBeInTheDocument();
@@ -151,18 +156,25 @@ describe("ManualSearchPage", () => {
     expect(within(header).getByRole("button", { name: "立即执行任务" })).toBeInTheDocument();
     expect(within(header).getByRole("button", { name: "立即执行任务" })).toHaveClass("workbench-primary-action");
     expect(screen.getByTestId("manual-reset-draft")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("manual-reset-draft")).not.toHaveClass("ghost");
     expect(screen.getByTestId("manual-refresh-task-packs")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("manual-refresh-task-packs")).not.toHaveClass("ghost");
     expect(within(header).queryByRole("button", { name: "清空当前草稿" })).not.toBeInTheDocument();
     expect(within(header).queryByRole("button", { name: "刷新任务包列表" })).not.toBeInTheDocument();
-    expect(screen.getByText("当前草稿：未绑定草稿").closest(".manual-rail-hero")).toHaveClass("workbench-summary-panel");
-    expect(within(screen.getByTestId("manual-execution-rail")).getByText("草稿状态").closest(".manual-rail-grid")).toHaveClass("workbench-summary-grid");
-    expect(screen.getByText("当前来源：默认空白")).toBeInTheDocument();
+    expect(screen.getByText("当前草稿：未绑定草稿").closest(".manual-rail-hero")).toHaveClass("flat-section");
+    expect(within(screen.getByTestId("manual-execution-rail")).getByText("草稿状态").closest(".manual-rail-grid")).toHaveClass("flat-row-list");
+    expect(screen.getByText("当前来源：默认草稿")).toBeInTheDocument();
     expect(screen.getByText("当前绑定：--")).toBeInTheDocument();
     expect(screen.getByText("当前草稿：未绑定草稿")).toBeInTheDocument();
+    expect(screen.getByText("规则：0")).toBeInTheDocument();
+    expect(screen.getByText("等级：3")).toBeInTheDocument();
+    expect(screen.getByText("关键词片段：0")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "包含关键词" })).toHaveAttribute("placeholder", "逗号或换行分隔，如：空投, quest, points");
     expect(screen.getByText("最近状态：未执行")).toBeInTheDocument();
     expect(screen.getByText("最近执行：尚未执行")).toBeInTheDocument();
     expect(screen.getAllByText("尚未执行").length).toBeGreaterThan(0);
     expect(screen.getByTestId("manual-scroll-results")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("manual-scroll-results")).not.toHaveClass("ghost");
     expect(screen.queryByText("复制规则集")).not.toBeInTheDocument();
     expect(screen.queryByText("保存规则集")).not.toBeInTheDocument();
     expect(screen.queryByText("删除规则集")).not.toBeInTheDocument();
@@ -193,6 +205,7 @@ describe("ManualSearchPage", () => {
     render(<ManualSearchPage />);
 
     const select = await screen.findByLabelText("manual-pack-select");
+    expect(within(select).getAllByRole("option")[0]).toHaveTextContent("默认草稿");
     fireEvent.change(select, { target: { value: "alpha-watch" } });
     fireEvent.click(screen.getByTestId("manual-load-pack"));
 
@@ -212,7 +225,7 @@ describe("ManualSearchPage", () => {
     expect(screen.queryByText("pack_path=config/packs/alpha-watch.json")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务包操作" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "任务正文摘要" })).toBeInTheDocument();
-    expect(screen.getByTestId("manual-pack-context-hint")).toHaveClass("workbench-subsurface");
+    expect(screen.getByTestId("manual-pack-context-hint")).toHaveClass("flat-meta-strip");
     expect(screen.getByTestId("manual-pack-load-card")).toBeInTheDocument();
     expect(screen.getByTestId("manual-pack-save-card")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "恢复任务包内容" })).toBeInTheDocument();
@@ -221,12 +234,13 @@ describe("ManualSearchPage", () => {
     expect(screen.getByTestId("manual-save-as-pack")).toBeInTheDocument();
     expect(screen.getByTestId("manual-save-current-pack")).toBeInTheDocument();
     expect(screen.getByTestId("manual-load-pack")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("manual-load-pack")).not.toHaveClass("ghost");
     expect(screen.getByTestId("manual-import-file-pack")).toHaveClass("workbench-secondary-action");
     expect(screen.getByTestId("manual-import-and-save-pack")).toHaveClass("workbench-secondary-action");
     expect(screen.getByTestId("manual-save-as-pack")).toHaveClass("workbench-secondary-action");
     expect(screen.getByTestId("manual-save-current-pack")).toHaveClass("workbench-primary-action");
     expect(screen.getByTestId("manual-delete-pack")).toHaveClass("workbench-danger-action");
-    expect(screen.getByText("关键词片段").closest(".manual-body-detail-grid")).toHaveClass("workbench-summary-grid");
+    expect(screen.getByText("关键词片段").closest(".manual-body-detail-grid")).toHaveClass("flat-row-list");
     expect(screen.getByTestId("manual-search-editor-surface")).toBeInTheDocument();
     expect(screen.getByTestId("manual-rule-editor-surface")).toBeInTheDocument();
     expect(screen.getByText(/只替换当前草稿/)).toBeInTheDocument();
@@ -239,6 +253,30 @@ describe("ManualSearchPage", () => {
     });
 
     promptSpy.mockRestore();
+  });
+
+  it("restores the blank draft when the default draft option is selected", async () => {
+    render(<ManualSearchPage />);
+
+    const select = await screen.findByLabelText("manual-pack-select");
+    fireEvent.change(select, { target: { value: "alpha-watch" } });
+    fireEvent.click(screen.getByTestId("manual-load-pack"));
+
+    await waitFor(() => {
+      expect(screen.getByText("当前绑定：alpha-watch")).toBeInTheDocument();
+    });
+
+    fireEvent.change(select, { target: { value: "__default_draft__" } });
+    fireEvent.click(screen.getByTestId("manual-load-pack"));
+
+    await waitFor(() => {
+      expect(screen.getByText("当前来源：默认草稿")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("当前绑定：--")).toBeInTheDocument();
+    expect(screen.getByText("草稿状态：未绑定")).toBeInTheDocument();
+    expect(screen.getByTestId("manual-delete-pack")).toBeDisabled();
+    expect(deleteTaskPackMock).not.toHaveBeenCalledWith("__default_draft__");
   });
 
 
@@ -322,6 +360,44 @@ describe("ManualSearchPage", () => {
     fireEvent.change(screen.getByDisplayValue("Default Rule Set"), { target: { value: "Default Rule Set v2" } });
 
     expect(screen.getAllByText("已修改未保存").length).toBeGreaterThan(0);
+  });
+
+  it("submits multi-word phrases and comma-delimited authors as parsed arrays", async () => {
+    runManualMock.mockResolvedValue({
+      run_id: 2,
+      status: "success",
+      search_spec: taskPackFile.search_spec,
+      final_query: "btc lang:zh || btc lang:en",
+      final_queries: ["btc lang:zh -is:retweet", "btc lang:en -is:retweet"],
+      rule_set_summary: { id: 1, name: "Default Rule Set", description: "", version: 1, is_builtin: true },
+      raw_total: 0,
+      matched_total: 0,
+      raw_items: [],
+      matched_items: [],
+      stats: {},
+      errors: [],
+    } as any);
+
+    render(<ManualSearchPage />);
+
+    await waitFor(() => {
+      expect(listTaskPacksMock).toHaveBeenCalled();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText(/quest, points/i), { target: { value: "BTC" } });
+    fireEvent.change(screen.getByPlaceholderText(/social mining, daily check-in/i), { target: { value: "social mining, daily check-in" } });
+    fireEvent.change(screen.getByPlaceholderText(/galxe, layer3xyz, kaitoai/i), { target: { value: "galxe, layer3xyz" } });
+
+    fireEvent.click(screen.getByTestId("manual-run-button"));
+
+    await waitFor(() => {
+      expect(runManualMock).toHaveBeenCalled();
+    });
+
+    const payload = runManualMock.mock.calls[0]?.[0] as any;
+    expect(payload.search_spec.all_keywords).toEqual(["BTC"]);
+    expect(payload.search_spec.exact_phrases).toEqual(["social mining", "daily check-in"]);
+    expect(payload.search_spec.authors_include).toEqual(["galxe", "layer3xyz"]);
   });
 
   it("deletes the current task pack and resets back to an unbound draft", async () => {

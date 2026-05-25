@@ -1,4 +1,4 @@
-import { ChangeEvent, useMemo, useEffect, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { exportWorkspace, getWorkspace, importWorkspace, updateWorkspace, WorkspaceConfig } from "../api";
 import { formatUtcPlus8Time } from "../time";
 
@@ -39,6 +39,7 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   async function loadWorkspace() {
     setLoading(true);
@@ -129,21 +130,15 @@ export function SettingsPage() {
       </section>
 
       {error && (
-        <div className="workbench-feedback workbench-feedback-danger" role="status">
-          <div className="workbench-feedback-copy">
-            <div className="workbench-feedback-eyebrow">配置反馈</div>
-            <strong>{error}</strong>
-            <p>当前编辑器草稿会保留，方便继续修正后再保存或导入。</p>
-          </div>
+        <div className="settings-compact-feedback settings-compact-feedback-danger" data-testid="settings-compact-feedback" role="status">
+          <span>配置反馈</span>
+          <strong>{error}</strong>
         </div>
       )}
       {message && (
-        <div className="workbench-feedback workbench-feedback-success" role="status">
-          <div className="workbench-feedback-copy">
-            <div className="workbench-feedback-eyebrow">配置反馈</div>
-            <strong>{message}</strong>
-            <p>配置摘要和编辑器内容已更新。</p>
-          </div>
+        <div className="settings-compact-feedback settings-compact-feedback-success" data-testid="settings-compact-feedback" role="status">
+          <span>配置反馈</span>
+          <strong>{message}</strong>
         </div>
       )}
 
@@ -161,74 +156,30 @@ export function SettingsPage() {
           </div>
         </div>
 
-        <div className="dashboard-detail-grid settings-summary-grid">
-          <div className="dashboard-detail-item">
+        <div className="flat-row-list settings-summary-grid" data-testid="settings-summary-list">
+          <div className="flat-row">
             <span>{"\u6570\u636e\u5e93\u8def\u5f84"}</span>
             <strong>{draftWorkspace?.environment.db_path || "--"}</strong>
           </div>
-          <div className="dashboard-detail-item">
+          <div className="flat-row">
             <span>{"\u8fd0\u884c\u76ee\u5f55"}</span>
             <strong>{draftWorkspace?.environment.runtime_dir || "--"}</strong>
           </div>
-          <div className="dashboard-detail-item">
+          <div className="flat-row">
             <span>{".env \u6587\u4ef6"}</span>
             <strong>{draftWorkspace?.environment.env_file || "--"}</strong>
           </div>
-          <div className="dashboard-detail-item">
+          <div className="flat-row">
             <span>{"\u4efb\u52a1\u6570\u91cf"}</span>
             <strong>{jobCount}</strong>
           </div>
-          <div className="dashboard-detail-item">
+          <div className="flat-row">
             <span>{"\u4e0b\u4e00\u4e2a\u4efb\u52a1 ID"}</span>
             <strong>{draftWorkspace?.meta.next_job_id ?? "--"}</strong>
           </div>
-          <div className="dashboard-detail-item">
+          <div className="flat-row">
             <span>{"\u6700\u8fd1\u66f4\u65b0"}</span>
             <strong>{draftWorkspace ? formatUtcPlus8Time(draftWorkspace.meta.updated_at, "--") : "--"}</strong>
-          </div>
-        </div>
-      </section>
-
-      <section className="card settings-actions workbench-layer" data-testid="settings-actions">
-        <div className="settings-section-header workbench-section-header">
-          <div className="settings-section-copy workbench-section-copy">
-            <div className="settings-section-eyebrow workbench-section-eyebrow">{"\u8f7b\u91cf\u914d\u7f6e"}</div>
-            <h4 className="workbench-section-title">{"\u5de5\u4f5c\u533a\u64cd\u4f5c"}</h4>
-            <p className="kv">{"\u91cd\u65b0\u52a0\u8f7d\u7528\u4e8e\u53d6\u56de\u5f53\u524d\u914d\u7f6e\uff0c\u5bfc\u51fa\u5237\u65b0\u7528\u4e8e\u540c\u6b65\u670d\u52a1\u7aef\u89c6\u56fe\uff0c\u5bfc\u5165\u4f1a\u76f4\u63a5\u66ff\u6362\u7f16\u8f91\u5668\u8349\u7a3f\u3002"}</p>
-          </div>
-        </div>
-
-        <div className="collector-grid collector-grid-2 settings-actions-grid">
-          <div className="collector-card settings-action-card workbench-subsurface">
-            <div className="settings-card-title">{"\u5237\u65b0\u4e0e\u5bf9\u9f50"}</div>
-            <div className="collector-toolbar settings-card-actions">
-              <button
-                type="button"
-                className="ghost workbench-secondary-action"
-                aria-label="reload-workspace"
-                onClick={() => loadWorkspace().catch(() => undefined)}
-                disabled={loading}
-              >
-                {"\u91cd\u65b0\u52a0\u8f7d"}
-              </button>
-              <button
-                type="button"
-                className="ghost workbench-secondary-action"
-                aria-label="export-workspace"
-                onClick={handleExportRefresh}
-                disabled={loading}
-              >
-                {"\u5bfc\u51fa\u5237\u65b0"}
-              </button>
-            </div>
-          </div>
-
-          <div className="collector-card settings-action-card workbench-subsurface workbench-subsurface-muted">
-            <div className="settings-card-title">{"\u5bfc\u5165\u914d\u7f6e"}</div>
-            <label className="field">
-              <span>{"\u5bfc\u5165\u914d\u7f6e\u6587\u4ef6"}</span>
-              <input aria-label="import-workspace-file" type="file" accept="application/json,.json" onChange={handleImportFile} />
-            </label>
           </div>
         </div>
       </section>
@@ -238,11 +189,10 @@ export function SettingsPage() {
           <div className="settings-section-copy workbench-section-copy">
             <div className="settings-section-eyebrow workbench-section-eyebrow">{"JSON \u7f16\u8f91"}</div>
             <h4 className="workbench-section-title">{"\u914d\u7f6e JSON"}</h4>
-            <p className="kv">{"\u9700\u8981\u65f6\u53ef\u76f4\u63a5\u7f16\u8f91\u5b8c\u6574 JSON\u3002"}</p>
           </div>
         </div>
 
-        <div className="workbench-subsurface settings-editor-surface">
+        <div className="flat-section settings-editor-surface" data-testid="settings-editor-surface">
           <label className="field">
             <span>workspace.json</span>
             <textarea
@@ -255,6 +205,62 @@ export function SettingsPage() {
               style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}
             />
           </label>
+        </div>
+      </section>
+
+      <section className="card settings-actions workbench-layer" data-testid="settings-actions">
+        <div className="settings-section-header workbench-section-header">
+          <div className="settings-section-copy workbench-section-copy">
+            <div className="settings-section-eyebrow workbench-section-eyebrow">{"\u8f7b\u91cf\u914d\u7f6e"}</div>
+            <h4 className="workbench-section-title">{"\u5de5\u4f5c\u533a\u64cd\u4f5c"}</h4>
+          </div>
+        </div>
+
+        <div className="settings-actions-strip flat-actions" data-testid="settings-actions-strip">
+          <div className="settings-action-group">
+            <div className="settings-card-title">{"\u5237\u65b0\u4e0e\u5bf9\u9f50"}</div>
+            <div className="collector-toolbar settings-card-actions">
+              <button
+                type="button"
+                className="workbench-secondary-action"
+                aria-label="reload-workspace"
+                onClick={() => loadWorkspace().catch(() => undefined)}
+                disabled={loading}
+              >
+                {"\u91cd\u65b0\u52a0\u8f7d"}
+              </button>
+              <button
+                type="button"
+                className="workbench-secondary-action"
+                aria-label="export-workspace"
+                onClick={handleExportRefresh}
+                disabled={loading}
+              >
+                {"\u5bfc\u51fa\u5237\u65b0"}
+              </button>
+            </div>
+          </div>
+
+          <div className="settings-action-group">
+            <div className="settings-card-title">{"\u5bfc\u5165\u914d\u7f6e"}</div>
+            <button
+              type="button"
+              className="settings-import-button workbench-secondary-action"
+              data-testid="settings-import-button"
+              onClick={() => importInputRef.current?.click()}
+              disabled={loading}
+            >
+              {"\u4ece\u6587\u4ef6\u5bfc\u5165"}
+            </button>
+            <input
+              ref={importInputRef}
+              className="settings-file-input-hidden"
+              aria-label="import-workspace-file"
+              type="file"
+              accept="application/json,.json"
+              onChange={handleImportFile}
+            />
+          </div>
         </div>
       </section>
     </div>

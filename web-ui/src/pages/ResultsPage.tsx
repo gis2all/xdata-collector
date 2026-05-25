@@ -17,19 +17,22 @@ import { ResultsPageHeader } from "./results/ResultsPageHeader";
 import { ResultsTableManager } from "./results/ResultsTableManager";
 import { formatUtcPlus8Time } from "../time";
 
-const RESULTS_VISIBLE_COLUMNS_KEY = "results.visibleColumns.v1";
 const RESULTS_COLUMN_WIDTHS_KEY = "results.columnWidths.v1";
 const PAGE_SIZE = 100;
-const RESULTS_SELECT_COLUMN_WIDTH = 92;
+const RESULTS_SELECT_COLUMN_WIDTH = 48;
 const RESULTS_OPERATION_COLUMN_WIDTH = 88;
+const RESULTS_SPLIT_LAYOUT_BREAKPOINT = 1180;
+const RESULTS_MIN_TABLE_PANE_WIDTH = 720;
+const RESULTS_MIN_DETAIL_PANE_WIDTH = 380;
+const RESULTS_RESIZER_WIDTH = 20;
 
 const TEXT = {
   title: "\u7ed3\u679c\u67e5\u8be2",
-  subtitle: "\u652f\u6301\u5173\u952e\u8bcd\u7b5b\u9009\u3001\u5237\u65b0\u548c\u7b5b\u9009\u7ed3\u679c / \u539f\u59cb\u7ed3\u679c\u53cc\u8868\u6d4f\u89c8\u3002",
+  subtitle: "\u7b5b\u9009\u3001\u67e5\u770b\u3001\u6279\u91cf\u5904\u7406\u7ed3\u679c\u3002",
   curatedTab: "\u7b5b\u9009\u7ed3\u679c",
   rawTab: "\u539f\u59cb\u7ed3\u679c",
-  keywordLabel: "keyword",
-  keywordPlaceholder: "\u8f93\u5165\u5173\u952e\u8bcd\uff0c\u6309\u5f53\u524d\u8868\u53ef\u89c1\u6587\u672c\u5b57\u6bb5\u68c0\u7d22",
+  keywordLabel: "\u5173\u952e\u8bcd",
+  keywordPlaceholder: "\u5173\u952e\u8bcd",
   refresh: "\u5237\u65b0\u5217\u8868",
   fields: "\u5b57\u6bb5",
   resetColumns: "\u6062\u590d\u9ed8\u8ba4",
@@ -71,10 +74,13 @@ type ColumnWidthsByTable = Record<ItemTable, Partial<Record<ItemSortField, numbe
 
 type ColumnResizeState = {
   table: ItemTable;
-  key: ItemSortField;
+  leftKey: ItemSortField;
+  rightKey: ItemSortField;
   startX: number;
-  startWidth: number;
-  minWidth: number;
+  leftStartWidth: number;
+  rightStartWidth: number;
+  leftMinWidth: number;
+  rightMinWidth: number;
 };
 
 function truncate(value: unknown, maxLength = 120) {
@@ -185,6 +191,13 @@ const CURATED_COLUMN_DEFINITIONS: ColumnDefinition[] = [
     render: (item) => formatUtcPlus8Time((item as CuratedItemRecord).created_at_x),
   },
   {
+    key: "fetched_at",
+    label: "fetched_at",
+    defaultVisible: true,
+    width: 220,
+    render: (item) => formatUtcPlus8Time((item as CuratedItemRecord).fetched_at),
+  },
+  {
     key: "reasons_json",
     label: "reasons_json",
     defaultVisible: false,
@@ -216,7 +229,7 @@ const RAW_COLUMN_DEFINITIONS: ColumnDefinition[] = [
   {
     key: "tweet_id",
     label: "tweet_id",
-    defaultVisible: true,
+    defaultVisible: false,
     width: 140,
     render: (item) => (item as RawItemRecord).tweet_id || "--",
   },
@@ -274,7 +287,7 @@ const RAW_COLUMN_DEFINITIONS: ColumnDefinition[] = [
   {
     key: "fetched_at",
     label: "fetched_at",
-    defaultVisible: false,
+    defaultVisible: true,
     width: 220,
     render: (item) => formatUtcPlus8Time((item as RawItemRecord).fetched_at),
   },
@@ -294,38 +307,6 @@ function orderVisibleColumns(table: ItemTable, keys: Iterable<ItemSortField>) {
   const allowed = COLUMN_DEFINITIONS_BY_TABLE[table].map((column) => column.key);
   const keySet = new Set(keys);
   return allowed.filter((key) => keySet.has(key));
-}
-
-function normalizeVisibleColumnsForTable(table: ItemTable, value: unknown): ItemSortField[] {
-  if (!Array.isArray(value)) {
-    return DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
-  }
-  const allowed = new Set(COLUMN_DEFINITIONS_BY_TABLE[table].map((column) => column.key));
-  const selected = value.filter((entry): entry is ItemSortField => typeof entry === "string" && allowed.has(entry as ItemSortField));
-  const ordered = orderVisibleColumns(table, selected);
-  return ordered.length ? ordered : DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
-}
-
-function readVisibleColumns(table: ItemTable) {
-  if (typeof window === "undefined") {
-    return DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
-  }
-  const raw = window.localStorage.getItem(RESULTS_VISIBLE_COLUMNS_KEY);
-  if (raw == null) {
-    return DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
-  }
-  try {
-    return normalizeVisibleColumnsForTable(table, JSON.parse(raw));
-  } catch {
-    return DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table];
-  }
-}
-
-function writeVisibleColumns(visibleColumns: ItemSortField[]) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.setItem(RESULTS_VISIBLE_COLUMNS_KEY, JSON.stringify(visibleColumns));
 }
 
 function emptyColumnWidths(): ColumnWidthsByTable {
@@ -438,7 +419,7 @@ function getCellContentClass(field: ItemSortField) {
 }
 
 export function ResultsPage() {
-  const [table, setTable] = useState<ItemTable>("curated");
+  const [table, setTable] = useState<ItemTable>("raw");
   const [items, setItems] = useState<ResultItemRecord[]>([]);
   const [activeRowId, setActiveRowId] = useState<number | null>(null);
   const [keywordInput, setKeywordInput] = useState("");
@@ -447,7 +428,10 @@ export function ResultsPage() {
   const [total, setTotal] = useState(0);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [allMatchingSelected, setAllMatchingSelected] = useState(false);
-  const [visibleColumns, setVisibleColumns] = useState<ItemSortField[]>(() => readVisibleColumns("curated"));
+  const [visibleColumnsByTable, setVisibleColumnsByTable] = useState<Record<ItemTable, ItemSortField[]>>({
+    curated: [...DEFAULT_VISIBLE_COLUMNS_BY_TABLE.curated],
+    raw: [...DEFAULT_VISIBLE_COLUMNS_BY_TABLE.raw],
+  });
   const [columnWidthsByTable, setColumnWidthsByTable] = useState<ColumnWidthsByTable>(() => readColumnWidths());
   const [fieldMenuOpen, setFieldMenuOpen] = useState(false);
   const [sortBy, setSortBy] = useState<ItemSortField>("id");
@@ -457,8 +441,14 @@ export function ResultsPage() {
   const [message, setMessage] = useState("");
   const [isResizingColumn, setIsResizingColumn] = useState(false);
   const [resizingColumnId, setResizingColumnId] = useState<string | null>(null);
+  const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? RESULTS_SPLIT_LAYOUT_BREAKPOINT : window.innerWidth));
+  const [leftPaneWidth, setLeftPaneWidth] = useState<number | null>(null);
+  const [isResizingWorkspace, setIsResizingWorkspace] = useState(false);
   const resizeStateRef = useRef<ColumnResizeState | null>(null);
+  const workspaceLayoutRef = useRef<HTMLElement | null>(null);
+  const workspaceDragBoundsRef = useRef<{ left: number; width: number } | null>(null);
 
+  const visibleColumns = visibleColumnsByTable[table];
   const columnDefinitions = COLUMN_DEFINITIONS_BY_TABLE[table];
   const visibleColumnDefinitions = columnDefinitions.filter((column) => visibleColumns.includes(column.key));
   const currentColumnWidths = columnWidthsByTable[table];
@@ -488,18 +478,31 @@ export function ResultsPage() {
   const tableName = TABLE_NAMES[table];
   const tableLabel = TABLE_LABELS[table];
   const activeKeywordLabel = appliedKeyword || "\u5168\u90e8";
+  const isSplitLayout = viewportWidth > RESULTS_SPLIT_LAYOUT_BREAKPOINT;
   const dedupeConfirmText = `\u786e\u5b9a\u5bf9\u6574\u4e2a ${tableName} \u8868\u6267\u884c\u53bb\u91cd\u5417\uff1f\u6b64\u64cd\u4f5c\u4f1a\u5220\u9664\u91cd\u590d\u884c\u3002`;
   const batchDeleteConfirm = allMatchingSelected
     ? "\u786e\u5b9a\u786c\u5220\u9664\u5f53\u524d\u7b5b\u9009\u7ed3\u679c\u7684\u5168\u90e8\u8bb0\u5f55\u5417\uff1f\u6b64\u64cd\u4f5c\u65e0\u6cd5\u6062\u590d\u3002"
     : "\u786e\u5b9a\u786c\u5220\u9664\u5df2\u52fe\u9009\u7684\u8bb0\u5f55\u5417\uff1f\u6b64\u64cd\u4f5c\u65e0\u6cd5\u6062\u590d\u3002";
 
   useEffect(() => {
-    writeVisibleColumns(visibleColumns);
-  }, [visibleColumns]);
-
-  useEffect(() => {
     writeColumnWidths(columnWidthsByTable);
   }, [columnWidthsByTable]);
+
+  function applyWorkspacePaneWidth(nextWidth: number | null) {
+    setLeftPaneWidth(nextWidth);
+    if (!workspaceLayoutRef.current) return;
+    workspaceLayoutRef.current.style.gridTemplateColumns = nextWidth === null
+      ? ""
+      : `${nextWidth}px ${RESULTS_RESIZER_WIDTH}px minmax(${RESULTS_MIN_DETAIL_PANE_WIDTH}px, 1fr)`;
+  }
+
+  function updateDraggedWorkspaceWidth(clientX: number | undefined) {
+    const bounds = workspaceDragBoundsRef.current;
+    if (!bounds || typeof clientX !== "number" || Number.isNaN(clientX)) return;
+    const maxWidth = Math.max(RESULTS_MIN_TABLE_PANE_WIDTH, bounds.width - RESULTS_MIN_DETAIL_PANE_WIDTH - RESULTS_RESIZER_WIDTH);
+    const nextWidth = Math.min(Math.max(clientX - bounds.left, RESULTS_MIN_TABLE_PANE_WIDTH), maxWidth);
+    applyWorkspacePaneWidth(nextWidth);
+  }
 
   useEffect(() => {
     function updateResizedColumnWidth(clientX: number | undefined) {
@@ -507,20 +510,27 @@ export function ResultsPage() {
       if (!resizeState || typeof clientX !== "number" || Number.isNaN(clientX)) {
         return;
       }
-      const nextWidth = Math.max(
-        resizeState.minWidth,
-        Math.round(resizeState.startWidth + (clientX - resizeState.startX)),
+      const delta = clientX - resizeState.startX;
+      const pairTotal = resizeState.leftStartWidth + resizeState.rightStartWidth;
+      const nextLeftWidth = Math.min(
+        Math.max(Math.round(resizeState.leftStartWidth + delta), resizeState.leftMinWidth),
+        pairTotal - resizeState.rightMinWidth,
       );
+      const nextRightWidth = pairTotal - nextLeftWidth;
       setColumnWidthsByTable((current) => {
         const tableWidths = current[resizeState.table];
-        if (tableWidths?.[resizeState.key] === nextWidth) {
+        if (
+          tableWidths?.[resizeState.leftKey] === nextLeftWidth &&
+          tableWidths?.[resizeState.rightKey] === nextRightWidth
+        ) {
           return current;
         }
         return {
           ...current,
           [resizeState.table]: {
             ...tableWidths,
-            [resizeState.key]: nextWidth,
+            [resizeState.leftKey]: nextLeftWidth,
+            [resizeState.rightKey]: nextRightWidth,
           },
         };
       });
@@ -558,6 +568,54 @@ export function ResultsPage() {
       document.body.style.cursor = "";
     };
   }, []);
+
+  useEffect(() => {
+    function handleWindowResize() {
+      setViewportWidth(window.innerWidth);
+    }
+
+    function handleWorkspacePointerMove(event: PointerEvent) {
+      updateDraggedWorkspaceWidth(event.clientX);
+    }
+
+    function handleWorkspaceMouseMove(event: MouseEvent) {
+      updateDraggedWorkspaceWidth(event.clientX);
+    }
+
+    function stopWorkspaceResizing() {
+      workspaceDragBoundsRef.current = null;
+      setIsResizingWorkspace(false);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    }
+
+    window.addEventListener("resize", handleWindowResize);
+    window.addEventListener("pointermove", handleWorkspacePointerMove);
+    window.addEventListener("pointerup", stopWorkspaceResizing);
+    window.addEventListener("pointercancel", stopWorkspaceResizing);
+    window.addEventListener("mousemove", handleWorkspaceMouseMove);
+    window.addEventListener("mouseup", stopWorkspaceResizing);
+
+    return () => {
+      window.removeEventListener("resize", handleWindowResize);
+      window.removeEventListener("pointermove", handleWorkspacePointerMove);
+      window.removeEventListener("pointerup", stopWorkspaceResizing);
+      window.removeEventListener("pointercancel", stopWorkspaceResizing);
+      window.removeEventListener("mousemove", handleWorkspaceMouseMove);
+      window.removeEventListener("mouseup", stopWorkspaceResizing);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isSplitLayout) return;
+    setIsResizingWorkspace(false);
+    applyWorkspacePaneWidth(null);
+    workspaceDragBoundsRef.current = null;
+    document.body.style.userSelect = "";
+    document.body.style.cursor = "";
+  }, [isSplitLayout]);
 
   async function load(options?: {
     table?: ItemTable;
@@ -641,7 +699,7 @@ export function ResultsPage() {
   }
 
   useEffect(() => {
-    void load({ table: "curated", page: 1, keyword: appliedKeyword, sortBy, sortDir });
+    void load({ table: "raw", page: 1, keyword: appliedKeyword, sortBy, sortDir });
     // initial page load only; refresh and sorting are explicit actions
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -670,15 +728,15 @@ export function ResultsPage() {
     }
     setFieldMenuOpen(false);
     const targetColumns = COLUMN_DEFINITIONS_BY_TABLE[nextTable].map((column) => column.key);
-    const hasInvalidVisibleColumns = visibleColumns.some((column) => !targetColumns.includes(column));
-    const nextVisibleColumns = hasInvalidVisibleColumns
-      ? DEFAULT_VISIBLE_COLUMNS_BY_TABLE[nextTable]
-      : normalizeVisibleColumnsForTable(nextTable, visibleColumns);
+    const nextVisibleColumns = visibleColumnsByTable[nextTable];
     const nextSortBy = sortFieldSet.has(sortBy) && targetColumns.includes(sortBy) ? sortBy : "id";
     const nextSortDir = sortFieldSet.has(sortBy) && targetColumns.includes(sortBy) ? sortDir : "desc";
 
     setTable(nextTable);
-    setVisibleColumns(nextVisibleColumns);
+    setVisibleColumnsByTable((current) => ({
+      ...current,
+      [nextTable]: nextVisibleColumns,
+    }));
     setSortBy(nextSortBy);
     setSortDir(nextSortDir);
     setSelectedIds([]);
@@ -781,45 +839,76 @@ export function ResultsPage() {
   }
 
   function toggleColumnVisibility(key: ItemSortField) {
-    setVisibleColumns((current) => {
-      if (current.includes(key)) {
-        return current.filter((field) => field !== key);
-      }
-      return orderVisibleColumns(table, [...current, key]);
+    setVisibleColumnsByTable((current) => {
+      const tableColumns = current[table];
+      const nextColumns = tableColumns.includes(key)
+        ? tableColumns.filter((field) => field !== key)
+        : orderVisibleColumns(table, [...tableColumns, key]);
+      return {
+        ...current,
+        [table]: nextColumns,
+      };
     });
   }
 
   function handleRestoreDefaultColumns() {
-    setVisibleColumns(DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table]);
+    setVisibleColumnsByTable((current) => ({
+      ...current,
+      [table]: [...DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table]],
+    }));
   }
 
-  function startColumnResize(column: ColumnDefinition & { currentWidth: number }, clientX: number | undefined) {
-    if (typeof clientX !== "number" || Number.isNaN(clientX)) {
+  function startColumnResize(
+    leftColumn: ColumnDefinition & { currentWidth: number },
+    rightColumn: ColumnDefinition & { currentWidth: number } | undefined,
+    clientX: number | undefined,
+  ) {
+    if (typeof clientX !== "number" || Number.isNaN(clientX) || !rightColumn) {
       return;
     }
     resizeStateRef.current = {
       table,
-      key: column.key,
+      leftKey: leftColumn.key,
+      rightKey: rightColumn.key,
       startX: clientX,
-      startWidth: column.currentWidth,
-      minWidth: getColumnMinWidth(column),
+      leftStartWidth: leftColumn.currentWidth,
+      rightStartWidth: rightColumn.currentWidth,
+      leftMinWidth: getColumnMinWidth(leftColumn),
+      rightMinWidth: getColumnMinWidth(rightColumn),
     };
     setIsResizingColumn(true);
-    setResizingColumnId(`${table}:${column.key}`);
+    setResizingColumnId(`${table}:${leftColumn.key}`);
     document.body.style.userSelect = "none";
     document.body.style.cursor = "col-resize";
+  }
+
+  function startWorkspaceResizing() {
+    if (!isSplitLayout || !workspaceLayoutRef.current) return;
+    const bounds = workspaceLayoutRef.current.getBoundingClientRect();
+    workspaceDragBoundsRef.current = { left: bounds.left, width: bounds.width };
+    setIsResizingWorkspace(true);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+  }
+
+  function handleWorkspaceResizerPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    startWorkspaceResizing();
+    event.preventDefault();
+  }
+
+  function handleWorkspaceResizerMouseDown(event: React.MouseEvent<HTMLDivElement>) {
+    startWorkspaceResizing();
+    event.preventDefault();
   }
 
   return (
     <div className="results-page" data-testid="results-page">
       <ResultsPageHeader title={TEXT.title} subtitle={TEXT.subtitle} />
 
-      <section className="results-filter-layer workbench-layer" data-testid="results-filter-layer">
-        <div className="results-filter-summary-panel workbench-summary-panel" data-testid="results-filter-summary-panel">
+      <section className="results-control-layer workbench-layer" data-testid="results-control-layer">
+        <div className="results-control-summary flat-meta-strip" data-testid="results-control-summary">
           <div className="results-filter-copy workbench-section-copy">
-            <div className="workbench-section-eyebrow">浏览范围</div>
-            <div className="results-filter-title workbench-section-title">当前浏览范围</div>
-            <div className="kv">切换结果表、输入关键词，并按当前视图刷新列表。</div>
+            <div className="results-filter-title workbench-section-title">当前结果表</div>
           </div>
           <div className="results-filter-summary workbench-pill-row" data-testid="results-filter-summary">
             <div className="results-summary-pill workbench-pill">{`\u5f53\u524d\u8868\uff1a${tableLabel}`}</div>
@@ -827,7 +916,7 @@ export function ResultsPage() {
           </div>
         </div>
         <div
-          className="results-filter-toolbar-shell workbench-subsurface workbench-subsurface-muted"
+          className="results-filter-toolbar-shell flat-actions"
           data-testid="results-filter-toolbar-shell"
         >
           <div className="results-filter-controls results-filter-toolbar" data-testid="results-filter-toolbar">
@@ -849,7 +938,6 @@ export function ResultsPage() {
                 </button>
               </div>
               <label className="field results-filter-keyword-field">
-                <span>{TEXT.keywordLabel}</span>
                 <input
                   placeholder={TEXT.keywordPlaceholder}
                   value={keywordInput}
@@ -868,64 +956,64 @@ export function ResultsPage() {
                 {TEXT.refresh}
               </button>
             </div>
+            <ResultsTableManager
+              total={total}
+              selectedCount={selectedCount}
+              allMatchingSelected={allMatchingSelected}
+              showSelectAllMatching={showSelectAllMatching}
+              fieldsLabel={TEXT.fields}
+              resetColumnsLabel={TEXT.resetColumns}
+              batchDeleteLabel={TEXT.batchDelete}
+              dedupeLabel={TEXT.dedupe}
+              clearSelectionLabel={TEXT.clearSelection}
+              loading={loading}
+              fieldMenuOpen={fieldMenuOpen}
+              fieldMenu={fieldMenuOpen ? (
+                <div className="results-field-menu" data-testid="results-field-menu">
+                  <div className="results-field-menu-header">
+                    <div className="results-field-menu-copy">
+                      <div className="results-field-menu-title">列显示</div>
+                      <div className="kv">隐藏列会保留宽度设置，重新显示时会恢复。</div>
+                    </div>
+                    <span className="results-summary-pill workbench-pill">{`已选 ${visibleColumnDefinitions.length} 列`}</span>
+                  </div>
+                  <div className="results-field-list">
+                    {columnDefinitions.map((column) => (
+                      <label key={column.key} className="results-field-option">
+                        <input
+                          type="checkbox"
+                          aria-label={`toggle-column-${column.key}`}
+                          checked={visibleColumns.includes(column.key)}
+                          onChange={() => toggleColumnVisibility(column.key)}
+                        />
+                        <span>{column.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              onSelectAllMatching={handleSelectAllMatching}
+              onClearSelection={handleClearSelection}
+              onToggleFields={() => setFieldMenuOpen((current) => !current)}
+              onRestoreDefaultColumns={handleRestoreDefaultColumns}
+              onBatchDelete={() => void handleBatchDelete()}
+              onDedupe={() => void handleDedupe()}
+            />
           </div>
         </div>
       </section>
 
-      <ResultsTableManager
-        tableName={tableName}
-        total={total}
-        selectedCount={selectedCount}
-        allMatchingSelected={allMatchingSelected}
-        showSelectAllMatching={showSelectAllMatching}
-        fieldsLabel={TEXT.fields}
-        resetColumnsLabel={TEXT.resetColumns}
-        batchDeleteLabel={TEXT.batchDelete}
-        dedupeLabel={TEXT.dedupe}
-        clearSelectionLabel={TEXT.clearSelection}
-        loading={loading}
-        fieldMenuOpen={fieldMenuOpen}
-        fieldMenu={fieldMenuOpen ? (
-          <div className="results-field-menu" data-testid="results-field-menu">
-            <div className="results-field-menu-header">
-              <div className="results-field-menu-copy">
-                <div className="results-field-menu-title">列显示</div>
-                <div className="kv">隐藏列会保留宽度设置，重新显示时会恢复。</div>
-              </div>
-              <span className="results-summary-pill workbench-pill">{`已选 ${visibleColumnDefinitions.length} 列`}</span>
-            </div>
-            <div className="results-field-list">
-              {columnDefinitions.map((column) => (
-                <label key={column.key} className="results-field-option">
-                  <input
-                    type="checkbox"
-                    aria-label={`toggle-column-${column.key}`}
-                    checked={visibleColumns.includes(column.key)}
-                    onChange={() => toggleColumnVisibility(column.key)}
-                  />
-                  <span>{column.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        onSelectAllMatching={handleSelectAllMatching}
-        onClearSelection={handleClearSelection}
-        onToggleFields={() => setFieldMenuOpen((current) => !current)}
-        onRestoreDefaultColumns={handleRestoreDefaultColumns}
-        onBatchDelete={() => void handleBatchDelete()}
-        onDedupe={() => void handleDedupe()}
-      />
-
-      <section className="results-main-workspace" data-testid="results-main-workspace">
+      <section
+        ref={workspaceLayoutRef}
+        className={`results-main-workspace results-main-workspace-aligned${isResizingWorkspace ? " dragging" : ""}`}
+        data-testid="results-main-workspace"
+      >
         <div className="results-table-pane" data-testid="results-table-pane">
-          <div className="results-table-headband workbench-summary-panel" data-testid="results-table-headband">
-            <div className="results-table-headband-copy">
-              <div className="workbench-section-eyebrow">{"数据表格"}</div>
-              <div className="results-table-headband-title">{"当前结果表"}</div>
-              <div className="kv">{"按当前表浏览记录，支持拖动列宽、排序、勾选批量操作，并与右侧详情轨联动查看。"} </div>
+          <div className="results-table-strip flat-meta-strip" data-testid="results-table-headband">
+            <div className="results-table-strip-copy">
+              <div className="results-table-strip-title">{"当前结果表"}</div>
             </div>
-            <div className="results-table-headband-meta workbench-pill-row">
+            <div className="results-table-strip-meta workbench-pill-row">
               <span className="results-summary-pill workbench-pill">{`可见列 ${visibleColumnDefinitions.length} 个`}</span>
               <span className="results-summary-pill workbench-pill">{`当前表：${tableLabel}`}</span>
               <span className="results-summary-pill workbench-pill">{`列宽：可拖动调整`}</span>
@@ -956,12 +1044,12 @@ export function ResultsPage() {
           </div>
 
           {total > 0 && (
-            <div className="results-pagination workbench-subsurface" data-testid="results-pagination">
+            <div className="results-pagination flat-meta-strip" data-testid="results-pagination">
               <span className="kv">{`\u5171 ${total} \u6761`}</span>
               <div className="row">
                 <button
                   type="button"
-                  className="ghost workbench-secondary-action"
+                  className="workbench-secondary-action"
                   aria-label="results-prev-page"
                   disabled={loading || page <= 1}
                   onClick={() => void load({ table, page: page - 1 })}
@@ -971,7 +1059,7 @@ export function ResultsPage() {
                 <span className="kv">{`\u7b2c ${page} / ${totalPages} \u9875`}</span>
                 <button
                   type="button"
-                  className="ghost workbench-secondary-action"
+                  className="workbench-secondary-action"
                   aria-label="results-next-page"
                   disabled={loading || page >= totalPages}
                   onClick={() => void load({ table, page: page + 1 })}
@@ -993,7 +1081,7 @@ export function ResultsPage() {
               </colgroup>
               <thead>
                 <tr>
-                  <th className="results-th-cell" style={{ width: RESULTS_SELECT_COLUMN_WIDTH, minWidth: RESULTS_SELECT_COLUMN_WIDTH }}>
+                  <th className="results-th-cell table-select-cell" style={{ width: RESULTS_SELECT_COLUMN_WIDTH, minWidth: RESULTS_SELECT_COLUMN_WIDTH }}>
                     <label className="row">
                       <input
                         type="checkbox"
@@ -1001,10 +1089,12 @@ export function ResultsPage() {
                         checked={allSelectedOnPage}
                         onChange={toggleSelectAll}
                       />
-                      <span>{TEXT.selectPage}</span>
                     </label>
                   </th>
-                  {resolvedVisibleColumnDefinitions.map((column) => (
+                  {resolvedVisibleColumnDefinitions.map((column, index) => {
+                    const nextColumn = resolvedVisibleColumnDefinitions[index + 1];
+                    const canResize = nextColumn != null;
+                    return (
                     <th
                       key={column.key}
                       className="results-th-cell"
@@ -1016,22 +1106,25 @@ export function ResultsPage() {
                           void handleSort(field, direction);
                         })}
                       </div>
-                      <div
-                        className={`results-column-resizer${resizingColumnId === `${table}:${column.key}` ? " dragging" : ""}`}
-                        role="separator"
-                        aria-orientation="vertical"
-                        aria-label={`resize-column-${column.key}`}
-                        onPointerDown={(event) => {
-                          startColumnResize(column, event.clientX);
-                          event.preventDefault();
-                        }}
-                        onMouseDown={(event) => {
-                          startColumnResize(column, event.clientX);
-                          event.preventDefault();
-                        }}
-                      />
+                      {canResize ? (
+                        <div
+                          className={`results-column-resizer${resizingColumnId === `${table}:${column.key}` ? " dragging" : ""}`}
+                          role="separator"
+                          aria-orientation="vertical"
+                          aria-label={`resize-column-${column.key}`}
+                          onPointerDown={(event) => {
+                            startColumnResize(column, nextColumn, event.clientX);
+                            event.preventDefault();
+                          }}
+                          onMouseDown={(event) => {
+                            startColumnResize(column, nextColumn, event.clientX);
+                            event.preventDefault();
+                          }}
+                        />
+                      ) : null}
                     </th>
-                  ))}
+                  );
+                  })}
                   <th className="results-th-cell" style={{ width: RESULTS_OPERATION_COLUMN_WIDTH, minWidth: RESULTS_OPERATION_COLUMN_WIDTH }}>
                     {TEXT.operation}
                   </th>
@@ -1045,7 +1138,7 @@ export function ResultsPage() {
                     data-row-active={activeRowId === item.id ? "true" : "false"}
                     onClick={() => setActiveRowId(item.id)}
                   >
-                    <td onClick={(event) => event.stopPropagation()}>
+                    <td className="table-select-cell" onClick={(event) => event.stopPropagation()}>
                       <input
                         type="checkbox"
                         aria-label={`select-item-${item.id}`}
@@ -1065,7 +1158,7 @@ export function ResultsPage() {
                       <div className="table-actions">
                         <button
                           type="button"
-                          className="danger workbench-danger-action"
+                          className="workbench-danger-action"
                           aria-label={`delete-item-${item.id}`}
                           onClick={() => void handleDeleteOne(item)}
                           disabled={loading}
@@ -1088,6 +1181,18 @@ export function ResultsPage() {
           )}
           {!loading && items.length === 0 && <div className="drawer-empty">{TEXT.empty}</div>}
         </div>
+
+        {isSplitLayout && (
+          <div
+            className={`results-resizer${isResizingWorkspace ? " dragging" : ""}`}
+            data-testid="results-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整结果区域宽度"
+            onPointerDown={handleWorkspaceResizerPointerDown}
+            onMouseDown={handleWorkspaceResizerMouseDown}
+          />
+        )}
 
         <aside className="results-detail-rail workbench-layer" data-testid="results-detail-rail">
           <ResultsDetailRail

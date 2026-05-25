@@ -48,6 +48,10 @@ describe("SettingsPage", () => {
     expect(screen.getByTestId("settings-summary")).toBeInTheDocument();
     expect(screen.getByTestId("settings-actions")).toBeInTheDocument();
     expect(screen.getByTestId("settings-editor-section")).toBeInTheDocument();
+    expect(screen.getByTestId("settings-editor-section").compareDocumentPosition(screen.getByTestId("settings-actions")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByTestId("settings-summary-list")).toHaveClass("flat-row-list");
+    expect(screen.getByTestId("settings-actions-strip")).toHaveClass("flat-actions");
+    expect(screen.getByTestId("settings-editor-surface")).toHaveClass("flat-section");
 
     expect(screen.getByRole("heading", { name: TEXT.title })).toBeInTheDocument();
     expect(within(screen.getByTestId("settings-summary")).getByText(TEXT.summaryTitle)).toBeInTheDocument();
@@ -59,7 +63,10 @@ describe("SettingsPage", () => {
     expect(screen.getByText("0")).toBeInTheDocument();
     expect(screen.getByLabelText("save-workspace")).toHaveClass("workbench-primary-action");
     expect(screen.getByLabelText("reload-workspace")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByLabelText("reload-workspace")).not.toHaveClass("ghost");
     expect(screen.getByLabelText("export-workspace")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByTestId("settings-import-button")).toHaveClass("workbench-secondary-action");
+    expect(screen.getByLabelText("import-workspace-file")).toHaveClass("settings-file-input-hidden");
   });
 
   it("loads workspace json and saves edited content", async () => {
@@ -80,6 +87,8 @@ describe("SettingsPage", () => {
     });
 
     expect(updateWorkspaceMock.mock.calls[0]?.[0].meta.updated_at).toBe("2030-01-01T00:00:00+00:00");
+    expect(screen.getByTestId("settings-compact-feedback")).toHaveClass("settings-compact-feedback-success");
+    expect(screen.queryByText("配置摘要和编辑器内容已更新。")).not.toBeInTheDocument();
   });
 
   it("reloads editor content from export endpoint", async () => {
