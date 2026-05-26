@@ -122,9 +122,10 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 补充口径：
 
 - `x_items_raw` 和 `x_items_curated` 都保留 `fetched_at`
-- 每次成功写入 raw 后，会自动对 `x_items_raw` 执行一次全表去重
+- `x_items_raw` 只保存通过搜索条件过滤后的原始结果，不再保存抓取但被搜索条件排除的中间数据
+- raw 只做单次 run 内存去重；不会在成功 run 后自动执行全表去重
 - 每次成功写入 curated 后，会自动对 `x_items_curated` 执行一次全表去重
-- raw 自动去重统计会写入运行结果 `stats`，使用 `raw_dedupe_*` 一组键
+- raw 全表去重仍可通过结果页或 `POST /items/dedupe` 手动触发
 
 ## 核心架构
 
@@ -209,8 +210,8 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
    - 普通空格保留在单个条目内部
    - 支持多词短语，不会再吞空格或逗号
 6. 前端调用 `POST /manual/run`
-7. `run_manual()` 组装查询、拉取 X 结果、写 raw、评估规则、写 curated
-8. 成功 run 后会自动对 `x_items_raw` 和 `x_items_curated` 执行全表去重
+7. `run_manual()` 组装查询、拉取 X 结果、单次 run 内去重、应用搜索过滤条件、写 raw、评估规则、写 curated
+8. 成功 run 后只会自动对 `x_items_curated` 执行全表去重；raw 表保持“搜索条件通过后的原始结果”语义
 
 ### 2. 自动任务
 

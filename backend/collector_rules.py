@@ -7,74 +7,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from backend.models import SearchResult
-from backend.opportunity_signals import (
-    ACTION_KEYWORDS,
-    CRYPTO_CONTEXT_KEYWORDS,
-    TRADE_GATE_KEYWORDS,
-    TRUSTED_AUTHORS,
-)
-
 DEFAULT_LEVELS = [
     {"id": "S", "label": "强信号", "min_score": 90, "color": "#dc2626"},
     {"id": "A", "label": "高优先级", "min_score": 60, "color": "#ea580c"},
     {"id": "B", "label": "观察", "min_score": 30, "color": "#2563eb"},
 ]
 
-DEFAULT_RULES = [
-    {
-        "id": "exclude-trade-gated",
-        "name": "排除交易门槛",
-        "enabled": True,
-        "operator": "AND",
-        "conditions": [
-            {"type": "text_contains_any", "values": list(TRADE_GATE_KEYWORDS)},
-        ],
-        "effect": {"action": "exclude", "score": 0, "level": ""},
-    },
-    {
-        "id": "trusted-author-action",
-        "name": "官方账号 + 行动词",
-        "enabled": True,
-        "operator": "AND",
-        "conditions": [
-            {"type": "author_in", "values": sorted(TRUSTED_AUTHORS)},
-            {"type": "text_contains_any", "values": list(ACTION_KEYWORDS)},
-        ],
-        "effect": {"action": "score", "score": 65, "level": "A"},
-    },
-    {
-        "id": "action-keywords",
-        "name": "命中行动词",
-        "enabled": True,
-        "operator": "AND",
-        "conditions": [
-            {"type": "text_contains_any", "values": list(ACTION_KEYWORDS)},
-        ],
-        "effect": {"action": "score", "score": 35, "level": "B"},
-    },
-    {
-        "id": "crypto-context",
-        "name": "命中加密上下文",
-        "enabled": True,
-        "operator": "AND",
-        "conditions": [
-            {"type": "text_contains_any", "values": list(CRYPTO_CONTEXT_KEYWORDS)},
-        ],
-        "effect": {"action": "score", "score": 20, "level": "B"},
-    },
-    {
-        "id": "high-engagement",
-        "name": "高互动增强",
-        "enabled": True,
-        "operator": "AND",
-        "conditions": [
-            {"type": "metric_at_least", "metric": "views", "value": 500},
-            {"type": "metric_at_least", "metric": "replies", "value": 3},
-            {"type": "text_contains_any", "values": list(ACTION_KEYWORDS)},
-        ],
-        "effect": {"action": "score", "score": 20, "level": "A"},
-    },
-]
+DEFAULT_RULES: list[dict[str, Any]] = []
 
 EMOJI_RE = re.compile("[\U0001F300-\U0001FAFF\u2600-\u27BF]")
 HASHTAG_RE = re.compile(r"(^|\s)#\w+")
@@ -306,7 +245,7 @@ def normalize_rule_set_definition(payload: dict[str, Any] | None) -> dict[str, A
     if not normalized_levels:
         normalized_levels = copy.deepcopy(DEFAULT_LEVELS)
 
-    rules = incoming.get("rules") if isinstance(incoming.get("rules"), list) and incoming.get("rules") else copy.deepcopy(DEFAULT_RULES)
+    rules = incoming.get("rules") if isinstance(incoming.get("rules"), list) else copy.deepcopy(DEFAULT_RULES)
     normalized_rules: list[dict[str, Any]] = []
     level_ids = {level["id"] for level in normalized_levels}
     for index, rule in enumerate(rules, start=1):
@@ -332,8 +271,6 @@ def normalize_rule_set_definition(payload: dict[str, Any] | None) -> dict[str, A
                 },
             }
         )
-    if not normalized_rules:
-        normalized_rules = copy.deepcopy(DEFAULT_RULES)
     return {"levels": normalized_levels, "rules": normalized_rules}
 
 

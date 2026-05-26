@@ -44,6 +44,12 @@ def make_result(
 
 
 class CollectorRulesTests(unittest.TestCase):
+    def test_default_rule_set_definition_has_no_hidden_rules(self) -> None:
+        definition = normalize_rule_set_definition({"levels": [], "rules": []})
+
+        self.assertEqual(definition["rules"], [])
+        self.assertEqual([level["id"] for level in definition["levels"]], ["S", "A", "B"])
+
     def test_normalize_search_spec_maps_legacy_fields_and_defaults_language_to_zh_en(self) -> None:
         spec = normalize_search_spec(
             {
