@@ -88,8 +88,9 @@ def run_twitter_search(query: str, max_results: int, timeout_seconds: int = 60) 
 
 
 def run_xreach_search(query: str, max_results: int, timeout_seconds: int = 60) -> dict[str, Any] | list[Any]:
+    xreach_cli = find_xreach_cli()
     command = [
-        find_xreach_cli(),
+        xreach_cli,
         "search",
         query,
         "-n",
@@ -128,7 +129,152 @@ def run_xreach_search(query: str, max_results: int, timeout_seconds: int = 60) -
     payload = json.loads(output)
     if _is_twitter_error_payload(payload):
         raise RuntimeError(f"xreach returned error payload: {payload}")
+    return _enrich_xreach_search_payload(payload, xreach_cli=xreach_cli, timeout_seconds=timeout_seconds)
+
+
+def _run_xreach_tweet_detail(
+    tweet_id: str,
+    *,
+    xreach_cli: str,
+    timeout_seconds: int,
+) -> dict[str, Any] | None:
+    command = [
+        xreach_cli,
+        "tweet",
+        tweet_id,
+        "--json",
+    ]
+
+    auth_token = os.getenv("TWITTER_AUTH_TOKEN", "").strip()
+    ct0 = os.getenv("TWITTER_CT0", "").strip()
+    if auth_token and ct0:
+        command.extend(["--auth-token", auth_token, "--ct0", ct0])
+
+    env = os.environ.copy()
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env.setdefault("NO_COLOR", "1")
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+        encoding="utf-8",
+        env=env,
+        timeout=timeout_seconds,
+        **_windows_subprocess_run_kwargs(),
+    )
+    if completed.returncode != 0:
+        return None
+    output = completed.stdout.strip()
+    if not output:
+        return None
+    payload = json.loads(output)
+    if not isinstance(payload, dict) or _is_twitter_error_payload(payload):
+        return None
     return payload
+
+
+def _enrich_xreach_search_payload(
+    payload: dict[str, Any] | list[Any],
+    *,
+    xreach_cli: str,
+    timeout_seconds: int,
+) -> dict[str, Any] | list[Any]:
+    items = _extract_items(payload)
+    if not items:
+        return payload
+
+    detail_cache: dict[str, dict[str, Any] | None] = {}
+    enriched_items: list[Any] = []
+    changed = False
+    for item in items:
+        if not isinstance(item, dict):
+            enriched_items.append(item)
+            continue
+        tweet_id = _first_value(item.get("id"), item.get("tweet_id"), item.get("rest_id"), _deep_get(item, "legacy.id_str"))
+        if not tweet_id or not _needs_xreach_detail_enrichment(item):
+            enriched_items.append(item)
+            continue
+        normalized_id = str(tweet_id).strip()
+        if normalized_id not in detail_cache:
+            detail_cache[normalized_id] = _run_xreach_tweet_detail(
+                normalized_id,
+                xreach_cli=xreach_cli,
+                timeout_seconds=timeout_seconds,
+            )
+        detail = detail_cache[normalized_id]
+        if detail is None:
+            enriched_items.append(item)
+            continue
+        enriched_items.append(_merge_payloads(item, detail))
+        changed = True
+
+    if not changed:
+        return payload
+    if isinstance(payload, list):
+        return enriched_items
+    enriched_payload = dict(payload)
+    for key in ("results", "tweets", "items", "entries"):
+        if isinstance(enriched_payload.get(key), list):
+            enriched_payload[key] = enriched_items
+            return enriched_payload
+    if isinstance(enriched_payload.get("data"), list):
+        enriched_payload["data"] = enriched_items
+    return enriched_payload
+
+
+def _needs_xreach_detail_enrichment(item: dict[str, Any]) -> bool:
+    checks = [
+        _first_value(
+            item.get("username"),
+            item.get("screen_name"),
+            _deep_get(item, "author.screenName"),
+            _deep_get(item, "author.username"),
+            _deep_get(item, "user.username"),
+            _deep_get(item, "user.screen_name"),
+            _deep_get(item, "user.screenName"),
+            _deep_get(item, "user.handle"),
+            _deep_get(item, "core.user_results.result.legacy.screen_name"),
+        ),
+        _first_value(
+            item.get("author_name"),
+            _deep_get(item, "author.name"),
+            _deep_get(item, "user.name"),
+            _deep_get(item, "core.user_results.result.legacy.name"),
+        ),
+        _first_value(item.get("full_text"), item.get("text"), item.get("content"), _deep_get(item, "legacy.full_text"), _deep_get(item, "legacy.text")),
+        _first_value(item.get("createdAtISO"), item.get("createdAt"), item.get("created_at"), _deep_get(item, "legacy.created_at")),
+        _first_value(item.get("viewCount"), item.get("views"), _deep_get(item, "metrics.views")),
+        _first_value(item.get("replyCount"), item.get("replies"), _deep_get(item, "metrics.replies")),
+        _first_value(item.get("retweetCount"), item.get("retweets"), _deep_get(item, "metrics.retweets")),
+        _first_value(item.get("likeCount"), item.get("likes"), _deep_get(item, "metrics.likes")),
+    ]
+    if any(value is None for value in checks):
+        return True
+    if not item.get("media") and not item.get("urls"):
+        return True
+    return False
+
+
+def _merge_payloads(base: dict[str, Any], detail: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in detail.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_payloads(merged[key], value)
+            continue
+        if _has_payload_value(value):
+            merged[key] = value
+    return merged
+
+
+def _has_payload_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    if isinstance(value, (list, dict)):
+        return bool(value)
+    return True
 
 
 def save_search_bundle(
@@ -186,6 +332,12 @@ def normalize_search_payload(
             _deep_get(item, "user.handle"),
             _deep_get(item, "core.user_results.result.legacy.screen_name"),
         )
+        author_name = _first_value(
+            item.get("author_name"),
+            _deep_get(item, "author.name"),
+            _deep_get(item, "user.name"),
+            _deep_get(item, "core.user_results.result.legacy.name"),
+        )
 
         text = _first_value(
             item.get("full_text"),
@@ -221,6 +373,7 @@ def normalize_search_payload(
                 tweet_id=tweet_id,
                 url=url or "",
                 text=text or "",
+                author_name=author_name or "",
                 author=author or "",
                 created_at=created_at or "",
                 raw=raw_item,

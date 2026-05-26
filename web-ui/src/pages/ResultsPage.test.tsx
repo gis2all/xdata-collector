@@ -42,6 +42,7 @@ function makeItem(id: number, overrides: Record<string, unknown> = {}) {
     excerpt: `Excerpt ${id}`,
     is_zero_cost: 1,
     source_url: `https://x.com/demo/status/${id}`,
+    author_name: `Author ${id}`,
     author: `author-${id}`,
     created_at_x: "2026-04-13T00:49:06+00:00",
     fetched_at: "2026-04-13T01:00:00+00:00",
@@ -59,6 +60,7 @@ function makeRawItem(id: number, overrides: Record<string, unknown> = {}) {
     run_id: 200 + id,
     tweet_id: `${9000 + id}`,
     canonical_url: `https://x.com/i/status/${9000 + id}`,
+    author_name: `Raw Author ${id}`,
     author: `raw-author-${id}`,
     text: `Raw text ${id}`,
     created_at_x: "2026-04-13T00:49:06+00:00",
@@ -158,6 +160,8 @@ describe("ResultsPage", () => {
 
     expect(within(screen.getByTestId("results-filter-summary")).getByText("\u5f53\u524d\u8868\uff1a\u539f\u59cb\u7ed3\u679c")).toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).queryByText("summary_zh")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("Raw Author 1")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("raw-author-1")).toBeInTheDocument();
   });
 
   it("merges new default curated fields into legacy stored column preferences", async () => {
@@ -251,7 +255,7 @@ describe("ResultsPage", () => {
     await waitFor(() => {
       expect(within(detailRail).getByText("Summary 1")).toBeInTheDocument();
     });
-    expect(within(detailRail).getByText(/author-1/)).toBeInTheDocument();
+    expect(within(detailRail).getByText(/^Author 1 @author-1/)).toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).getByText("Item 1").closest("tr")).toHaveAttribute("data-row-active", "true");
 
     const row = within(screen.getByTestId("results-table-pane")).getByText("Item 2").closest("tr");
@@ -277,7 +281,7 @@ describe("ResultsPage", () => {
     expect(within(detailRail).getByTestId("results-detail-summary-section")).toHaveClass("flat-section");
     expect(within(detailRail).getByTestId("results-detail-clues-section")).toHaveClass("flat-section");
     expect(within(detailRail).getByTestId("results-detail-info-section")).toHaveClass("flat-section");
-    expect(within(detailRail).getByText(/author-2/)).toBeInTheDocument();
+    expect(within(detailRail).getByText(/^Author 2 @author-2/)).toBeInTheDocument();
     expect(within(detailRail).getByText(/rule-2/)).toBeInTheDocument();
     expect(within(detailRail).getByRole("link", { name: "https://x.com/demo/status/2" })).toHaveAttribute(
       "href",
@@ -325,7 +329,7 @@ describe("ResultsPage", () => {
     await waitFor(() => {
       expect(within(detailRail).getByText("Summary 2")).toBeInTheDocument();
     });
-    expect(within(detailRail).getByText(/author-2/)).toBeInTheDocument();
+    expect(within(detailRail).getByText(/^Author 2 @author-2/)).toBeInTheDocument();
   });
 
   it("keeps the detail hero compact while preserving primary record cues", async () => {
@@ -349,7 +353,7 @@ describe("ResultsPage", () => {
 
     expect(within(detailRail).getByTestId("results-detail-hero-pills")).toHaveClass("workbench-pill-row");
     expect(within(detailRail).queryByTestId("results-detail-context-grid")).not.toBeInTheDocument();
-    expect(within(detailRail).getByText(/author-1/)).toBeInTheDocument();
+    expect(within(detailRail).getByText(/^Author 1 @author-1/)).toBeInTheDocument();
     expect(within(detailRail).getByText("\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
   });
 
@@ -424,7 +428,7 @@ it("keeps table browsing controls and table actions in one compact control layer
     expect(within(detailRail).getByTestId("results-detail-summary-section")).toHaveClass("flat-section");
     expect(within(detailRail).getByTestId("results-detail-clues-section")).toHaveClass("flat-section");
     expect(within(detailRail).getByTestId("results-detail-info-section")).toHaveClass("flat-section");
-    expect(within(detailRail).getByText(/author-1/)).toBeInTheDocument();
+    expect(within(detailRail).getByText(/^Author 1 @author-1/)).toBeInTheDocument();
     expect(within(detailRail).getByText(/分数 81/)).toBeInTheDocument();
     expect(within(detailRail).getByText(/rule-1/)).toBeInTheDocument();
     expect(within(detailRail).getByRole("link", { name: "https://x.com/demo/status/1" })).toHaveAttribute(
@@ -453,6 +457,7 @@ it("renders default business columns and utc+8 timestamps", async () => {
     expect(within(screen.getByTestId("results-table-pane")).queryByText("id")).not.toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).queryByText("run_id")).not.toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).getByText("canonical_url")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-table-pane")).getByText("author_name")).toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).getByText("author")).toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).getByText("text")).toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).getByText("created_at_x")).toBeInTheDocument();
@@ -569,7 +574,7 @@ it("renders default business columns and utc+8 timestamps", async () => {
   it("ignores legacy visible-column storage and still starts with raw default columns", async () => {
     window.localStorage.setItem(
       LEGACY_RESULTS_VISIBLE_COLUMNS_KEY,
-      JSON.stringify(["author", "text", "created_at_x"]),
+      JSON.stringify(["author_name", "author", "text", "created_at_x"]),
     );
     listItemsMock.mockResolvedValue(makePage([makeRawItem(1)]));
 
@@ -1147,6 +1152,7 @@ it("renders default business columns and utc+8 timestamps", async () => {
       expect(within(screen.getByTestId("results-table-pane")).getByText("summary_zh")).toBeInTheDocument();
       expect(within(screen.getByTestId("results-table-pane")).getByText("score")).toBeInTheDocument();
       expect(within(screen.getByTestId("results-table-pane")).getByText("source_url")).toBeInTheDocument();
+      expect(within(screen.getByTestId("results-table-pane")).getByText("author_name")).toBeInTheDocument();
       expect(within(screen.getByTestId("results-table-pane")).getByText("author")).toBeInTheDocument();
       expect(within(screen.getByTestId("results-table-pane")).getByText("created_at_x")).toBeInTheDocument();
       expect(within(screen.getByTestId("results-table-pane")).getByText("fetched_at")).toBeInTheDocument();

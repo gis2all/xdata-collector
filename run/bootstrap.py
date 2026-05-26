@@ -35,7 +35,7 @@ def ensure_pipx() -> None:
 
 def install_twitter_cli() -> None:
     _print_step("Installing twitter-cli via pipx...")
-    _run([sys.executable, "-m", "pipx", "install", "--force", "twitter-cli"])
+    _run([sys.executable, "-m", "pipx", "install", "--force", "git+https://github.com/public-clis/twitter-cli.git"])
 
 def main() -> int:
     ensure_no_args()

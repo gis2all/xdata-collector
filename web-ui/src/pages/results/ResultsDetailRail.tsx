@@ -30,11 +30,20 @@ function renderSection(title: string, content: ReactNode, testId?: string) {
   );
 }
 
+function formatAuthorDisplay(authorName?: string | null, author?: string | null) {
+  const name = String(authorName || "").trim();
+  const handle = String(author || "").trim();
+  if (name && handle) return `${name} @${handle.replace(/^@+/, "")}`;
+  if (name) return name;
+  if (handle) return `@${handle.replace(/^@+/, "")}`;
+  return "--";
+}
+
 function renderCuratedItem(item: CuratedItemRecord, tableLabel: string) {
   const reasons = JSON.stringify(item.reasons_json ?? [], null, 2);
   const summary = item.summary_zh || item.excerpt || "--";
   const title = item.title || summary || "--";
-  const heroMeta = `${item.author || "--"} · ${formatUtcPlus8Time(item.created_at_x)}`;
+  const heroMeta = `${formatAuthorDisplay(item.author_name, item.author)} · ${formatUtcPlus8Time(item.created_at_x)}`;
 
   return (
     <div className="results-detail-body">
@@ -73,6 +82,8 @@ function renderCuratedItem(item: CuratedItemRecord, tableLabel: string) {
         <div className="results-detail-fact-grid flat-row-list">
           {renderFact("状态", item.state || "--")}
           {renderFact("等级", item.level || "--")}
+          {renderFact("作者名称", item.author_name || "--")}
+          {renderFact("作者ID", item.author || "--")}
           {renderFact("采集时间", formatUtcPlus8Time(item.fetched_at))}
           {renderFact(
             "来源链接",
@@ -93,9 +104,9 @@ function renderCuratedItem(item: CuratedItemRecord, tableLabel: string) {
 }
 
 function renderRawItem(item: RawItemRecord, tableLabel: string) {
-  const title = item.author || item.tweet_id || "--";
+  const title = formatAuthorDisplay(item.author_name, item.author);
   const body = item.text || "--";
-  const heroMeta = `${item.author || "--"} · ${formatUtcPlus8Time(item.created_at_x)}`;
+  const heroMeta = `${formatAuthorDisplay(item.author_name, item.author)} · ${formatUtcPlus8Time(item.created_at_x)}`;
 
   return (
     <div className="results-detail-body">
@@ -124,6 +135,8 @@ function renderRawItem(item: RawItemRecord, tableLabel: string) {
       {renderSection(
         "采集信息",
         <div className="results-detail-fact-grid flat-row-list">
+          {renderFact("作者名称", item.author_name || "--")}
+          {renderFact("作者ID", item.author || "--")}
           {renderFact("查询名称", item.query_name || "--")}
           {renderFact("运行 ID", String(item.run_id ?? "--"))}
           {renderFact("推文 ID", item.tweet_id || "--")}

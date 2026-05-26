@@ -21,6 +21,7 @@ def make_result(
     *,
     tweet_id: str = "1001",
     text: str = "Claim the faucet now https://example.com",
+    author_name: str = "",
     author: str = "galxe",
     created_at: str = "2026-04-12T00:00:00+00:00",
     metrics: dict | None = None,
@@ -32,6 +33,7 @@ def make_result(
         tweet_id=tweet_id,
         url=f"https://x.com/{author}/status/{tweet_id}",
         text=text,
+        author_name=author_name,
         author=author,
         created_at=created_at,
         raw={

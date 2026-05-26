@@ -53,6 +53,7 @@ CURATED_ITEM_FIELDS = (
     "excerpt",
     "is_zero_cost",
     "source_url",
+    "author_name",
     "author",
     "created_at_x",
     "fetched_at",
@@ -66,6 +67,7 @@ RAW_ITEM_DB_FIELDS = (
     "run_id",
     "tweet_id",
     "canonical_url",
+    "author_name",
     "author",
     "text",
     "created_at_x",
@@ -78,6 +80,7 @@ RAW_ITEM_FIELDS = (
     "run_id",
     "tweet_id",
     "canonical_url",
+    "author_name",
     "author",
     "text",
     "created_at_x",
@@ -144,6 +147,7 @@ def _raw_row_to_item(row: Any) -> dict[str, Any]:
         "run_id": int(payload["run_id"]),
         "tweet_id": str(payload.get("tweet_id") or ""),
         "canonical_url": str(payload.get("canonical_url") or ""),
+        "author_name": str(payload.get("author_name") or ""),
         "author": str(payload.get("author") or ""),
         "text": str(payload.get("text") or ""),
         "created_at_x": payload.get("created_at_x"),
@@ -1567,13 +1571,14 @@ class DesktopService:
                 conn.execute(
                     """
                     INSERT INTO x_items_raw
-                    (run_id, tweet_id, canonical_url, author, text, created_at_x, metrics_json, query_name, fetched_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (run_id, tweet_id, canonical_url, author_name, author, text, created_at_x, metrics_json, query_name, fetched_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         run_id,
                         item.tweet_id,
                         canonical_url,
+                        item.author_name,
                         item.author,
                         item.text,
                         item.created_at,
@@ -1602,8 +1607,8 @@ class DesktopService:
                 conn.execute(
                     """
                     INSERT INTO x_items_curated
-                    (run_id, dedupe_key, level, score, title, summary_zh, excerpt, is_zero_cost, source_url, author, created_at_x, fetched_at, reasons_json, rule_set_id, state)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (run_id, dedupe_key, level, score, title, summary_zh, excerpt, is_zero_cost, source_url, author_name, author, created_at_x, fetched_at, reasons_json, rule_set_id, state)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         run_id,
@@ -1615,6 +1620,7 @@ class DesktopService:
                         " ".join((item.get("text", "") or "").split())[:900],
                         1,
                         item.get("url", ""),
+                        item.get("author_name", ""),
                         item.get("author", ""),
                         item.get("created_at", ""),
                         item_fetched_at,

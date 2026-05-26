@@ -26,6 +26,7 @@ class NormalizeSearchPayloadTests(unittest.TestCase):
         self.assertEqual(results[0].tweet_id, "111")
         self.assertEqual(results[0].url, "https://x.com/BinanceWallet/status/111")
         self.assertEqual(results[0].text, "Alpha claim is live")
+        self.assertEqual(results[0].author_name, "")
         self.assertEqual(results[0].author, "BinanceWallet")
 
     def test_normalizes_current_twitter_cli_shape(self) -> None:
@@ -46,6 +47,7 @@ class NormalizeSearchPayloadTests(unittest.TestCase):
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].tweet_id, "333")
+        self.assertEqual(results[0].author_name, "")
         self.assertEqual(results[0].author, "BinanceWallet")
         self.assertEqual(results[0].created_at, "2026-04-10T09:00:30+00:00")
         self.assertEqual(results[0].url, "https://x.com/BinanceWallet/status/333")
@@ -74,6 +76,7 @@ class NormalizeSearchPayloadTests(unittest.TestCase):
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].tweet_id, "222")
+        self.assertEqual(results[0].author_name, "")
         self.assertEqual(results[0].author, "Galxe")
         self.assertEqual(results[0].text, "Quest rewards live")
         self.assertEqual(results[0].url, "https://x.com/Galxe/status/222")
@@ -123,6 +126,7 @@ class NormalizeSearchPayloadTests(unittest.TestCase):
 
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].tweet_id, "555")
+        self.assertEqual(results[0].author_name, "")
         self.assertEqual(results[0].author, "QuestOps")
         self.assertEqual(results[0].url, "https://x.com/QuestOps/status/555")
         self.assertEqual(results[0].raw["metrics"]["views"], 1200)
@@ -208,7 +212,13 @@ class TwitterCliRuntimeTests(unittest.TestCase):
                 ),
                 _Completed(
                     0,
-                    '{"items":[{"id":"999","text":"claim now","createdAt":"2026-04-12T00:00:00Z","user":{"screenName":"Alpha"}}]}',
+                    (
+                        '{"items":[{"id":"999","text":"claim now",'
+                        '"createdAt":"2026-04-12T00:00:00Z",'
+                        '"user":{"screenName":"Alpha","name":"Alpha Ops"},'
+                        '"viewCount":1,"replyCount":0,"retweetCount":0,"likeCount":0,'
+                        '"media":[{"type":"photo","url":"https://pbs.twimg.com/media/a.jpg"}]}]}'
+                    ),
                     "",
                 ),
             ]
@@ -219,6 +229,96 @@ class TwitterCliRuntimeTests(unittest.TestCase):
         self.assertIn("items", payload)
         self.assertEqual(payload["items"][0]["id"], "999")
         self.assertEqual(run_mock.call_count, 2)
+
+    def test_xreach_fallback_enriches_sparse_search_items_with_tweet_detail(self) -> None:
+        class _Completed:
+            def __init__(self, returncode: int, stdout: str, stderr: str = "") -> None:
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+
+        with patch("backend.twitter_cli.find_twitter_cli", return_value="twitter.exe"), patch(
+            "backend.twitter_cli.find_xreach_cli",
+            return_value="xreach.cmd",
+        ), patch(
+            "backend.twitter_cli.subprocess.run"
+        ) as run_mock:
+            run_mock.side_effect = [
+                _Completed(
+                    1,
+                    '{"ok": false, "error": {"code": "not_found", "message": "404"}}',
+                    "",
+                ),
+                _Completed(
+                    0,
+                    (
+                        '{"items":[{"id":"999","text":"claim now",'
+                        '"createdAt":"2026-04-12T00:00:00Z",'
+                        '"user":{"restId":"42"},'
+                        '"viewCount":10}]}'
+                    ),
+                    "",
+                ),
+                _Completed(
+                    0,
+                    (
+                        '{"id":"999","text":"claim now with media",'
+                        '"createdAt":"2026-04-12T00:00:00Z",'
+                        '"user":{"restId":"42","screenName":"Alpha","name":"Alpha Ops"},'
+                        '"viewCount":1200,"replyCount":2,"retweetCount":5,"likeCount":8,'
+                        '"media":[{"type":"photo","url":"https://pbs.twimg.com/media/a.jpg"}],'
+                        '"lang":"en"}'
+                    ),
+                    "",
+                ),
+            ]
+
+            payload = run_twitter_search("airdrop", 5)
+
+        self.assertEqual(run_mock.call_count, 3)
+        detail_command = run_mock.call_args_list[2].args[0]
+        self.assertEqual(detail_command[:3], ["xreach.cmd", "tweet", "999"])
+        item = payload["items"][0]
+        self.assertEqual(item["text"], "claim now with media")
+        self.assertEqual(item["user"]["screenName"], "Alpha")
+        self.assertEqual(item["viewCount"], 1200)
+        self.assertEqual(item["replyCount"], 2)
+        self.assertEqual(item["retweetCount"], 5)
+        self.assertEqual(item["likeCount"], 8)
+        self.assertEqual(item["media"][0]["url"], "https://pbs.twimg.com/media/a.jpg")
+
+    def test_xreach_fallback_keeps_sparse_item_when_detail_enrichment_fails(self) -> None:
+        class _Completed:
+            def __init__(self, returncode: int, stdout: str, stderr: str = "") -> None:
+                self.returncode = returncode
+                self.stdout = stdout
+                self.stderr = stderr
+
+        with patch("backend.twitter_cli.find_twitter_cli", return_value="twitter.exe"), patch(
+            "backend.twitter_cli.find_xreach_cli",
+            return_value="xreach.cmd",
+        ), patch(
+            "backend.twitter_cli.subprocess.run"
+        ) as run_mock:
+            run_mock.side_effect = [
+                _Completed(
+                    1,
+                    '{"ok": false, "error": {"code": "not_found", "message": "404"}}',
+                    "",
+                ),
+                _Completed(
+                    0,
+                    '{"items":[{"id":"999","text":"claim now","createdAt":"2026-04-12T00:00:00Z","user":{"restId":"42"}}]}',
+                    "",
+                ),
+                _Completed(1, "", "detail failed"),
+            ]
+
+            payload = run_twitter_search("airdrop", 5)
+
+        self.assertEqual(run_mock.call_count, 3)
+        self.assertEqual(payload["items"][0]["id"], "999")
+        self.assertEqual(payload["items"][0]["text"], "claim now")
 
     def test_windows_xreach_fallback_also_uses_create_no_window(self) -> None:
         class _Completed:
@@ -248,7 +348,13 @@ class TwitterCliRuntimeTests(unittest.TestCase):
                 ),
                 _Completed(
                     0,
-                    '{"items":[{"id":"999","text":"claim now","createdAt":"2026-04-12T00:00:00Z","user":{"screenName":"Alpha"}}]}',
+                    (
+                        '{"items":[{"id":"999","text":"claim now",'
+                        '"createdAt":"2026-04-12T00:00:00Z",'
+                        '"user":{"screenName":"Alpha","name":"Alpha Ops"},'
+                        '"viewCount":1,"replyCount":0,"retweetCount":0,"likeCount":0,'
+                        '"media":[{"type":"photo","url":"https://pbs.twimg.com/media/a.jpg"}]}]}'
+                    ),
                     "",
                 ),
             ]

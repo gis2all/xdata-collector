@@ -120,6 +120,15 @@ function executionStatusTone(status: ExecutionStatus) {
   return "neutral";
 }
 
+function formatAuthorDisplay(authorName?: string | null, author?: string | null) {
+  const name = String(authorName || "").trim();
+  const handle = String(author || "").trim();
+  if (name && handle) return `${name} @${handle.replace(/^@+/, "")}`;
+  if (name) return name;
+  if (handle) return `@${handle.replace(/^@+/, "")}`;
+  return "--";
+}
+
 function ManualSectionHeader(props: { title: string; description: string; aside?: ReactNode }) {
   return (
     <div className="manual-section-header workbench-section-header">
@@ -871,7 +880,7 @@ export function ManualSearchPage() {
                     {result.raw_items.map((item) => (
                       <tr key={`${item.tweet_id}-${item.url}`}>
                         <td>
-                          <div className="job-name">{item.author || "unknown"}</div>
+                          <div className="job-name">{formatAuthorDisplay(item.author_name, item.author)}</div>
                           <div className="kv">{formatUtcPlus8Time(item.created_at)}</div>
                         </td>
                         <td>
@@ -939,7 +948,7 @@ export function ManualSearchPage() {
                           </div>
                         </td>
                         <td>
-                          <div className="job-name">{item.author || "unknown"}</div>
+                          <div className="job-name">{formatAuthorDisplay(item.author_name, item.author)}</div>
                           <div className="kv">{formatUtcPlus8Time(item.created_at)}</div>
                         </td>
                       </tr>

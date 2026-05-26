@@ -205,6 +205,7 @@ export type CollectorResultItem = {
   tweet_id: string;
   url: string;
   text: string;
+  author_name: string;
   author: string;
   created_at: string;
   fetched_at?: string | null;
@@ -344,6 +345,7 @@ export type CuratedItemSortField =
   | "excerpt"
   | "is_zero_cost"
   | "source_url"
+  | "author_name"
   | "author"
   | "created_at_x"
   | "fetched_at"
@@ -356,6 +358,7 @@ export type RawItemSortField =
   | "run_id"
   | "tweet_id"
   | "canonical_url"
+  | "author_name"
   | "author"
   | "text"
   | "created_at_x"
@@ -379,6 +382,7 @@ export type CuratedItemRecord = {
   excerpt: string;
   is_zero_cost: number;
   source_url: string;
+  author_name: string;
   author: string;
   created_at_x: string | null;
   fetched_at: string | null;
@@ -392,6 +396,7 @@ export type RawItemRecord = {
   run_id: number;
   tweet_id: string;
   canonical_url: string;
+  author_name: string;
   author: string;
   text: string;
   created_at_x: string | null;

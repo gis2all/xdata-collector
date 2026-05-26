@@ -99,6 +99,15 @@ function stringifyValue(value: unknown) {
   }
 }
 
+function formatAuthorDisplay(authorName?: string | null, author?: string | null) {
+  const name = String(authorName || "").trim();
+  const handle = String(author || "").trim();
+  if (name && handle) return `${name} @${handle.replace(/^@+/, "")}`;
+  if (name) return name;
+  if (handle) return `@${handle.replace(/^@+/, "")}`;
+  return "--";
+}
+
 const CURATED_COLUMN_DEFINITIONS: ColumnDefinition[] = [
   { key: "id", label: "id", defaultVisible: false, width: 88, render: (item) => (item as CuratedItemRecord).id },
   { key: "run_id", label: "run_id", defaultVisible: false, width: 88, render: (item) => (item as CuratedItemRecord).run_id },
@@ -177,6 +186,13 @@ const CURATED_COLUMN_DEFINITIONS: ColumnDefinition[] = [
     },
   },
   {
+    key: "author_name",
+    label: "author_name",
+    defaultVisible: true,
+    width: 140,
+    render: (item) => (item as CuratedItemRecord).author_name || "--",
+  },
+  {
     key: "author",
     label: "author",
     defaultVisible: true,
@@ -250,6 +266,13 @@ const RAW_COLUMN_DEFINITIONS: ColumnDefinition[] = [
     },
   },
   {
+    key: "author_name",
+    label: "author_name",
+    defaultVisible: true,
+    width: 140,
+    render: (item) => (item as RawItemRecord).author_name || "--",
+  },
+  {
     key: "author",
     label: "author",
     defaultVisible: true,
@@ -306,6 +329,12 @@ const DEFAULT_VISIBLE_COLUMNS_BY_TABLE: Record<ItemTable, ItemSortField[]> = {
 function orderVisibleColumns(table: ItemTable, keys: Iterable<ItemSortField>) {
   const allowed = COLUMN_DEFINITIONS_BY_TABLE[table].map((column) => column.key);
   const keySet = new Set(keys);
+  if (keySet.has("author") && !keySet.has("author_name")) {
+    keySet.add("author_name");
+  }
+  if (keySet.has("author_name") && !keySet.has("author")) {
+    keySet.add("author");
+  }
   return allowed.filter((key) => keySet.has(key));
 }
 

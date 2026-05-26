@@ -41,6 +41,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
             run_id INTEGER NOT NULL,
             tweet_id TEXT,
             canonical_url TEXT,
+            author_name TEXT,
             author TEXT,
             text TEXT,
             created_at_x TEXT,
@@ -65,6 +66,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
             fetched_at TEXT,
             reasons_json TEXT NOT NULL DEFAULT '[]',
             rule_set_id INTEGER NULL,
+            author_name TEXT,
             state TEXT NOT NULL DEFAULT 'new'
         );
         """
@@ -72,6 +74,10 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
 
 def ensure_schema_columns(conn: sqlite3.Connection) -> None:
+    raw_columns = {row[1] for row in conn.execute("PRAGMA table_info(x_items_raw)").fetchall()}
+    if "author_name" not in raw_columns:
+        conn.execute("ALTER TABLE x_items_raw ADD COLUMN author_name TEXT NULL")
+
     curated_columns = {row[1] for row in conn.execute("PRAGMA table_info(x_items_curated)").fetchall()}
     if "score" not in curated_columns:
         conn.execute("ALTER TABLE x_items_curated ADD COLUMN score INTEGER NOT NULL DEFAULT 0")
@@ -79,6 +85,8 @@ def ensure_schema_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE x_items_curated ADD COLUMN reasons_json TEXT NOT NULL DEFAULT '[]'")
     if "rule_set_id" not in curated_columns:
         conn.execute("ALTER TABLE x_items_curated ADD COLUMN rule_set_id INTEGER NULL")
+    if "author_name" not in curated_columns:
+        conn.execute("ALTER TABLE x_items_curated ADD COLUMN author_name TEXT NULL")
     if "fetched_at" not in curated_columns:
         conn.execute("ALTER TABLE x_items_curated ADD COLUMN fetched_at TEXT NULL")
 

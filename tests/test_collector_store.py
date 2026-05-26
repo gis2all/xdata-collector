@@ -26,10 +26,26 @@ class CollectorStoreTests(unittest.TestCase):
             self.assertNotIn("rule_sets", tables)
             self.assertNotIn("runtime_health_snapshot", tables)
 
-    def test_ensure_schema_columns_upgrades_legacy_curated_table(self) -> None:
+    def test_ensure_schema_columns_upgrades_legacy_result_tables(self) -> None:
         with TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "legacy.db"
             conn = sqlite3.connect(db_path)
+            conn.execute(
+                """
+                CREATE TABLE x_items_raw (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id INTEGER NOT NULL,
+                    tweet_id TEXT,
+                    canonical_url TEXT,
+                    author TEXT,
+                    text TEXT,
+                    created_at_x TEXT,
+                    metrics_json TEXT NOT NULL DEFAULT '{}',
+                    query_name TEXT,
+                    fetched_at TEXT NOT NULL
+                )
+                """
+            )
             conn.execute(
                 """
                 CREATE TABLE x_items_curated (
@@ -43,18 +59,22 @@ class CollectorStoreTests(unittest.TestCase):
                     is_zero_cost INTEGER NOT NULL,
                     source_url TEXT NOT NULL,
                     author TEXT,
+                    author_name TEXT,
                     created_at_x TEXT,
                     state TEXT NOT NULL DEFAULT 'new'
                 )
                 """
             )
             ensure_schema_columns(conn)
+            raw_columns = {row[1] for row in conn.execute("PRAGMA table_info(x_items_raw)").fetchall()}
             curated_columns = {row[1] for row in conn.execute("PRAGMA table_info(x_items_curated)").fetchall()}
             conn.close()
 
+            self.assertIn("author_name", raw_columns)
             self.assertIn("score", curated_columns)
             self.assertIn("reasons_json", curated_columns)
             self.assertIn("rule_set_id", curated_columns)
+            self.assertIn("author_name", curated_columns)
             self.assertIn("fetched_at", curated_columns)
 
     def test_connect_is_idempotent_for_existing_database(self) -> None:
@@ -62,7 +82,7 @@ class CollectorStoreTests(unittest.TestCase):
             db_path = Path(tmp) / "collector.db"
             with connect(db_path) as conn:
                 conn.execute(
-                    "INSERT INTO x_items_raw (run_id, tweet_id, canonical_url, author, text, created_at_x, metrics_json, query_name, fetched_at) VALUES (1, '1001', 'https://x.com/i/status/1001', 'demo', 'hello', '2026-04-14T00:00:00+00:00', '{}', 'manual:1', '2026-04-14T00:00:01+00:00')"
+                    "INSERT INTO x_items_raw (run_id, tweet_id, canonical_url, author_name, author, text, created_at_x, metrics_json, query_name, fetched_at) VALUES (1, '1001', 'https://x.com/i/status/1001', 'Demo Name', 'demo', 'hello', '2026-04-14T00:00:00+00:00', '{}', 'manual:1', '2026-04-14T00:00:01+00:00')"
                 )
 
             with connect(db_path) as conn:

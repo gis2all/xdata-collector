@@ -36,6 +36,15 @@ def test_dockerfile_installs_backend_and_frontend_runtime_dependencies() -> None
     assert "python:3.13-slim" in content
     assert "nodejs" in content
     assert "npm ci" in content
-    assert "twitter-cli" in content
+    assert "git+https://github.com/public-clis/twitter-cli.git" in content
     assert "xreach-cli" in content
     assert "EXPOSE 8765 5177" in content
+
+
+def test_bootstrap_installs_twitter_cli_from_github_main() -> None:
+    bootstrap_path = PROJECT_ROOT / "run" / "bootstrap.py"
+
+    assert bootstrap_path.exists()
+
+    content = bootstrap_path.read_text(encoding="utf-8")
+    assert "git+https://github.com/public-clis/twitter-cli.git" in content
