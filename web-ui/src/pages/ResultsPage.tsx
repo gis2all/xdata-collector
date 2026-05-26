@@ -206,6 +206,10 @@ const CURATED_COLUMN_DEFINITIONS: ColumnDefinition[] = [
     width: 220,
     render: (item) => formatUtcPlus8Time((item as CuratedItemRecord).created_at_x),
   },
+  { key: "views", label: "views", defaultVisible: true, width: 90, render: (item) => (item as CuratedItemRecord).views },
+  { key: "likes", label: "likes", defaultVisible: true, width: 90, render: (item) => (item as CuratedItemRecord).likes },
+  { key: "replies", label: "replies", defaultVisible: true, width: 90, render: (item) => (item as CuratedItemRecord).replies },
+  { key: "retweets", label: "retweets", defaultVisible: true, width: 90, render: (item) => (item as CuratedItemRecord).retweets },
   {
     key: "fetched_at",
     label: "fetched_at",

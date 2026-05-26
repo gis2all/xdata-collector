@@ -27,7 +27,7 @@ from backend.source_identity import (
     build_source_dedupe_key,
     canonicalize_source_url,
 )
-from backend.twitter_cli import find_twitter_cli, normalize_search_payload, run_twitter_search
+from backend.twitter_cli import find_twitter_cli, get_twitter_cli_version, normalize_search_payload, run_twitter_search
 from backend.workspace_store import RuntimeStateStore, WorkspaceStore, default_builtin_rule_set
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +56,10 @@ CURATED_ITEM_FIELDS = (
     "author_name",
     "author",
     "created_at_x",
+    "views",
+    "likes",
+    "replies",
+    "retweets",
     "fetched_at",
     "reasons_json",
     "rule_set_id",
@@ -165,6 +169,15 @@ def _metric(item: SearchResult, key: str) -> int:
     value = metrics.get(key, 0)
     try:
         return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _item_metric(payload: dict[str, Any], key: str) -> int:
+    metrics = payload.get("metrics", {})
+    value = metrics.get(key, payload.get(key, 0)) if isinstance(metrics, dict) else payload.get(key, 0)
+    try:
+        return int(value or 0)
     except (TypeError, ValueError):
         return 0
 
@@ -1414,6 +1427,7 @@ class DesktopService:
                 "configured": x_snapshot["configured"],
                 "connected": x_snapshot["connected"],
                 "auth_source": x_snapshot["detail"].get("auth_source", "unknown"),
+                "cli_version": x_snapshot["detail"].get("cli_version", "unknown"),
                 "account_hint": x_snapshot["detail"].get("account_hint", "unknown"),
                 "last_checked_at": x_snapshot["last_checked_at"],
                 "last_error": x_snapshot["last_error"],
@@ -1466,10 +1480,13 @@ class DesktopService:
             find_twitter_cli()
             auth_source = "twitter-cli"
             configured = True
+            cli_version = get_twitter_cli_version()
         except Exception:
+            cli_version = "unknown"
             pass
         detail = {
             "auth_source": auth_source,
+            "cli_version": cli_version,
             "account_hint": "unknown",
         }
         if not configured:
@@ -1607,8 +1624,8 @@ class DesktopService:
                 conn.execute(
                     """
                     INSERT INTO x_items_curated
-                    (run_id, dedupe_key, level, score, title, summary_zh, excerpt, is_zero_cost, source_url, author_name, author, created_at_x, fetched_at, reasons_json, rule_set_id, state)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (run_id, dedupe_key, level, score, title, summary_zh, excerpt, is_zero_cost, source_url, author_name, author, created_at_x, views, likes, replies, retweets, fetched_at, reasons_json, rule_set_id, state)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         run_id,
@@ -1623,6 +1640,10 @@ class DesktopService:
                         item.get("author_name", ""),
                         item.get("author", ""),
                         item.get("created_at", ""),
+                        _item_metric(item, "views"),
+                        _item_metric(item, "likes"),
+                        _item_metric(item, "replies"),
+                        _item_metric(item, "retweets"),
                         item_fetched_at,
                         json.dumps(item.get("reasons", []), ensure_ascii=False),
                         rule_set_id,

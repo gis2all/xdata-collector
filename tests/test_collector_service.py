@@ -442,10 +442,12 @@ class DesktopServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "requires deleted jobs"):
             self.service.batch_jobs({"action": "restore", "ids": [int(live_job["id"])]})
 
+    @patch("backend.collector_service.get_twitter_cli_version")
     @patch("backend.collector_service.find_twitter_cli")
     @patch("backend.collector_service.run_twitter_search")
-    def test_health_returns_snapshot_with_details(self, mock_search, mock_find_cli) -> None:
+    def test_health_returns_snapshot_with_details(self, mock_search, mock_find_cli, mock_cli_version) -> None:
         mock_find_cli.return_value = "twitter"
+        mock_cli_version.return_value = "0.8.6"
         mock_search.return_value = []
 
         default_rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
@@ -490,6 +492,7 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertTrue(health["x"]["configured"])
         self.assertTrue(health["x"]["connected"])
         self.assertEqual(health["x"]["auth_source"], "twitter-cli")
+        self.assertEqual(health["x"]["cli_version"], "0.8.6")
         self.assertEqual(health["x"]["account_hint"], "unknown")
         self.assertEqual(health["x"]["last_error"], "")
         self.assertEqual(set(health.keys()), {"summary", "db", "x"})
@@ -620,6 +623,48 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(report["stats"]["raw_deduped"], 3)
         self.assertEqual(report["stats"]["search_filter_passed"], 1)
         self.assertEqual(mock_search.call_count, 2)
+
+    @patch("backend.collector_service.run_twitter_search")
+    def test_manual_run_stores_metrics_on_curated_items(self, mock_search) -> None:
+        mock_search.return_value = [
+            {
+                "id": "1001",
+                "text": "Claim Alpha airdrop is live https://example.com",
+                "author": {"screenName": "galxe", "name": "Galxe"},
+                "createdAtISO": "2026-04-12T00:00:00+00:00",
+                "metrics": {"views": 321, "likes": 12, "replies": 3, "retweets": 4},
+                "lang": "en",
+                "url": "https://x.com/galxe/status/1001",
+            }
+        ]
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+
+        report = self.service.run_manual(
+            {
+                "search_spec": {
+                    "all_keywords": ["Alpha"],
+                    "language_mode": "en",
+                    "days_filter": {"mode": "any"},
+                    "metric_filters": {
+                        "views": {"mode": "any"},
+                        "likes": {"mode": "any"},
+                        "replies": {"mode": "any"},
+                        "retweets": {"mode": "any"},
+                    },
+                    "metric_filters_explicit": True,
+                },
+                "rule_set_id": rule_set_id,
+            }
+        )
+
+        page = self.service.list_items(table="curated", page=1, page_size=10)
+
+        self.assertEqual(report["status"], "success")
+        self.assertEqual(report["matched_total"], 1)
+        self.assertEqual(page["items"][0]["views"], 321)
+        self.assertEqual(page["items"][0]["likes"], 12)
+        self.assertEqual(page["items"][0]["replies"], 3)
+        self.assertEqual(page["items"][0]["retweets"], 4)
 
     @patch("backend.collector_service.evaluate_rule_set")
     @patch("backend.collector_service.normalize_search_payload")

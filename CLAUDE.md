@@ -48,6 +48,14 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 - `TWITTER_AUTH_TOKEN`
 - `TWITTER_CT0`
 
+### 5. X 搜索链路约定
+
+- 默认搜索入口是 `twitter-cli 0.8.6` 的 `twitter search ... --json`；本机和 Docker 安装脚本都应使用 `git+https://github.com/public-clis/twitter-cli.git`。
+- `xreach search` 只作为 `twitter-cli search` 失败后的 fallback，不作为默认搜索入口。
+- 二次补全使用 `xreach tweet <tweet_id> --json`，只在核心字段缺失时触发：`author`、`author_name`、`text`、`created_at_x`、`views`、`likes`、`replies`、`retweets`。
+- 不要因为 `urls` 或 `media` 缺失触发二次补全；搜索结果自带就保留，没有就不强制慢查。这里的 `urls` 是推文正文里的外部链接，不是推文本身的 `canonical_url`。
+- 排查搜索速度时必须带 `.env` 里的 `TWITTER_AUTH_TOKEN` / `TWITTER_CT0` 实测，并先确认 `python -m pipx list` 里 `twitter-cli` 是 0.8.6；旧的 0.8.5 可能出现 search 404，不能拿来判断当前策略。
+
 ## 配置与存储模型
 
 ### 1. `config/workspace.json`

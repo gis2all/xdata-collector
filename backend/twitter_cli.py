@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from datetime import datetime, timezone
@@ -20,6 +21,30 @@ def find_twitter_cli() -> str:
     if fallback.exists():
         return str(fallback)
     raise RuntimeError("twitter-cli not found. Run python install.py or python run/bootstrap.py, or install twitter-cli manually.")
+
+
+def get_twitter_cli_version(timeout_seconds: int = 10) -> str:
+    command = [find_twitter_cli(), "--version"]
+    env = os.environ.copy()
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env.setdefault("NO_COLOR", "1")
+    completed = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+        encoding="utf-8",
+        env=env,
+        timeout=timeout_seconds,
+        **_windows_subprocess_run_kwargs(),
+    )
+    output = (completed.stdout or completed.stderr).strip()
+    if completed.returncode != 0 or not output:
+        return "unknown"
+    match = re.search(r"\bversion\s+([0-9]+(?:\.[0-9]+){1,3})\b", output, flags=re.IGNORECASE)
+    if match:
+        return match.group(1)
+    return output.replace("twitter, version ", "").strip() or "unknown"
 
 
 def find_xreach_cli() -> str:
@@ -249,11 +274,7 @@ def _needs_xreach_detail_enrichment(item: dict[str, Any]) -> bool:
         _first_value(item.get("retweetCount"), item.get("retweets"), _deep_get(item, "metrics.retweets")),
         _first_value(item.get("likeCount"), item.get("likes"), _deep_get(item, "metrics.likes")),
     ]
-    if any(value is None for value in checks):
-        return True
-    if not item.get("media") and not item.get("urls"):
-        return True
-    return False
+    return any(value is None for value in checks)
 
 
 def _merge_payloads(base: dict[str, Any], detail: dict[str, Any]) -> dict[str, Any]:

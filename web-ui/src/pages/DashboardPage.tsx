@@ -58,6 +58,10 @@ function renderXInfo(info: XHealth) {
           <strong>{info.auth_source || "unknown"}</strong>
         </div>
         <div className="flat-row">
+          <span>{"CLI 版本"}</span>
+          <strong>{info.cli_version || "unknown"}</strong>
+        </div>
+        <div className="flat-row">
           <span>{"账号摘要"}</span>
           <strong>{info.account_hint || "unknown"}</strong>
         </div>

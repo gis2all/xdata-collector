@@ -78,6 +78,17 @@ function renderCuratedItem(item: CuratedItemRecord, tableLabel: string) {
       )}
 
       {renderSection(
+        "互动指标",
+        <div className="results-detail-fact-grid flat-row-list">
+          {renderFact("浏览", String(item.views ?? "--"))}
+          {renderFact("点赞", String(item.likes ?? "--"))}
+          {renderFact("回复", String(item.replies ?? "--"))}
+          {renderFact("转推", String(item.retweets ?? "--"))}
+        </div>,
+        "results-detail-metrics-section",
+      )}
+
+      {renderSection(
         "记录信息",
         <div className="results-detail-fact-grid flat-row-list">
           {renderFact("状态", item.state || "--")}

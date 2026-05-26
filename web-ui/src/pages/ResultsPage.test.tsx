@@ -45,6 +45,10 @@ function makeItem(id: number, overrides: Record<string, unknown> = {}) {
     author_name: `Author ${id}`,
     author: `author-${id}`,
     created_at_x: "2026-04-13T00:49:06+00:00",
+    views: 100 + id,
+    likes: 10 + id,
+    replies: 2 + id,
+    retweets: 1 + id,
     fetched_at: "2026-04-13T01:00:00+00:00",
     reasons_json: [{ rule: `rule-${id}` }],
     rule_set_id: 2,
@@ -268,20 +272,28 @@ describe("ResultsPage", () => {
     const sectionTitles = detailRail.querySelectorAll(".results-detail-section-title");
     const summaryHeading = sectionTitles[0];
     const cluesHeading = sectionTitles[1];
-    const infoHeading = sectionTitles[2];
+    const metricsHeading = sectionTitles[2];
+    const infoHeading = sectionTitles[3];
     expect(summaryHeading).toBeTruthy();
     expect(cluesHeading).toBeTruthy();
+    expect(metricsHeading).toBeTruthy();
     expect(infoHeading).toBeTruthy();
     expect(summaryHeading.compareDocumentPosition(cluesHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(cluesHeading.compareDocumentPosition(infoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(cluesHeading.compareDocumentPosition(metricsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(metricsHeading.compareDocumentPosition(infoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(detailRail.querySelector(".results-detail-hero")).toHaveClass("flat-section");
     expect(detailRail.querySelector(".results-detail-fact-grid")).toHaveClass("flat-row-list");
     expect(within(detailRail).queryByTestId("results-detail-context-grid")).not.toBeInTheDocument();
     expect(within(detailRail).getByTestId("results-detail-hero")).toHaveClass("flat-section");
     expect(within(detailRail).getByTestId("results-detail-summary-section")).toHaveClass("flat-section");
     expect(within(detailRail).getByTestId("results-detail-clues-section")).toHaveClass("flat-section");
+    expect(within(detailRail).getByTestId("results-detail-metrics-section")).toHaveClass("flat-section");
     expect(within(detailRail).getByTestId("results-detail-info-section")).toHaveClass("flat-section");
     expect(within(detailRail).getByText(/^Author 2 @author-2/)).toBeInTheDocument();
+    expect(within(detailRail).getByText("102")).toBeInTheDocument();
+    expect(within(detailRail).getByText("12")).toBeInTheDocument();
+    expect(within(detailRail).getByText("4")).toBeInTheDocument();
+    expect(within(detailRail).getByText("3")).toBeInTheDocument();
     expect(within(detailRail).getByText(/rule-2/)).toBeInTheDocument();
     expect(within(detailRail).getByRole("link", { name: "https://x.com/demo/status/2" })).toHaveAttribute(
       "href",

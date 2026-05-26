@@ -30,6 +30,7 @@ export type DatabaseHealth = HealthTarget & {
 };
 export type XHealth = HealthTarget & {
   auth_source: string;
+  cli_version: string;
   account_hint: string;
 };
 export type HealthSnapshot = {
@@ -348,6 +349,10 @@ export type CuratedItemSortField =
   | "author_name"
   | "author"
   | "created_at_x"
+  | "views"
+  | "likes"
+  | "replies"
+  | "retweets"
   | "fetched_at"
   | "reasons_json"
   | "rule_set_id"
@@ -385,6 +390,10 @@ export type CuratedItemRecord = {
   author_name: string;
   author: string;
   created_at_x: string | null;
+  views: number;
+  likes: number;
+  replies: number;
+  retweets: number;
   fetched_at: string | null;
   reasons_json: unknown;
   rule_set_id: number | null;

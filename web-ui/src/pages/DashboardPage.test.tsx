@@ -33,6 +33,7 @@ const healthySnapshot = {
     configured: true,
     connected: true,
     auth_source: "twitter-cli",
+    cli_version: "0.8.6",
     account_hint: "unknown",
     last_checked_at: "2026-04-18T00:00:00+00:00",
     last_error: "",
@@ -76,6 +77,7 @@ describe("DashboardPage", () => {
     expect(within(screen.getByTestId("dashboard-summary")).getByText("最近状态")).toBeInTheDocument();
     expect(within(screen.getByTestId("dashboard-db-info")).getByTestId("dashboard-db-detail-list")).toHaveClass("flat-row-list");
     expect(within(screen.getByTestId("dashboard-x-info")).getByTestId("dashboard-x-detail-list")).toHaveClass("flat-row-list");
+    expect(within(screen.getByTestId("dashboard-x-info")).getByText("0.8.6")).toBeInTheDocument();
     expect(screen.getAllByText("已连接").length).toBeGreaterThan(0);
     expect(healthMock).not.toHaveBeenCalled();
     expect(healthSnapshotMock).not.toHaveBeenCalled();
