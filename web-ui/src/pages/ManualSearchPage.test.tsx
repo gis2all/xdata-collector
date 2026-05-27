@@ -30,6 +30,7 @@ const taskPackSummary = {
   name: "Alpha Watch",
   description: "watch alpha",
   updated_at: "2026-04-14T00:00:00+00:00",
+  tags: ["defi", "wallet"],
 };
 
 const taskPackFile = {
@@ -42,6 +43,7 @@ const taskPackFile = {
     description: "watch alpha",
     updated_at: "2026-04-14T00:00:00+00:00",
   },
+  tags: ["defi", "wallet"],
   search_spec: {
     all_keywords: ["alpha"],
     exact_phrases: [],
@@ -90,6 +92,7 @@ describe("ManualSearchPage", () => {
         description: payload.meta?.description || "",
         updated_at: "2026-04-14T00:00:00+00:00",
       },
+      tags: payload.tags || [],
       search_spec: payload.search_spec,
       rule_set: {
         id: payload.rule_set?.id ?? 1,
@@ -219,6 +222,9 @@ describe("ManualSearchPage", () => {
 
     expect(screen.getAllByText("Alpha Watch").length).toBeGreaterThan(0);
     expect(screen.getByText("当前绑定：alpha-watch")).toBeInTheDocument();
+    expect(screen.getByLabelText("manual-pack-tags")).toHaveValue("defi\nwallet");
+    expect(screen.getByLabelText("manual-pack-tags")).toHaveAttribute("placeholder", "逗号或换行分隔，如：alpha, defi, wallet");
+    expect(screen.getByText("tags：defi, wallet")).toBeInTheDocument();
     expect(screen.getAllByText("草稿状态：未修改").length).toBeGreaterThan(0);
     expect(screen.getByText("当前来源：任务包载入")).toBeInTheDocument();
     expect(screen.queryByText("pack_name=alpha-watch")).not.toBeInTheDocument();
@@ -251,6 +257,28 @@ describe("ManualSearchPage", () => {
     await waitFor(() => {
       expect(createTaskPackMock).toHaveBeenCalled();
     });
+    expect(createTaskPackMock).toHaveBeenCalledWith(expect.objectContaining({ tags: ["defi", "wallet"] }));
+
+    promptSpy.mockRestore();
+  });
+
+  it("keeps comma-separated tag text while saving normalized tags", async () => {
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("manual-alpha");
+
+    render(<ManualSearchPage />);
+
+    await screen.findByLabelText("manual-pack-tags");
+    const tagsInput = screen.getByLabelText("manual-pack-tags");
+    fireEvent.change(tagsInput, { target: { value: "btc,eth" } });
+
+    expect(tagsInput).toHaveValue("btc,eth");
+
+    fireEvent.click(screen.getByTestId("manual-save-as-pack"));
+
+    await waitFor(() => {
+      expect(createTaskPackMock).toHaveBeenCalled();
+    });
+    expect(createTaskPackMock).toHaveBeenCalledWith(expect.objectContaining({ tags: ["btc", "eth"] }));
 
     promptSpy.mockRestore();
   });

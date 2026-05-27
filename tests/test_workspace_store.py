@@ -179,6 +179,7 @@ class WorkspaceStoreTests(unittest.TestCase):
                 {
                     "version": 1,
                     "kind": "task_pack",
+                    "tags": ["Alpha", " alpha ", "", "DeFi"],
                     "meta": {
                         "name": "Alpha Watch",
                         "description": "watch alpha",
@@ -207,17 +208,20 @@ class WorkspaceStoreTests(unittest.TestCase):
             )
 
             self.assertEqual(created["meta"]["name"], "Alpha Watch")
+            self.assertEqual(created["tags"], ["alpha", "defi"])
             self.assertTrue((root / "config" / "packs" / "alpha-watch.json").exists())
 
             listed = store.list_packs()
             self.assertEqual(len(listed), 1)
             self.assertEqual(listed[0]["pack_name"], "alpha-watch")
             self.assertEqual(listed[0]["pack_path"], "config/packs/alpha-watch.json")
+            self.assertEqual(listed[0]["tags"], ["alpha", "defi"])
 
             updated = store.update_pack(
                 "alpha-watch",
                 {
                     **created,
+                    "tags": "DeFi, Wallet\nwallet",
                     "meta": {
                         **created["meta"],
                         "description": "watch alpha updated",
@@ -232,10 +236,12 @@ class WorkspaceStoreTests(unittest.TestCase):
 
             self.assertEqual(updated["meta"]["description"], "watch alpha updated")
             self.assertEqual(updated["search_spec"]["all_keywords"], ["alpha", "beta"])
+            self.assertEqual(updated["tags"], ["defi", "wallet"])
 
             loaded = store.get_pack("alpha-watch")
             self.assertEqual(loaded["meta"]["updated_at"], "2026-04-15T00:00:00+00:00")
             self.assertEqual(loaded["search_spec"]["all_keywords"], ["alpha", "beta"])
+            self.assertEqual(loaded["tags"], ["defi", "wallet"])
 
 
 class RuntimeStateStoreTests(unittest.TestCase):

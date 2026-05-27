@@ -15,6 +15,7 @@ import {
 import { ResultsDetailRail } from "./results/ResultsDetailRail";
 import { ResultsPageHeader } from "./results/ResultsPageHeader";
 import { ResultsTableManager } from "./results/ResultsTableManager";
+import { TagPills } from "../components/TagPills";
 import { formatUtcPlus8Time } from "../time";
 
 const RESULTS_COLUMN_WIDTHS_KEY = "results.columnWidths.v1";
@@ -200,6 +201,13 @@ const CURATED_COLUMN_DEFINITIONS: ColumnDefinition[] = [
     render: (item) => (item as CuratedItemRecord).author || "--",
   },
   {
+    key: "tags",
+    label: "tags",
+    defaultVisible: true,
+    width: 180,
+    render: (item) => <TagPills tags={(item as CuratedItemRecord).tags} />,
+  },
+  {
     key: "created_at_x",
     label: "created_at_x",
     defaultVisible: true,
@@ -282,6 +290,13 @@ const RAW_COLUMN_DEFINITIONS: ColumnDefinition[] = [
     defaultVisible: true,
     width: 140,
     render: (item) => (item as RawItemRecord).author || "--",
+  },
+  {
+    key: "tags",
+    label: "tags",
+    defaultVisible: true,
+    width: 180,
+    render: (item) => <TagPills tags={(item as RawItemRecord).tags} />,
   },
   {
     key: "text",

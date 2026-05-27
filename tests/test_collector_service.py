@@ -38,8 +38,8 @@ class DesktopServiceTests(unittest.TestCase):
                 cur = conn.execute(
                     """
                     INSERT INTO x_items_curated
-                    (run_id, dedupe_key, level, score, title, summary_zh, excerpt, is_zero_cost, source_url, author, created_at_x, reasons_json, rule_set_id, state)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (run_id, dedupe_key, level, score, title, summary_zh, excerpt, is_zero_cost, source_url, author, created_at_x, tags_json, reasons_json, rule_set_id, state)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         int(row.get("run_id", 1) or 1),
@@ -53,6 +53,7 @@ class DesktopServiceTests(unittest.TestCase):
                         str(row.get("source_url", f"https://example.com/{index}") or ""),
                         str(row.get("author", "") or ""),
                         row.get("created_at_x"),
+                        json.dumps(row.get("tags", []), ensure_ascii=False),
                         json.dumps(row.get("reasons_json", []), ensure_ascii=False),
                         row.get("rule_set_id"),
                         str(row.get("state", "new") or "new"),
@@ -68,8 +69,8 @@ class DesktopServiceTests(unittest.TestCase):
                 cur = conn.execute(
                     """
                     INSERT INTO x_items_raw
-                    (run_id, tweet_id, canonical_url, author, text, created_at_x, metrics_json, query_name, fetched_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (run_id, tweet_id, canonical_url, author, text, created_at_x, metrics_json, tags_json, query_name, fetched_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         int(row.get("run_id", index) or index),
@@ -79,6 +80,7 @@ class DesktopServiceTests(unittest.TestCase):
                         str(row.get("text", f"text-{index}") or ""),
                         row.get("created_at_x", "2026-04-10T00:00:00+00:00"),
                         json.dumps(row.get("metrics_json", {"views": 0, "likes": 0, "replies": 0, "retweets": 0}), ensure_ascii=False),
+                        json.dumps(row.get("tags", []), ensure_ascii=False),
                         str(row.get("query_name", f"manual:{index}") or ""),
                         str(row.get("fetched_at", "2026-04-10T00:10:00+00:00") or ""),
                     ),
@@ -1057,6 +1059,69 @@ class DesktopServiceTests(unittest.TestCase):
 
         self.assertEqual(raw_fetched_at, "2026-04-12T01:23:45+00:00")
         self.assertEqual(curated_fetched_at, raw_fetched_at)
+
+    @patch("backend.collector_service.evaluate_rule_set")
+    @patch("backend.collector_service.normalize_search_payload")
+    @patch("backend.collector_service.run_twitter_search")
+    def test_manual_run_snapshots_tags_to_raw_and_curated_items(
+        self,
+        mock_search,
+        mock_normalize_payload,
+        mock_evaluate_rule_set,
+    ) -> None:
+        mock_search.return_value = []
+        mock_normalize_payload.return_value = [self._make_search_result()]
+        mock_evaluate_rule_set.return_value = ([self._make_curated_match()], {"matched": 1, "excluded": 0})
+
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        report = self.service.run_manual(
+            {
+                **self._manual_payload(rule_set_id=rule_set_id),
+                "tags": ["DeFi", " wallet ", "defi"],
+            }
+        )
+
+        with connect(self.db_path) as conn:
+            raw_tags = conn.execute("SELECT tags_json FROM x_items_raw WHERE run_id = ?", (report["run_id"],)).fetchone()[0]
+            curated_tags = conn.execute("SELECT tags_json FROM x_items_curated WHERE run_id = ?", (report["run_id"],)).fetchone()[0]
+
+        self.assertEqual(json.loads(raw_tags), ["defi", "wallet"])
+        self.assertEqual(json.loads(curated_tags), ["defi", "wallet"])
+        self.assertEqual(report["tags"], ["defi", "wallet"])
+        self.assertEqual(self.service.list_items(table="raw")["items"][0]["tags"], ["defi", "wallet"])
+        self.assertEqual(self.service.list_items(table="curated")["items"][0]["tags"], ["defi", "wallet"])
+
+    @patch("backend.collector_service.evaluate_rule_set")
+    @patch("backend.collector_service.normalize_search_payload")
+    @patch("backend.collector_service.run_twitter_search")
+    def test_auto_run_inherits_tags_from_job_task_pack(
+        self,
+        mock_search,
+        mock_normalize_payload,
+        mock_evaluate_rule_set,
+    ) -> None:
+        mock_search.return_value = []
+        mock_normalize_payload.return_value = [self._make_search_result()]
+        mock_evaluate_rule_set.return_value = ([self._make_curated_match()], {"matched": 1, "excluded": 0})
+
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        job = self.service.create_job(
+            {
+                "name": "tagged-auto",
+                "interval_minutes": 30,
+                "enabled": True,
+                "rule_set_id": rule_set_id,
+                "tags": ["OnChain", "airdrop", "onchain"],
+                "search_spec": self._manual_payload(rule_set_id=rule_set_id)["search_spec"],
+            }
+        )
+
+        report = self.service.run_job_now(int(job["id"]))
+
+        self.assertEqual(job["tags"], ["onchain", "airdrop"])
+        self.assertEqual(report["tags"], ["onchain", "airdrop"])
+        self.assertEqual(self.service.list_items(table="raw")["items"][0]["tags"], ["onchain", "airdrop"])
+        self.assertEqual(self.service.list_items(table="curated")["items"][0]["tags"], ["onchain", "airdrop"])
 
     def test_list_items_invalid_sort_field_falls_back_to_default_id_desc(self) -> None:
         ids = self._seed_curated_items(

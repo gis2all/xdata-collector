@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import type { CuratedItemRecord, ItemTable, RawItemRecord, ResultItemRecord } from "../../api";
+import { TagPills } from "../../components/TagPills";
 import { formatUtcPlus8Time } from "../../time";
 
 type ResultsDetailRailProps = {
@@ -93,6 +94,7 @@ function renderCuratedItem(item: CuratedItemRecord, tableLabel: string) {
         <div className="results-detail-fact-grid flat-row-list">
           {renderFact("状态", item.state || "--")}
           {renderFact("等级", item.level || "--")}
+          {renderFact("tags", <TagPills tags={item.tags} />)}
           {renderFact("作者名称", item.author_name || "--")}
           {renderFact("作者ID", item.author || "--")}
           {renderFact("采集时间", formatUtcPlus8Time(item.fetched_at))}
@@ -148,6 +150,7 @@ function renderRawItem(item: RawItemRecord, tableLabel: string) {
         <div className="results-detail-fact-grid flat-row-list">
           {renderFact("作者名称", item.author_name || "--")}
           {renderFact("作者ID", item.author || "--")}
+          {renderFact("tags", <TagPills tags={item.tags} />)}
           {renderFact("查询名称", item.query_name || "--")}
           {renderFact("运行 ID", String(item.run_id ?? "--"))}
           {renderFact("推文 ID", item.tweet_id || "--")}

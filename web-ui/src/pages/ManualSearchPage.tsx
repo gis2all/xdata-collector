@@ -18,6 +18,8 @@ import {
   buildQueryPreview,
   cloneRuleDefinition,
   cloneSearchSpec,
+  joinCommaLinesForTextarea,
+  splitCommaLines,
 } from "../collector";
 import { SearchSpecEditor } from "../components/SearchSpecEditor";
 import { RuleSetEditor } from "../components/RuleSetEditor";
@@ -31,6 +33,7 @@ function metricValue(item: any, key: string) {
 function buildPackPayload(
   name: string,
   description: string,
+  tags: string[],
   searchSpec: ReturnType<typeof cloneSearchSpec>,
   ruleName: string,
   ruleDescription: string,
@@ -41,6 +44,7 @@ function buildPackPayload(
       name,
       description,
     },
+    tags,
     search_spec: cloneSearchSpec(searchSpec),
     rule_set: {
       name: ruleName.trim() || name,
@@ -52,12 +56,14 @@ function buildPackPayload(
 }
 
 function buildDraftComparable(
+  tags: string[],
   searchSpec: ReturnType<typeof cloneSearchSpec>,
   ruleName: string,
   ruleDescription: string,
   draftDefinition: RuleSetDefinition,
 ) {
   return {
+    tags: [...tags],
     search_spec: cloneSearchSpec(searchSpec),
     rule_set: {
       name: ruleName.trim(),
@@ -69,6 +75,7 @@ function buildDraftComparable(
 
 function buildPackComparable(pack: TaskPackFile) {
   return {
+    tags: [...(pack.tags || [])],
     search_spec: cloneSearchSpec(pack.search_spec),
     rule_set: {
       name: String(pack.rule_set.name || "").trim(),
@@ -155,6 +162,7 @@ export function ManualSearchPage() {
   const [draftSource, setDraftSource] = useState<DraftSourceKind>("blank");
   const [draftRuleName, setDraftRuleName] = useState("Default Rule Set");
   const [draftRuleDescription, setDraftRuleDescription] = useState("Built-in opportunity discovery rules.");
+  const [draftTagsText, setDraftTagsText] = useState("");
   const [draftDefinition, setDraftDefinition] = useState<RuleSetDefinition>(
     cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION),
   );
@@ -176,10 +184,11 @@ export function ManualSearchPage() {
     [currentPack, draftDefinition, draftRuleDescription, draftRuleName],
   );
 
+  const draftTags = useMemo(() => splitCommaLines(draftTagsText), [draftTagsText]);
   const currentPackComparable = useMemo(() => (currentPack ? buildPackComparable(currentPack) : null), [currentPack]);
   const currentDraftComparable = useMemo(
-    () => buildDraftComparable(searchSpec, draftRuleName, draftRuleDescription, draftDefinition),
-    [searchSpec, draftDefinition, draftRuleDescription, draftRuleName],
+    () => buildDraftComparable(draftTags, searchSpec, draftRuleName, draftRuleDescription, draftDefinition),
+    [draftTags, searchSpec, draftDefinition, draftRuleDescription, draftRuleName],
   );
   const draftDirty = useMemo(() => {
     if (!currentPackComparable) return false;
@@ -221,6 +230,7 @@ export function ManualSearchPage() {
     setSearchSpec(cloneSearchSpec(DEFAULT_SEARCH_SPEC));
     setDraftRuleName("Default Rule Set");
     setDraftRuleDescription("Built-in opportunity discovery rules.");
+    setDraftTagsText("");
     setDraftDefinition(cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION));
     setCurrentPack(null);
     setSelectedPackName(DEFAULT_DRAFT_PACK_NAME);
@@ -230,6 +240,7 @@ export function ManualSearchPage() {
   function resetDraft() {
     if (currentPack) {
       setSearchSpec(cloneSearchSpec(currentPack.search_spec));
+      setDraftTagsText(joinCommaLinesForTextarea(currentPack.tags || []));
       setDraftRuleName(currentPack.rule_set.name || currentPack.meta.name);
       setDraftRuleDescription(currentPack.rule_set.description || currentPack.meta.description || "");
       setDraftDefinition(cloneRuleDefinition(currentPack.rule_set.definition));
@@ -270,6 +281,7 @@ export function ManualSearchPage() {
     try {
       const pack = await getTaskPack(selectedPackName);
       setSearchSpec(cloneSearchSpec(pack.search_spec));
+      setDraftTagsText(joinCommaLinesForTextarea(pack.tags || []));
       setDraftRuleName(pack.rule_set.name || pack.meta.name);
       setDraftRuleDescription(pack.rule_set.description || pack.meta.description || "");
       setDraftDefinition(cloneRuleDefinition(pack.rule_set.definition));
@@ -297,6 +309,7 @@ export function ManualSearchPage() {
       const payload = buildPackPayload(
         targetName,
         draftRuleDescription,
+        draftTags,
         searchSpec,
         draftRuleName,
         draftRuleDescription,
@@ -311,6 +324,7 @@ export function ManualSearchPage() {
       setDraftSource("pack");
       setDraftRuleName(saved.rule_set.name || targetName);
       setDraftRuleDescription(saved.rule_set.description || "");
+      setDraftTagsText(joinCommaLinesForTextarea(saved.tags || []));
       setDraftDefinition(cloneRuleDefinition(saved.rule_set.definition));
       setMessage(mode === "overwrite" ? "已保存到当前任务包" : `已另存为新任务包 ${saved.pack_name}`);
       await refreshTaskPacks();
@@ -329,6 +343,7 @@ export function ManualSearchPage() {
     try {
       const imported = await readImportedTaskPack(file);
       setSearchSpec(imported.searchSpec);
+      setDraftTagsText(joinCommaLinesForTextarea(imported.tags || []));
       setDraftRuleName(imported.ruleSet.name);
       setDraftRuleDescription(imported.ruleSet.description || imported.description);
       setDraftDefinition(cloneRuleDefinition(imported.ruleSet.definition));
@@ -356,6 +371,7 @@ export function ManualSearchPage() {
       const payload = buildPackPayload(
         targetName,
         imported.description,
+        imported.tags,
         imported.searchSpec,
         imported.ruleSet.name,
         imported.ruleSet.description,
@@ -363,6 +379,7 @@ export function ManualSearchPage() {
       );
       const saved = await createTaskPack({ pack_name: targetName, ...payload });
       setSearchSpec(cloneSearchSpec(saved.search_spec));
+      setDraftTagsText(joinCommaLinesForTextarea(saved.tags || []));
       setDraftRuleName(saved.rule_set.name || targetName);
       setDraftRuleDescription(saved.rule_set.description || "");
       setDraftDefinition(cloneRuleDefinition(saved.rule_set.definition));
@@ -418,6 +435,7 @@ export function ManualSearchPage() {
     try {
       const data = await runManual({
         search_spec: searchSpec,
+        tags: draftTags,
         rule_set: {
           name: draftRuleName,
           description: draftRuleDescription,
@@ -506,6 +524,7 @@ export function ManualSearchPage() {
               <div className="workbench-pill-row">
                 <span className="jobs-summary-pill workbench-pill">{`当前来源：${packSourceLabel}`}</span>
                 <span className="jobs-summary-pill workbench-pill">{`当前绑定：${currentPack?.pack_name || "--"}`}</span>
+                <span className="jobs-summary-pill workbench-pill">{`tags：${draftTags.length ? draftTags.join(", ") : "--"}`}</span>
                 <span className="jobs-summary-pill workbench-pill">{`草稿状态：${packDraftLabel}`}</span>
               </div>
             </div>
@@ -585,6 +604,17 @@ export function ManualSearchPage() {
                   </div>
                   <div className="kv manual-pack-note">从文件导入只替换当前草稿。</div>
                   <div className="kv manual-pack-note">导入并保存会新建并绑定任务包。</div>
+                </div>
+                <div className="manual-action-group">
+                  <div className="manual-action-group-label">tags</div>
+                  <textarea
+                    className="workbench-textarea"
+                    rows={3}
+                    value={draftTagsText}
+                    onChange={(event) => setDraftTagsText(event.target.value)}
+                    placeholder="逗号或换行分隔，如：alpha, defi, wallet"
+                    aria-label="manual-pack-tags"
+                  />
                 </div>
               </div>
               <div className="manual-action-card flat-section" data-testid="manual-pack-save-card">

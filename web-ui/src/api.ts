@@ -174,6 +174,7 @@ export type TaskPackSummary = {
   name: string;
   description: string;
   updated_at: string;
+  tags: string[];
   rule_set_summary?: RuleSetSummary | null;
   query_preview?: string;
 };
@@ -188,6 +189,7 @@ export type TaskPackFile = {
     description: string;
     updated_at: string;
   };
+  tags: string[];
   search_spec: SearchSpec;
   rule_set: {
     id?: number | null;
@@ -210,6 +212,7 @@ export type CollectorResultItem = {
   author: string;
   created_at: string;
   fetched_at?: string | null;
+  tags: string[];
   raw: Record<string, unknown>;
   metrics: Record<string, number>;
   flags: {
@@ -240,6 +243,7 @@ export type CollectorRunResult = {
   run_id: number;
   status: string;
   search_spec: SearchSpec;
+  tags: string[];
   final_query: string;
   final_queries: string[];
   rule_set_summary: RuleSetSummary;
@@ -269,6 +273,7 @@ export type JobRecord = {
     description?: string;
     updated_at?: string;
   };
+  tags: string[];
   enabled: number;
   next_run_at: string | null;
   created_at: string;
@@ -348,6 +353,7 @@ export type CuratedItemSortField =
   | "source_url"
   | "author_name"
   | "author"
+  | "tags"
   | "created_at_x"
   | "views"
   | "likes"
@@ -365,6 +371,7 @@ export type RawItemSortField =
   | "canonical_url"
   | "author_name"
   | "author"
+  | "tags"
   | "text"
   | "created_at_x"
   | "views"
@@ -390,6 +397,7 @@ export type CuratedItemRecord = {
   author_name: string;
   author: string;
   created_at_x: string | null;
+  tags: string[];
   views: number;
   likes: number;
   replies: number;
@@ -409,6 +417,7 @@ export type RawItemRecord = {
   author: string;
   text: string;
   created_at_x: string | null;
+  tags: string[];
   views: number;
   likes: number;
   replies: number;
@@ -507,6 +516,7 @@ export function getTaskPack(packName: string) {
 export function createTaskPack(payload: {
   pack_name?: string;
   meta: { name: string; description?: string; updated_at?: string };
+  tags?: string[];
   search_spec: SearchSpec;
   rule_set: { id?: number | null; name: string; description?: string; version?: number; definition: RuleSetDefinition };
 }) {
@@ -520,6 +530,7 @@ export function updateTaskPack(
   packName: string,
   payload: {
     meta: { name: string; description?: string; updated_at?: string };
+    tags?: string[];
     search_spec: SearchSpec;
     rule_set: { id?: number | null; name: string; description?: string; version?: number; definition: RuleSetDefinition };
   },
@@ -550,7 +561,7 @@ export function getJob(id: number) {
   return req<JobRecord>(`/jobs/${id}`);
 }
 
-export function runManual(payload: { search_spec: SearchSpec; rule_set_id?: number | null; rule_set?: Partial<RuleSet> }) {
+export function runManual(payload: { search_spec: SearchSpec; tags?: string[]; rule_set_id?: number | null; rule_set?: Partial<RuleSet> }) {
   return req<CollectorRunResult>("/manual/run", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -608,6 +619,7 @@ export function createJob(payload: {
   interval_minutes: number;
   enabled: boolean;
   search_spec: SearchSpec;
+  tags?: string[];
   rule_set?: { id?: number | null; name: string; description?: string; version?: number; definition: RuleSetDefinition };
   rule_set_id?: number | null;
 }) {
@@ -621,6 +633,7 @@ export function updateJob(
     interval_minutes: number;
     enabled: boolean;
     search_spec: SearchSpec;
+    tags?: string[];
     rule_set?: { id?: number | null; name: string; description?: string; version?: number; definition: RuleSetDefinition };
     rule_set_id: number | null;
   }>,

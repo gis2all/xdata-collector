@@ -42,12 +42,15 @@
 - `version`
 - `kind: "task_pack"`
 - `meta`
+- `tags`
 - `search_spec`
 - `rule_set`
 
 当前约定：
 
-- `任务包 = 搜索条件 + 规则`
+- `任务包 = 搜索条件 + 规则 + tags`
+- `tags` 是简单字符串数组，会 trim、小写化并去重
+- 手动执行和自动任务都会继承当前任务包的 `tags`，并在写入结果时保存为当次运行快照
 - Git 中只保留默认规则 pack：`default-rule-set.json`
 - 具体任务 pack、手动预设 pack、手动规则 pack 都属于本地动态配置
 

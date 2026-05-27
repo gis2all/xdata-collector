@@ -50,6 +50,7 @@ function makeItem(id: number, overrides: Record<string, unknown> = {}) {
     replies: 2 + id,
     retweets: 1 + id,
     fetched_at: "2026-04-13T01:00:00+00:00",
+    tags: ["defi", "wallet"],
     reasons_json: [{ rule: `rule-${id}` }],
     rule_set_id: 2,
     state: "new",
@@ -74,6 +75,7 @@ function makeRawItem(id: number, overrides: Record<string, unknown> = {}) {
     retweets: 1 + id,
     query_name: `manual:${id}`,
     fetched_at: "2026-04-13T01:00:00+00:00",
+    tags: ["raw", "defi"],
     ...overrides,
   };
 }
@@ -166,6 +168,20 @@ describe("ResultsPage", () => {
     expect(within(screen.getByTestId("results-table-pane")).queryByText("summary_zh")).not.toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).getByText("Raw Author 1")).toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).getByText("raw-author-1")).toBeInTheDocument();
+    const rawTags = within(screen.getByTestId("results-table-pane")).getAllByText("raw");
+    const tableRawTag = rawTags.find((tag) => tag.closest(".results-table-pane"))!;
+    expect(tableRawTag).toHaveClass("tag-pill");
+    expect(tableRawTag.closest(".tag-pills")).toHaveTextContent("rawdefi");
+    expect(within(screen.getByTestId("results-table-pane")).queryByText("raw, defi")).not.toBeInTheDocument();
+    const detailRawTag = within(screen.getByTestId("results-detail-rail")).getByText("raw");
+    expect(detailRawTag).toHaveClass("tag-pill");
+    expect(detailRawTag.closest(".tag-pills")).toHaveTextContent("rawdefi");
+    expect(screen.getByTestId("results-detail-rail")).not.toHaveTextContent("raw, defi");
+    expect(detailRawTag).toHaveStyle({
+      background: tableRawTag.style.background,
+      borderColor: tableRawTag.style.borderColor,
+      color: tableRawTag.style.color,
+    });
   });
 
   it("merges new default curated fields into legacy stored column preferences", async () => {

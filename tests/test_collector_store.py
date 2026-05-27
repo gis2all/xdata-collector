@@ -71,10 +71,12 @@ class CollectorStoreTests(unittest.TestCase):
             conn.close()
 
             self.assertIn("author_name", raw_columns)
+            self.assertIn("tags_json", raw_columns)
             self.assertIn("score", curated_columns)
             self.assertIn("reasons_json", curated_columns)
             self.assertIn("rule_set_id", curated_columns)
             self.assertIn("author_name", curated_columns)
+            self.assertIn("tags_json", curated_columns)
             self.assertIn("fetched_at", curated_columns)
             self.assertIn("views", curated_columns)
             self.assertIn("likes", curated_columns)
@@ -162,6 +164,7 @@ class CollectorStoreTests(unittest.TestCase):
             SELECT
                 '{"views": 12}' AS metrics_json,
                 '["a", "b"]' AS reasons_json,
+                '["defi", "wallet"]' AS tags_json,
                 'not-json' AS definition_json
             """
         ).fetchone()
@@ -170,6 +173,7 @@ class CollectorStoreTests(unittest.TestCase):
 
         self.assertEqual(payload["metrics_json"]["views"], 12)
         self.assertEqual(payload["reasons_json"], ["a", "b"])
+        self.assertEqual(payload["tags_json"], ["defi", "wallet"])
         self.assertEqual(payload["definition_json"], "not-json")
         conn.close()
 

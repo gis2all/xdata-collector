@@ -28,7 +28,7 @@ from backend.source_identity import (
     canonicalize_source_url,
 )
 from backend.twitter_cli import find_twitter_cli, get_twitter_cli_version, normalize_search_payload, run_twitter_search
-from backend.workspace_store import RuntimeStateStore, WorkspaceStore, default_builtin_rule_set
+from backend.workspace_store import RuntimeStateStore, WorkspaceStore, default_builtin_rule_set, normalize_tags
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SQLITE_DEFAULT = Path("data") / "app.db"
@@ -61,24 +61,14 @@ CURATED_ITEM_FIELDS = (
     "replies",
     "retweets",
     "fetched_at",
+    "tags",
     "reasons_json",
     "rule_set_id",
     "state",
 )
+CURATED_ITEM_DB_FIELDS = tuple("tags_json" if field == "tags" else field for field in CURATED_ITEM_FIELDS)
 CURATED_ITEM_SORT_FIELDS = {field: field for field in CURATED_ITEM_FIELDS}
-RAW_ITEM_DB_FIELDS = (
-    "id",
-    "run_id",
-    "tweet_id",
-    "canonical_url",
-    "author_name",
-    "author",
-    "text",
-    "created_at_x",
-    "metrics_json",
-    "query_name",
-    "fetched_at",
-)
+CURATED_ITEM_SORT_FIELDS["tags"] = "tags_json"
 RAW_ITEM_FIELDS = (
     "id",
     "run_id",
@@ -94,8 +84,24 @@ RAW_ITEM_FIELDS = (
     "retweets",
     "query_name",
     "fetched_at",
+    "tags",
 )
 RAW_ITEM_SORT_FIELDS = {field: field for field in RAW_ITEM_FIELDS}
+RAW_ITEM_SORT_FIELDS["tags"] = "tags_json"
+RAW_ITEM_DB_FIELDS = (
+    "id",
+    "run_id",
+    "tweet_id",
+    "canonical_url",
+    "author_name",
+    "author",
+    "text",
+    "created_at_x",
+    "metrics_json",
+    "tags_json",
+    "query_name",
+    "fetched_at",
+)
 RAW_ITEM_PYTHON_SORT_FIELDS = {"created_at_x", "views", "likes", "replies", "retweets"}
 MAX_ITEM_PAGE_SIZE = 200
 
@@ -143,6 +149,17 @@ def _raw_metrics(payload: dict[str, Any]) -> dict[str, int]:
     return normalized
 
 
+def _row_tags(payload: dict[str, Any]) -> list[str]:
+    return normalize_tags(payload.get("tags") if "tags" in payload else payload.get("tags_json"))
+
+
+def _curated_row_to_item(row: Any) -> dict[str, Any]:
+    payload = row_to_dict(row)
+    payload["tags"] = _row_tags(payload)
+    payload.pop("tags_json", None)
+    return payload
+
+
 def _raw_row_to_item(row: Any) -> dict[str, Any]:
     payload = row_to_dict(row)
     metrics = _raw_metrics(payload)
@@ -161,6 +178,7 @@ def _raw_row_to_item(row: Any) -> dict[str, Any]:
         "retweets": metrics["retweets"],
         "query_name": str(payload.get("query_name") or ""),
         "fetched_at": payload.get("fetched_at"),
+        "tags": _row_tags(payload),
     }
 
 
@@ -392,6 +410,7 @@ class DesktopService:
                     raise
         return {
             "meta": {"name": job.get("name") or "", "description": "", "updated_at": job.get("updated_at") or utc_now_iso()},
+            "tags": [],
             "search_spec": normalize_search_spec(default_search_spec()),
             "rule_set": {
                 "id": 1,
@@ -431,6 +450,7 @@ class DesktopService:
         haystacks = [
             str(job.get("name") or "").lower(),
             json.dumps(self._job_keywords_preview(search_spec), ensure_ascii=False).lower(),
+            json.dumps(normalize_tags(self._load_job_pack(job, allow_missing=True).get("tags")), ensure_ascii=False).lower(),
             str(rule_set.get("name") or "").lower(),
             str(rule_set.get("description") or "").lower(),
         ]
@@ -449,6 +469,7 @@ class DesktopService:
         payload["rule_set_id"] = int(rule_set.get("id") or 0) if rule_set.get("id") is not None else None
         payload["rule_set_summary"] = self._build_rule_set_summary(rule_set)
         payload["pack_meta"] = copy.deepcopy(pack.get("meta") or {})
+        payload["tags"] = normalize_tags(pack.get("tags"))
         payload["last_run_id"] = int(last_run["id"]) if last_run is not None else None
         payload["last_run_status"] = last_run.get("status") if last_run is not None else None
         payload["last_run_started_at"] = last_run.get("started_at") if last_run is not None else None
@@ -588,9 +609,11 @@ class DesktopService:
         search_spec: dict[str, Any],
         rule_set: dict[str, Any],
         updated_at: str,
+        tags: Any = None,
     ) -> dict[str, Any]:
         return {
             "meta": {"name": name, "description": description, "updated_at": updated_at},
+            "tags": normalize_tags(tags),
             "search_spec": normalize_search_spec(search_spec),
             "rule_set": {
                 "id": int(rule_set.get("id") or 0) if rule_set.get("id") is not None else None,
@@ -670,6 +693,7 @@ class DesktopService:
                     "definition_json": normalize_rule_set_definition(payload.get("definition") or payload.get("definition_json") or default_rule_set_definition()),
                 },
                 updated_at=now,
+                tags=[],
             ),
         )
         return self.get_rule_set(next_rule_set_id)
@@ -696,6 +720,7 @@ class DesktopService:
                     "definition_json": normalize_rule_set_definition(payload.get("definition") or payload.get("definition_json") or current_rule_set.get("definition_json")),
                 },
                 updated_at=utc_now_iso(),
+                tags=current.get("tags") or [],
             ),
         )
         return self.get_rule_set(rule_set_id)
@@ -752,6 +777,7 @@ class DesktopService:
                 search_spec=search_spec,
                 rule_set=rule_set,
                 updated_at=now,
+                tags=payload.get("tags"),
             ),
         )
         workspace["jobs"] = [
@@ -767,6 +793,7 @@ class DesktopService:
                 "created_at": now,
                 "updated_at": now,
                 "deleted_at": None,
+                "tags": normalize_tags(payload.get("tags")),
             },
         ]
         workspace.setdefault("meta", {})["next_job_id"] = job_id + 1
@@ -849,6 +876,7 @@ class DesktopService:
                 search_spec=search_spec,
                 rule_set=rule_set,
                 updated_at=now,
+                tags=payload.get("tags", current_pack.get("tags")),
             ),
         )
         current.update(
@@ -858,6 +886,7 @@ class DesktopService:
                 "enabled": 1 if enabled else 0,
                 "next_run_at": next_run_at,
                 "updated_at": now,
+                "tags": normalize_tags(payload.get("tags", current_pack.get("tags"))),
             }
         )
         workspace["jobs"][index] = current
@@ -925,9 +954,11 @@ class DesktopService:
             raise ValueError(f"job {job_id} is deleted")
         pack = self._load_job_pack(job)
         rule_set = self._resolve_rule_set(inline_rule_set=pack.get("rule_set"))
+        tags = normalize_tags(pack.get("tags"))
         report = self.run_manual(
             {
                 "search_spec": normalize_search_spec(pack.get("search_spec") or default_search_spec()),
+                "tags": tags,
                 "rule_set": {
                     "id": rule_set.get("id"),
                     "name": rule_set.get("name"),
@@ -967,6 +998,7 @@ class DesktopService:
             raise ValueError("search_spec is empty")
         if not final_queries and final_query:
             final_queries = [final_query]
+        tags = normalize_tags(payload.get("tags"))
         rule_set = self._resolve_rule_set(
             rule_set_id=int(payload.get("rule_set_id") or 0) or None,
             inline_rule_set=payload.get("rule_set"),
@@ -993,7 +1025,7 @@ class DesktopService:
             run_errors = query_errors[:10]
             now_utc = datetime.now(timezone.utc)
             filtered_results = [item for item in deduped_results if passes_search_filters(item, search_spec, now_utc)]
-            self._store_raw(run_id, filtered_results, fetched_at=fetched_at)
+            self._store_raw(run_id, filtered_results, fetched_at=fetched_at, tags=tags)
             matched_items, match_stats = evaluate_rule_set(
                 items=filtered_results,
                 rule_definition=rule_set["definition_json"],
@@ -1002,7 +1034,8 @@ class DesktopService:
             )
             for item in matched_items:
                 item["fetched_at"] = item.get("fetched_at") or fetched_at
-            self._store_curated(run_id, matched_items, int(rule_set.get("id") or 0) or None, fetched_at=fetched_at)
+                item["tags"] = tags
+            self._store_curated(run_id, matched_items, int(rule_set.get("id") or 0) or None, fetched_at=fetched_at, tags=tags)
 
             dedupe_stats: dict[str, Any] = {}
             if matched_items:
@@ -1021,6 +1054,8 @@ class DesktopService:
                     run_errors.append(f"auto dedupe failed: {exc}")
 
             raw_items = [{**serialize_search_result(item), "fetched_at": fetched_at} for item in filtered_results[:100]]
+            for item in raw_items:
+                item["tags"] = tags
             rule_set_summary = {
                 "id": int(rule_set.get("id") or 0) if rule_set.get("id") else None,
                 "name": rule_set.get("name", ""),
@@ -1032,6 +1067,7 @@ class DesktopService:
                 "run_id": run_id,
                 "status": "success",
                 "search_spec": search_spec,
+                "tags": tags,
                 "final_query": final_query,
                 "final_queries": final_queries,
                 "rule_set_summary": rule_set_summary,
@@ -1120,13 +1156,13 @@ class DesktopService:
                 params.append(normalized_level.upper())
             if normalized_keyword:
                 token = f"%{normalized_keyword}%"
-                where.append("(title LIKE ? OR excerpt LIKE ?)")
-                params.extend([token, token])
+                where.append("(title LIKE ? OR excerpt LIKE ? OR tags_json LIKE ?)")
+                params.extend([token, token, token])
         else:
             if normalized_keyword:
                 token = f"%{normalized_keyword}%"
-                where.append("(text LIKE ? OR author LIKE ? OR canonical_url LIKE ?)")
-                params.extend([token, token, token])
+                where.append("(text LIKE ? OR author LIKE ? OR canonical_url LIKE ? OR tags_json LIKE ?)")
+                params.extend([token, token, token, token])
         where_sql = f"WHERE {' AND '.join(where)}" if where else ""
         return where_sql, params
 
@@ -1142,7 +1178,7 @@ class DesktopService:
         offset = max(0, (page - 1) * page_size)
         where_sql, params = self._item_where_clause("curated", level=level, keyword=keyword)
         sort_column, sort_direction = self._normalize_item_sort("curated", sort_by, sort_dir)
-        selected_fields = ", ".join(CURATED_ITEM_FIELDS)
+        selected_fields = ", ".join(CURATED_ITEM_DB_FIELDS)
         with connect(self.db_path) as conn:
             total = conn.execute(f"SELECT COUNT(1) FROM x_items_curated {where_sql}", tuple(params)).fetchone()[0]
             if sort_column == "created_at_x":
@@ -1166,7 +1202,7 @@ class DesktopService:
                     """,
                     tuple(params + [page_size, offset]),
                 ).fetchall()
-        items = [row_to_dict(row) for row in rows]
+        items = [_curated_row_to_item(row) for row in rows]
         if sort_column == "created_at_x":
             items = sorted(items, key=lambda item: _item_created_at_sort_key(item, sort_direction))
             items = items[offset : offset + page_size]
@@ -1561,8 +1597,15 @@ class DesktopService:
             error_text=error_text or "",
             ended_at=utc_now_iso(),
         )
-    def _store_raw(self, run_id: int, items: list[SearchResult], fetched_at: str | None = None) -> None:
+    def _store_raw(
+        self,
+        run_id: int,
+        items: list[SearchResult],
+        fetched_at: str | None = None,
+        tags: Any = None,
+    ) -> None:
         now = fetched_at or utc_now_iso()
+        normalized_tags = normalize_tags(tags)
         with connect(self.db_path) as conn:
             for item in items:
                 canonical_url = canonicalize_source_url(item.url)
@@ -1570,8 +1613,8 @@ class DesktopService:
                 conn.execute(
                     """
                     INSERT INTO x_items_raw
-                    (run_id, tweet_id, canonical_url, author_name, author, text, created_at_x, metrics_json, query_name, fetched_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (run_id, tweet_id, canonical_url, author_name, author, text, created_at_x, metrics_json, tags_json, query_name, fetched_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         run_id,
@@ -1582,6 +1625,7 @@ class DesktopService:
                         item.text,
                         item.created_at,
                         json.dumps(metrics, ensure_ascii=False),
+                        json.dumps(normalized_tags, ensure_ascii=False),
                         item.query_name,
                         now,
                     ),
@@ -1593,7 +1637,9 @@ class DesktopService:
         curated_items: list[dict[str, Any]],
         rule_set_id: int | None,
         fetched_at: str | None = None,
+        tags: Any = None,
     ) -> None:
+        normalized_tags = normalize_tags(tags)
         with connect(self.db_path) as conn:
             for item in curated_items:
                 dedupe_key = build_source_dedupe_key(
@@ -1606,8 +1652,8 @@ class DesktopService:
                 conn.execute(
                     """
                     INSERT INTO x_items_curated
-                    (run_id, dedupe_key, level, score, title, summary_zh, excerpt, is_zero_cost, source_url, author_name, author, created_at_x, views, likes, replies, retweets, fetched_at, reasons_json, rule_set_id, state)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (run_id, dedupe_key, level, score, title, summary_zh, excerpt, is_zero_cost, source_url, author_name, author, created_at_x, views, likes, replies, retweets, fetched_at, tags_json, reasons_json, rule_set_id, state)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         run_id,
@@ -1627,6 +1673,7 @@ class DesktopService:
                         _item_metric(item, "replies"),
                         _item_metric(item, "retweets"),
                         item_fetched_at,
+                        json.dumps(normalize_tags(item.get("tags") or normalized_tags), ensure_ascii=False),
                         json.dumps(item.get("reasons", []), ensure_ascii=False),
                         rule_set_id,
                         "new",

@@ -46,6 +46,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
             text TEXT,
             created_at_x TEXT,
             metrics_json TEXT NOT NULL DEFAULT '{}',
+            tags_json TEXT NOT NULL DEFAULT '[]',
             query_name TEXT,
             fetched_at TEXT NOT NULL
         );
@@ -68,6 +69,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
             replies INTEGER NOT NULL DEFAULT 0,
             retweets INTEGER NOT NULL DEFAULT 0,
             fetched_at TEXT,
+            tags_json TEXT NOT NULL DEFAULT '[]',
             reasons_json TEXT NOT NULL DEFAULT '[]',
             rule_set_id INTEGER NULL,
             author_name TEXT,
@@ -81,6 +83,8 @@ def ensure_schema_columns(conn: sqlite3.Connection) -> None:
     raw_columns = {row[1] for row in conn.execute("PRAGMA table_info(x_items_raw)").fetchall()}
     if "author_name" not in raw_columns:
         conn.execute("ALTER TABLE x_items_raw ADD COLUMN author_name TEXT NULL")
+    if "tags_json" not in raw_columns:
+        conn.execute("ALTER TABLE x_items_raw ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'")
 
     curated_columns = {row[1] for row in conn.execute("PRAGMA table_info(x_items_curated)").fetchall()}
     if "score" not in curated_columns:
@@ -91,6 +95,8 @@ def ensure_schema_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE x_items_curated ADD COLUMN rule_set_id INTEGER NULL")
     if "author_name" not in curated_columns:
         conn.execute("ALTER TABLE x_items_curated ADD COLUMN author_name TEXT NULL")
+    if "tags_json" not in curated_columns:
+        conn.execute("ALTER TABLE x_items_curated ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'")
     if "fetched_at" not in curated_columns:
         conn.execute("ALTER TABLE x_items_curated ADD COLUMN fetched_at TEXT NULL")
     for metric in ("views", "likes", "replies", "retweets"):
@@ -165,6 +171,7 @@ def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "search_spec_json",
         "definition_json",
         "reasons_json",
+        "tags_json",
     ):
         value = payload.get(key)
         if isinstance(value, str):

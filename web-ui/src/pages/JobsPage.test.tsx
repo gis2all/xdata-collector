@@ -21,7 +21,7 @@ vi.mock("../api", () => ({
   deleteTaskPack: vi.fn(),
 }));
 
-import { batchJobs, createJob, createTaskPack, deleteTaskPack, getJob, getTaskPack, listJobs, listTaskPacks, runJobNow, toggleJob, updateJob } from "../api";
+import { batchJobs, createJob, createTaskPack, deleteTaskPack, getJob, getTaskPack, listJobs, listTaskPacks, runJobNow, toggleJob, updateJob, updateTaskPack } from "../api";
 
 const listJobsMock = vi.mocked(listJobs);
 const listTaskPacksMock = vi.mocked(listTaskPacks);
@@ -29,6 +29,7 @@ const getJobMock = vi.mocked(getJob);
 const getTaskPackMock = vi.mocked(getTaskPack);
 const createJobMock = vi.mocked(createJob);
 const createTaskPackMock = vi.mocked(createTaskPack);
+const updateTaskPackMock = vi.mocked(updateTaskPack);
 const deleteTaskPackMock = vi.mocked(deleteTaskPack);
 const batchJobsMock = vi.mocked(batchJobs);
 const runJobNowMock = vi.mocked(runJobNow);
@@ -41,6 +42,7 @@ const packFile = {
   pack_name: "alpha-watch",
   pack_path: "config/packs/alpha-watch.json",
   meta: { name: "Alpha Watch", description: "watch alpha", updated_at: "2026-04-14T00:00:00+00:00" },
+  tags: ["defi", "wallet"],
   search_spec: {
     all_keywords: ["alpha"],
     exact_phrases: [],
@@ -87,6 +89,7 @@ function makeJob(id: number, overrides: Record<string, unknown> = {}) {
     rule_set_summary: { id: 1, name: "Default Rule Set", description: "builtin", version: 1, is_builtin: true },
     pack_name: `job-${id}`,
     pack_path: `config/packs/job-${id}.json`,
+    tags: [],
     enabled: 1,
     next_run_at: "2026-04-14T00:00:00+00:00",
     created_at: "2026-04-14T00:00:00+00:00",
@@ -107,8 +110,8 @@ describe("JobsPage", () => {
     vi.resetAllMocks();
     vi.spyOn(window, "confirm").mockReturnValue(true);
     listJobsMock.mockResolvedValue({ page: 1, page_size: 10, total: 0, items: [] } as any);
-    listTaskPacksMock.mockResolvedValue({ items: [{ pack_name: "alpha-watch", pack_path: "config/packs/alpha-watch.json", name: "Alpha Watch", description: "watch alpha", updated_at: "2026-04-14T00:00:00+00:00" }] } as any);
-    getJobMock.mockResolvedValue(makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" } }) as any);
+    listTaskPacksMock.mockResolvedValue({ items: [{ pack_name: "alpha-watch", pack_path: "config/packs/alpha-watch.json", name: "Alpha Watch", description: "watch alpha", updated_at: "2026-04-14T00:00:00+00:00", tags: ["defi", "wallet"] }] } as any);
+    getJobMock.mockResolvedValue(makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" }, tags: ["defi", "wallet"] }) as any);
     getTaskPackMock.mockResolvedValue(packFile as any);
     createTaskPackMock.mockImplementation(async (payload: any) => ({
       version: 1,
@@ -120,6 +123,27 @@ describe("JobsPage", () => {
         description: payload.meta?.description || "",
         updated_at: "2026-04-14T00:00:00+00:00",
       },
+      tags: payload.tags || [],
+      search_spec: payload.search_spec,
+      rule_set: {
+        id: payload.rule_set?.id ?? 1,
+        name: payload.rule_set?.name || "Default Rule Set",
+        description: payload.rule_set?.description || "",
+        version: payload.rule_set?.version || 1,
+        definition: payload.rule_set?.definition || { levels: [], rules: [] },
+      },
+    }) as any);
+    updateTaskPackMock.mockImplementation(async (packName: string, payload: any) => ({
+      version: 1,
+      kind: "task_pack",
+      pack_name: packName,
+      pack_path: `config/packs/${packName}.json`,
+      meta: {
+        name: payload.meta?.name || "Alpha Watch",
+        description: payload.meta?.description || "",
+        updated_at: "2026-04-14T00:00:00+00:00",
+      },
+      tags: payload.tags || [],
       search_spec: payload.search_spec,
       rule_set: {
         id: payload.rule_set?.id ?? 1,
@@ -154,6 +178,7 @@ describe("JobsPage", () => {
       rule_set_summary: { id: 1, name: "Default Rule Set", description: "builtin", version: 1, is_builtin: true },
       pack_name: "job-010-scheduled-alpha",
       pack_path: "config/packs/job-010-scheduled-alpha.json",
+      tags: [],
       enabled: 1,
       next_run_at: null,
       created_at: "2026-04-14T00:00:00+00:00",
@@ -229,6 +254,79 @@ describe("JobsPage", () => {
     expect(within(screen.getByTestId("jobs-table-wrap")).queryByText("本页全选")).not.toBeInTheDocument();
   });
 
+  it("renders task tags as shared colored pills in the jobs table", async () => {
+    listJobsMock.mockResolvedValueOnce({
+      page: 1,
+      page_size: 10,
+      total: 2,
+      items: [
+        makeJob(7, { name: "tagged-job", tags: ["defi", "wallet"] }),
+        makeJob(8, { name: "empty-tags-job", tags: [] }),
+      ],
+    } as any);
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("columnheader", { name: "任务标签" })).toBeInTheDocument();
+    });
+
+    const taggedRow = screen.getByText("tagged-job").closest("tr") as HTMLTableRowElement;
+    const taggedCell = taggedRow.querySelectorAll("td")[3] as HTMLElement;
+    const taggedPills = taggedCell.querySelectorAll(".tag-pill");
+    expect(taggedCell.querySelector(".tag-pills")).toBeInTheDocument();
+    expect(Array.from(taggedPills).map((pill) => pill.textContent)).toEqual(["defi", "wallet"]);
+    expect(taggedCell).not.toHaveTextContent("defi, wallet");
+
+    const emptyRow = screen.getByText("empty-tags-job").closest("tr") as HTMLTableRowElement;
+    const emptyTagsCell = emptyRow.querySelectorAll("td")[3] as HTMLElement;
+    expect(emptyTagsCell).toHaveTextContent("--");
+    expect(emptyTagsCell.querySelector(".tag-pill")).not.toBeInTheDocument();
+  });
+
+  it("refreshes the jobs table tags after saving the current task pack", async () => {
+    listJobsMock
+      .mockResolvedValueOnce({
+        page: 1,
+        page_size: 10,
+        total: 1,
+        items: [makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" }, tags: ["old"] })],
+      } as any)
+      .mockResolvedValueOnce({
+        page: 1,
+        page_size: 10,
+        total: 1,
+        items: [makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" }, tags: ["new"] })],
+      } as any);
+    getJobMock
+      .mockResolvedValueOnce(makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" }, tags: ["old"] }) as any)
+      .mockResolvedValueOnce(makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" }, tags: ["new"] }) as any);
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("old")).toHaveClass("tag-pill");
+    });
+
+    const row = screen.getAllByText("alpha-watch-job")[0]?.closest("tr");
+    expect(row).not.toBeNull();
+    fireEvent.click(row!);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("job-pack-tags")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("job-pack-tags"), { target: { value: "new" } });
+    fireEvent.click(screen.getByLabelText("job-save-current-pack"));
+
+    await waitFor(() => {
+      expect(updateTaskPackMock).toHaveBeenCalledWith("alpha-watch", expect.objectContaining({ tags: ["new"] }));
+      expect(listJobsMock).toHaveBeenCalledTimes(2);
+      expect(within(screen.getByTestId("jobs-table-wrap")).getByText("new")).toHaveClass("tag-pill");
+    });
+    expect(within(screen.getByTestId("jobs-table-wrap")).queryByText("old")).not.toBeInTheDocument();
+  });
+
   it("does not persist a dragged width after remount", async () => {
     Object.defineProperty(window, "innerWidth", { value: 1440, writable: true });
 
@@ -289,6 +387,7 @@ describe("JobsPage", () => {
 
     expect(screen.getByRole("heading", { name: "自动任务" }).closest("section")).toHaveClass("workbench-page-header");
     expect(screen.getByRole("columnheader", { name: "任务包" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "任务标签" })).toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "规则集" })).not.toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "查询摘要" })).not.toBeInTheDocument();
 
@@ -329,6 +428,9 @@ describe("JobsPage", () => {
     expect(screen.getByText("关键词片段").closest(".jobs-task-body-grid")).toHaveClass("flat-row-list");
     expect(screen.getByText("当前绑定：alpha-watch")).toBeInTheDocument();
     expect(screen.getByText("绑定状态：已绑定本地任务包")).toBeInTheDocument();
+    expect(screen.getByLabelText("job-pack-tags")).toHaveValue("defi\nwallet");
+    expect(screen.getByLabelText("job-pack-tags")).toHaveAttribute("placeholder", "逗号或换行分隔，如：alpha, defi, wallet");
+    expect(screen.getByText("tags：defi, wallet")).toBeInTheDocument();
     expect(screen.getByText("草稿状态：未修改")).toBeInTheDocument();
     expect(screen.queryByText("pack_path=config/packs/alpha-watch.json")).not.toBeInTheDocument();
     expect(screen.getByText("规则可视化编辑器")).toBeInTheDocument();
@@ -353,8 +455,39 @@ describe("JobsPage", () => {
     const payload = createJobMock.mock.calls[0]?.[0] as any;
     expect(payload.name).toBe("scheduled-alpha");
     expect(payload.interval_minutes).toBe(120);
+    expect(payload.tags).toEqual(["defi", "wallet"]);
     expect(payload.search_spec.all_keywords).toEqual(["alpha"]);
     expect(payload.rule_set.name).toBe("Default Rule Set");
+  });
+
+  it("keeps comma-separated tag text while creating a job with normalized tags", async () => {
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(listJobsMock).toHaveBeenCalled();
+    });
+
+    fireEvent.click(screen.getByTestId("create-job-button"));
+    fireEvent.change(screen.getByLabelText("job-name"), { target: { value: "scheduled-alpha" } });
+    fireEvent.change(screen.getByLabelText("job-pack-select"), { target: { value: "alpha-watch" } });
+    fireEvent.click(screen.getByLabelText("job-load-pack"));
+
+    await waitFor(() => {
+      expect(getTaskPackMock).toHaveBeenCalledWith("alpha-watch");
+    });
+
+    fireEvent.change(screen.getByLabelText("job-pack-tags"), { target: { value: "btc,eth" } });
+
+    expect(screen.getByLabelText("job-pack-tags")).toHaveValue("btc,eth");
+
+    fireEvent.click(screen.getByLabelText("submit-job"));
+
+    await waitFor(() => {
+      expect(createJobMock).toHaveBeenCalled();
+    });
+
+    const payload = createJobMock.mock.calls[0]?.[0] as any;
+    expect(payload.tags).toEqual(["btc", "eth"]);
   });
 
   it("keeps the list tools focused on filters and bulk actions without a summary banner", async () => {

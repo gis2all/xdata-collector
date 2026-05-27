@@ -87,12 +87,15 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 - `version`
 - `kind: "task_pack"`
 - `meta`
+- `tags`
 - `search_spec`
 - `rule_set`
 
 当前口径：
 
-- `任务包 = 搜索条件 + 规则`
+- `任务包 = 搜索条件 + 规则 + tags`
+- `tags` 是任务包级分类标签，保存为简单字符串数组，规范化为 trim + lowercase + dedupe
+- 手动任务和自动任务运行时都继承当前任务包/草稿的 `tags`，结果表只保存当次运行的标签快照；后续修改任务包不会回改历史结果
 - 导入或载入任务包后，只替换当前表单草稿
 - 继续编辑不会自动回写原 pack
 - 只有显式“另存为新任务包 / 保存到当前任务包 / 导入并保存为新任务包”才会落盘
@@ -122,6 +125,7 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 补充口径：
 
 - `x_items_raw` 和 `x_items_curated` 都保留 `fetched_at`
+- `x_items_raw` 和 `x_items_curated` 都保留 `tags_json`，API 序列化为 `tags: string[]`
 - `x_items_raw` 只保存通过搜索条件过滤后的原始结果，不再保存抓取但被搜索条件排除的中间数据
 - raw 只做单次 run 内存去重；不会在成功 run 后自动执行全表去重
 - 每次成功写入 curated 后，会自动对 `x_items_curated` 执行一次全表去重

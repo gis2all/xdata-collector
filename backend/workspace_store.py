@@ -55,6 +55,27 @@ def _slugify(value: str, *, fallback: str) -> str:
     return lowered or fallback
 
 
+def normalize_tags(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw_items = re.split(r"[,，\r\n\t]+", value)
+    elif isinstance(value, (list, tuple, set)):
+        raw_items = list(value)
+    else:
+        raw_items = [value]
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_items:
+        item = str(raw or "").strip().lower()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        normalized.append(item)
+    return normalized
+
+
 def _project_root_from_workspace_path(workspace_path: Path) -> Path:
     if workspace_path.parent.name == "config":
         return workspace_path.parent.parent
@@ -125,6 +146,7 @@ def default_task_pack() -> dict[str, Any]:
             "description": "",
             "updated_at": now,
         },
+        "tags": [],
         "search_spec": normalize_search_spec(default_search_spec()),
         "rule_set": {
             "id": 1,
@@ -159,6 +181,7 @@ def _normalize_task_pack(payload: dict[str, Any] | None, *, fallback_name: str) 
     return {
         "version": int(source.get("version") or TASK_PACK_VERSION),
         "kind": TASK_PACK_KIND,
+        "tags": normalize_tags(source.get("tags") if "tags" in source else meta_source.get("tags")),
         "meta": {
             "name": str(meta_source.get("name") or fallback_name).strip() or fallback_name,
             "description": str(meta_source.get("description") or "").strip(),
@@ -272,6 +295,7 @@ class TaskPackStore:
             "name": payload["meta"]["name"],
             "description": payload["meta"].get("description", ""),
             "updated_at": payload["meta"].get("updated_at", ""),
+            "tags": normalize_tags(payload.get("tags")),
         }
 
     def list_packs(self) -> list[dict[str, Any]]:

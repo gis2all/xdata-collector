@@ -1032,7 +1032,7 @@ textarea::placeholder {
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.05);
 }
 .jobs-table-wrap { min-width: 0; padding-right: 0; overflow-x: auto; }
-.jobs-table { min-width: 760px; }
+.jobs-table { min-width: 900px; }
 .jobs-table th,
 .jobs-table td { padding: 12px 14px; }
 .jobs-table th {
@@ -2363,6 +2363,27 @@ textarea::placeholder {
 }
 .results-table td a:hover {
   text-decoration: underline;
+}
+.tag-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.tag-pills-empty {
+  color: inherit;
 }
 .results-table tbody tr:nth-child(even) td {
   background: #fbfdff;
