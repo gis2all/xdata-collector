@@ -183,7 +183,10 @@ def normalize_metric_filters(
 def normalize_search_spec(payload: dict[str, Any] | None) -> dict[str, Any]:
     base = default_search_spec()
     incoming = payload or {}
-    base["all_keywords"] = normalize_list(incoming.get("all_keywords") or incoming.get("keywords")) or base["all_keywords"]
+    if "all_keywords" in incoming:
+        base["all_keywords"] = normalize_list(incoming.get("all_keywords"))
+    elif "keywords" in incoming:
+        base["all_keywords"] = normalize_list(incoming.get("keywords"))
     base["exact_phrases"] = normalize_list(incoming.get("exact_phrases"))
     base["any_keywords"] = normalize_list(incoming.get("any_keywords"))
     base["exclude_keywords"] = normalize_list(incoming.get("exclude_keywords"))

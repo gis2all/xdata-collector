@@ -80,6 +80,11 @@ class CollectorRulesTests(unittest.TestCase):
         self.assertTrue(spec["require_links"])
         self.assertEqual(spec["raw_query"], "is:verified")
 
+    def test_normalize_search_spec_preserves_explicit_empty_all_keywords(self) -> None:
+        spec = normalize_search_spec({"all_keywords": []})
+
+        self.assertEqual(spec["all_keywords"], [])
+
     def test_normalize_search_spec_supports_explicit_range_filters(self) -> None:
         spec = normalize_search_spec(
             {
