@@ -51,6 +51,9 @@
 - `任务包 = 搜索条件 + 规则 + tags`
 - `tags` 是简单字符串数组，会 trim、小写化并去重
 - 手动执行和自动任务都会继承当前任务包的 `tags`，并在写入结果时保存为当次运行快照
+- 搜索条件里的 `language_mode: "zh_en"` 会生成单条 `(lang:zh OR lang:en)` query，不拆成两次搜索
+- 默认发布时间范围为 1 天，默认时间切片为 1 小时，可选 15 分钟 / 30 分钟 / 1h / 2h / 4h
+- 有界 `days_filter` 执行时会按所选时间切片生成 `since_time` / `until_time` 切片查询；`raw_query` 已显式写时间操作符时不会叠加自动切片；时间切片 query 总上限为 10000
 - Git 中只保留默认规则 pack：`default-rule-set.json`
 - 具体任务 pack、手动预设 pack、手动规则 pack 都属于本地动态配置
 

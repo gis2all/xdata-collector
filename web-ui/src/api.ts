@@ -51,6 +51,7 @@ export type SearchSpec = {
   authors_exclude: string[];
   language_mode: LanguageMode;
   days_filter: RangeFilter;
+  time_slice_minutes: 15 | 30 | 60 | 120 | 240;
   metric_filters: MetricFilters;
   metric_filters_explicit: boolean;
   max_results: number;
@@ -326,6 +327,7 @@ export type RunRecord = {
   ended_at: string | null;
   error_text: string | null;
   stats_json: Record<string, number>;
+  result_json?: CollectorRunResult | null;
 };
 
 export type RuntimeLogFile = {
@@ -561,8 +563,13 @@ export function getJob(id: number) {
   return req<JobRecord>(`/jobs/${id}`);
 }
 
-export function runManual(payload: { search_spec: SearchSpec; tags?: string[]; rule_set_id?: number | null; rule_set?: Partial<RuleSet> }) {
-  return req<CollectorRunResult>("/manual/run", {
+export function runManualStart(payload: {
+  search_spec: SearchSpec;
+  tags?: string[];
+  rule_set_id?: number | null;
+  rule_set?: { id?: number | null; name: string; description?: string; version?: number; definition: RuleSetDefinition };
+}) {
+  return req<{ run_id: number; status: string }>("/manual/run/start", {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -573,6 +580,10 @@ export function listRuns(params: { page?: number; page_size?: number }) {
   if (params.page) q.set("page", String(params.page));
   if (params.page_size) q.set("page_size", String(params.page_size));
   return req<{ total: number; page: number; page_size: number; items: RunRecord[] }>(`/runs?${q.toString()}`);
+}
+
+export function getRun(id: number) {
+  return req<RunRecord>(`/runs/${id}`);
 }
 
 export function getRuntimeLogs() {

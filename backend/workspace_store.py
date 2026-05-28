@@ -4,6 +4,7 @@ import copy
 import json
 import re
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,7 @@ DEFAULT_SEQUENCE_PATH = PROJECT_ROOT / "runtime" / "state" / "sequences.json"
 WORKSPACE_VERSION = 2
 TASK_PACK_VERSION = 1
 TASK_PACK_KIND = "task_pack"
+_RUNS_LOCK = threading.RLock()
 
 
 def _ensure_parent(path: Path) -> None:
@@ -645,21 +647,26 @@ class RuntimeStateStore:
         return next_value
 
     def _load_runs(self) -> list[dict[str, Any]]:
-        if not self.runs_path.exists():
-            return []
-        items: list[dict[str, Any]] = []
-        for line in self.runs_path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            items.append(json.loads(line))
-        return items
+        with _RUNS_LOCK:
+            if not self.runs_path.exists():
+                return []
+            items: list[dict[str, Any]] = []
+            for line in self.runs_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                items.append(json.loads(line))
+            return items
 
     def _save_runs(self, payload: list[dict[str, Any]]) -> None:
-        serialized = "\n".join(json.dumps(item, ensure_ascii=False) for item in payload)
-        if serialized:
-            serialized += "\n"
-        _atomic_write_text(self.runs_path, serialized)
+        with _RUNS_LOCK:
+            serialized = "\n".join(json.dumps(item, ensure_ascii=False) for item in payload)
+            if serialized:
+                serialized += "\n"
+            # Progress updates can be very frequent; on Windows, atomic replace on the same
+            # JSONL file is prone to transient access errors while other readers poll status.
+            _ensure_parent(self.runs_path)
+            self.runs_path.write_text(serialized, encoding="utf-8")
 
     def create_run(self, *, job_id: int | None, trigger_type: str, started_at: str | None = None) -> int:
         run_id = self._next_sequence("run_id")
@@ -671,6 +678,7 @@ class RuntimeStateStore:
                 "trigger_type": trigger_type,
                 "status": "running",
                 "stats_json": {},
+                "result_json": None,
                 "started_at": started_at or utc_now_iso(),
                 "ended_at": None,
                 "error_text": None,
@@ -686,6 +694,7 @@ class RuntimeStateStore:
         status: str,
         stats: dict[str, Any],
         error_text: str,
+        result: dict[str, Any] | None = None,
         ended_at: str | None = None,
     ) -> None:
         runs = self._load_runs()
@@ -694,9 +703,25 @@ class RuntimeStateStore:
             if int(item.get("id") or 0) != int(run_id):
                 continue
             item["status"] = status
-            item["stats_json"] = copy.deepcopy(stats)
+            current_stats = item.get("stats_json") if isinstance(item.get("stats_json"), dict) else {}
+            item["stats_json"] = {**copy.deepcopy(current_stats), **copy.deepcopy(stats)}
+            item["result_json"] = copy.deepcopy(result) if isinstance(result, dict) else None
             item["ended_at"] = ended_at or utc_now_iso()
             item["error_text"] = error_text or None
+            found = True
+            break
+        if not found:
+            raise ValueError(f"run {run_id} not found")
+        self._save_runs(runs)
+
+    def update_run_progress(self, run_id: int, *, stats: dict[str, Any]) -> None:
+        runs = self._load_runs()
+        found = False
+        for item in runs:
+            if int(item.get("id") or 0) != int(run_id):
+                continue
+            current_stats = item.get("stats_json") if isinstance(item.get("stats_json"), dict) else {}
+            item["stats_json"] = {**copy.deepcopy(current_stats), **copy.deepcopy(stats)}
             found = True
             break
         if not found:

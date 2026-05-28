@@ -188,7 +188,8 @@ class WorkspaceStoreTests(unittest.TestCase):
                     "search_spec": {
                         "all_keywords": ["alpha"],
                         "language_mode": "en",
-                        "days_filter": {"mode": "lte", "min": None, "max": 20},
+                        "days_filter": {"mode": "lte", "min": None, "max": 1},
+                        "time_slice_minutes": 60,
                         "metric_filters": {
                             "views": {"mode": "any", "min": None, "max": None},
                             "likes": {"mode": "any", "min": None, "max": None},
@@ -260,6 +261,7 @@ class RuntimeStateStoreTests(unittest.TestCase):
                 status="success",
                 stats={"matched": 3},
                 error_text="",
+                result={"run_id": run_id, "status": "success"},
                 ended_at="2026-04-14T00:01:00+00:00",
             )
             store.save_health_snapshots(
@@ -282,10 +284,39 @@ class RuntimeStateStoreTests(unittest.TestCase):
             self.assertEqual(page["items"][0]["id"], 1)
             self.assertEqual(page["items"][0]["job_id"], 12)
             self.assertEqual(page["items"][0]["stats_json"]["matched"], 3)
+            self.assertEqual(page["items"][0]["result_json"]["status"], "success")
             self.assertEqual(snapshots["db"]["detail"]["db_path"], "data/app.db")
             self.assertTrue((root / "runtime" / "history" / "search_runs.jsonl").exists())
             self.assertTrue((root / "runtime" / "state" / "runtime_health_snapshot.json").exists())
             self.assertTrue((root / "runtime" / "state" / "sequences.json").exists())
+
+    def test_updates_run_progress_stats_without_finishing_run(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = RuntimeStateStore(
+                runs_path=root / "runtime" / "history" / "search_runs.jsonl",
+                health_path=root / "runtime" / "state" / "runtime_health_snapshot.json",
+                sequence_path=root / "runtime" / "state" / "sequences.json",
+            )
+
+            run_id = store.create_run(job_id=None, trigger_type="manual", started_at="2026-04-14T00:00:00+00:00")
+            store.update_run_progress(
+                run_id,
+                stats={
+                    "total_queries": 24,
+                    "completed_queries": 7,
+                    "progress_percent": 29,
+                    "fetched_raw": 18,
+                },
+            )
+
+            stored = store.get_run(run_id)
+
+            self.assertEqual(stored["status"], "running")
+            self.assertEqual(stored["ended_at"], None)
+            self.assertEqual(stored["stats_json"]["total_queries"], 24)
+            self.assertEqual(stored["stats_json"]["completed_queries"], 7)
+            self.assertEqual(stored["stats_json"]["progress_percent"], 29)
 
 
 if __name__ == "__main__":

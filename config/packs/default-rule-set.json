@@ -16,10 +16,11 @@
     "authors_include": [],
     "authors_exclude": [],
     "language_mode": "zh_en",
+    "time_slice_minutes": 60,
     "days_filter": {
       "mode": "lte",
       "min": null,
-      "max": 20
+      "max": 1
     },
     "metric_filters": {
       "views": {
@@ -45,7 +46,7 @@
     },
     "metric_filters_explicit": true,
     "language": "",
-    "days": 20,
+    "days": 1,
     "max_results": 40,
     "metric_mode": "OR",
     "min_metrics": {

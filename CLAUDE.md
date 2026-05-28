@@ -52,6 +52,9 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 
 - 默认搜索入口是 `twitter-cli 0.8.6` 的 `twitter search ... --json`；本机和 Docker 安装脚本都应使用 `git+https://github.com/public-clis/twitter-cli.git`。
 - `xreach search` 只作为 `twitter-cli search` 失败后的 fallback，不作为默认搜索入口。
+- 语言模式 `zh_en` 生成单条 `(lang:zh OR lang:en)` 查询，不拆成中文、英文两次搜索；默认 `days_filter` 为最近 1 天，默认时间切片为 1 小时，可选 15 分钟 / 30 分钟 / 1h / 2h / 4h。
+- `max_results` 是每个时间切片 query 的传参上限；`twitter-cli search` 实测单 query 通常最多返回约 40 条，所以高频词仍可能需要更细切片。
+- 只有有界 `days_filter` 会自动追加 `since_time:<秒> until_time:<秒>` 切片查询；如果 `raw_query` 已显式包含 `since:` / `until:` / `since_time:` / `until_time:`，不要再自动叠加时间切片；时间切片 query 总上限为 10000。
 - 二次补全使用 `xreach tweet <tweet_id> --json`，只在核心字段缺失时触发：`author`、`author_name`、`text`、`created_at_x`、`views`、`likes`、`replies`、`retweets`。
 - 不要因为 `urls` 或 `media` 缺失触发二次补全；搜索结果自带就保留，没有就不强制慢查。这里的 `urls` 是推文正文里的外部链接，不是推文本身的 `canonical_url`。
 - 排查搜索速度时必须带 `.env` 里的 `TWITTER_AUTH_TOKEN` / `TWITTER_CT0` 实测，并先确认 `python -m pipx list` 里 `twitter-cli` 是 0.8.6；旧的 0.8.5 可能出现 search 404，不能拿来判断当前策略。

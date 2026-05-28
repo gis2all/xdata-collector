@@ -1,5 +1,6 @@
 import json
 import shutil
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -295,6 +296,7 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(job["search_spec_json"]["all_keywords"], ["\u6316\u77ff", "\u79ef\u5206"])
         self.assertEqual(job["search_spec_json"]["language_mode"], "zh_en")
         self.assertEqual(job["search_spec_json"]["days_filter"], {"mode": "between", "min": 1, "max": 10})
+        self.assertEqual(job["search_spec_json"]["time_slice_minutes"], 60)
         self.assertTrue(job["search_spec_json"]["metric_filters_explicit"])
         toggled = self.service.toggle_job(int(job["id"]), False)
         self.assertEqual(toggled["enabled"], 0)
@@ -543,23 +545,11 @@ class DesktopServiceTests(unittest.TestCase):
             self.service.health_snapshot()
 
     @patch("backend.collector_service.run_twitter_search")
-    def test_manual_run_uses_multi_language_queries_dedupes_and_filters_results(self, mock_search) -> None:
+    def test_manual_run_uses_combined_language_query_dedupes_and_filters_results(self, mock_search) -> None:
         recent_created_at = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
         old_created_at = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
 
         def fake_search(query: str, _max_results: int):
-            if "lang:zh" in query:
-                return [
-                    {
-                        "id": "1001",
-                        "text": "Claim faucet on testnet now https://example.com",
-                        "author": {"screenName": "galxe"},
-                        "createdAtISO": recent_created_at,
-                        "metrics": {"views": 200, "likes": 10, "replies": 2, "retweets": 0},
-                        "lang": "zh",
-                        "url": "https://x.com/galxe/status/1001",
-                    }
-                ]
             return [
                 {
                     "id": "1001",
@@ -568,6 +558,15 @@ class DesktopServiceTests(unittest.TestCase):
                     "createdAtISO": recent_created_at,
                     "metrics": {"views": 200, "likes": 10, "replies": 2, "retweets": 0},
                     "lang": "en",
+                    "url": "https://x.com/galxe/status/1001",
+                },
+                {
+                    "id": "1001",
+                    "text": "Claim faucet on testnet now https://example.com",
+                    "author": {"screenName": "galxe"},
+                    "createdAtISO": recent_created_at,
+                    "metrics": {"views": 200, "likes": 10, "replies": 2, "retweets": 0},
+                    "lang": "zh",
                     "url": "https://x.com/galxe/status/1001",
                 },
                 {
@@ -610,22 +609,81 @@ class DesktopServiceTests(unittest.TestCase):
             }
         )
         self.assertEqual(report["status"], "success")
-        self.assertEqual(len(report["final_queries"]), 2)
-        self.assertIn("lang:zh", report["final_queries"][0])
-        self.assertIn("lang:en", report["final_queries"][1])
+        self.assertEqual(len(report["final_queries"]), 24)
+        self.assertIn("(lang:zh OR lang:en)", report["final_queries"][0])
+        self.assertIn("since_time:", report["final_queries"][0])
+        self.assertIn("until_time:", report["final_queries"][0])
         self.assertEqual(report["raw_total"], 1)
         self.assertEqual(len(report["raw_items"]), 1)
         self.assertEqual(report["matched_total"], 0)
         self.assertEqual(report["matched_items"], [])
         self.assertEqual(report["rule_set_summary"]["id"], rule_set_id)
-        self.assertEqual(report["stats"]["queries"], 2)
-        self.assertEqual(report["stats"]["fetched_raw"], 4)
+        self.assertEqual(report["stats"]["queries"], 24)
+        self.assertEqual(report["stats"]["fetched_raw"], 72)
         self.assertEqual(report["stats"]["raw_deduped"], 3)
         self.assertEqual(report["stats"]["search_filter_passed"], 1)
-        self.assertEqual(mock_search.call_count, 2)
+        self.assertEqual(mock_search.call_count, 24)
         raw_page = self.service.list_items(table="raw", page=1, page_size=10, sort_by="id", sort_dir="asc")
         self.assertEqual(raw_page["total"], 1)
         self.assertEqual(raw_page["items"][0]["tweet_id"], "1001")
+
+    @patch("backend.collector_service.run_twitter_search")
+    def test_manual_run_executes_one_hour_time_slices_for_recent_days(self, mock_search) -> None:
+        mock_search.return_value = []
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+
+        report = self.service.run_manual(
+            {
+                "search_spec": {
+                    "all_keywords": ["BTC"],
+                    "language_mode": "zh_en",
+                    "days_filter": {"mode": "lte", "max": 1},
+                    "metric_filters": {
+                        "views": {"mode": "any"},
+                        "likes": {"mode": "any"},
+                        "replies": {"mode": "any"},
+                        "retweets": {"mode": "any"},
+                    },
+                    "metric_filters_explicit": True,
+                },
+                "rule_set_id": rule_set_id,
+            }
+        )
+
+        self.assertEqual(report["status"], "success")
+        self.assertEqual(report["stats"]["queries"], 24)
+        self.assertEqual(len(report["final_queries"]), 24)
+        self.assertEqual(mock_search.call_count, 24)
+        self.assertTrue(all("since_time:" in query and "until_time:" in query for query in report["final_queries"]))
+
+    @patch("backend.collector_service.run_twitter_search")
+    def test_manual_run_executes_fifteen_minute_time_slices_when_configured(self, mock_search) -> None:
+        mock_search.return_value = []
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+
+        report = self.service.run_manual(
+            {
+                "search_spec": {
+                    "all_keywords": ["BTC"],
+                    "language_mode": "zh_en",
+                    "days_filter": {"mode": "lte", "max": 1},
+                    "time_slice_minutes": 15,
+                    "metric_filters": {
+                        "views": {"mode": "any"},
+                        "likes": {"mode": "any"},
+                        "replies": {"mode": "any"},
+                        "retweets": {"mode": "any"},
+                    },
+                    "metric_filters_explicit": True,
+                },
+                "rule_set_id": rule_set_id,
+            }
+        )
+
+        self.assertEqual(report["status"], "success")
+        self.assertEqual(report["stats"]["queries"], 96)
+        self.assertEqual(len(report["final_queries"]), 96)
+        self.assertEqual(mock_search.call_count, 96)
 
     @patch("backend.collector_service.run_twitter_search")
     def test_manual_run_stores_metrics_on_curated_items(self, mock_search) -> None:
@@ -903,6 +961,65 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(page["items"][0]["job_id"], 123)
         self.assertEqual(page["items"][0]["stats_json"]["matched"], 2)
         self.assertNotEqual(first, second)
+
+    @patch("backend.collector_service.run_twitter_search")
+    def test_start_manual_run_updates_progress_while_running(self, mock_search) -> None:
+        recent_created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+
+        def fake_search(query: str, _max_results: int):
+            time.sleep(0.05)
+            return [
+                {
+                    "id": f"tweet-{abs(hash(query)) % 100000}",
+                    "text": "Alpha progress https://example.com",
+                    "author": {"screenName": "galxe"},
+                    "createdAtISO": recent_created_at,
+                    "metrics": {"views": 200, "likes": 10, "replies": 1, "retweets": 0},
+                    "lang": "en",
+                    "url": "https://x.com/galxe/status/1001",
+                }
+            ]
+
+        mock_search.side_effect = fake_search
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        started = self.service.start_manual_run(
+            {
+                "search_spec": {
+                    "all_keywords": ["alpha"],
+                    "language_mode": "zh_en",
+                    "days_filter": {"mode": "lte", "max": 1},
+                    "metric_filters": {
+                        "views": {"mode": "any"},
+                        "likes": {"mode": "any"},
+                        "replies": {"mode": "any"},
+                        "retweets": {"mode": "any"},
+                    },
+                    "metric_filters_explicit": True,
+                },
+                "rule_set_id": rule_set_id,
+            }
+        )
+
+        run_id = int(started["run_id"])
+        observed_running_progress = False
+        deadline = time.time() + 5
+        final_run = None
+        while time.time() < deadline:
+            current = self.service.get_run(run_id)
+            stats = current.get("stats_json") or {}
+            if current.get("status") == "running" and int(stats.get("completed_queries", 0) or 0) > 0:
+                observed_running_progress = True
+            if current.get("status") != "running":
+                final_run = current
+                break
+            time.sleep(0.05)
+
+        self.assertTrue(observed_running_progress)
+        self.assertIsNotNone(final_run)
+        self.assertEqual(final_run["status"], "success")
+        self.assertEqual(final_run["stats_json"]["total_queries"], 24)
+        self.assertEqual(final_run["stats_json"]["completed_queries"], 24)
+        self.assertEqual(final_run["stats_json"]["progress_percent"], 100)
 
     def test_get_runtime_logs_reads_current_log_snapshots(self) -> None:
         from backend import collector_service as collector_service_module

@@ -150,6 +150,9 @@ class ApiHandler(BaseHTTPRequestHandler):
             if path == "/manual/run":
                 self._json(HTTPStatus.OK, self.service.run_manual(payload))
                 return
+            if path == "/manual/run/start":
+                self._json(HTTPStatus.OK, self.service.start_manual_run(payload))
+                return
             if path in {"/jobs", "/jobs/create"}:
                 self._json(HTTPStatus.OK, self.service.create_job(payload))
                 return

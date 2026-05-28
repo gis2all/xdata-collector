@@ -94,6 +94,10 @@ class FakeService:
         self.calls.append(("run_manual", payload))
         return {"status": "success", "payload": payload}
 
+    def start_manual_run(self, payload: dict) -> dict:
+        self.calls.append(("start_manual_run", payload))
+        return {"run_id": 9, "status": "running"}
+
     def run_job_now(self, job_id: int) -> dict:
         self.calls.append(("run_job_now", job_id))
         return {"status": "success", "job_id": job_id}
@@ -270,6 +274,22 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body.decode("utf-8"))["status"], "success")
         self.assertEqual(service.calls[0], ("run_manual", payload))
+
+    def test_post_manual_run_start_dispatches_payload(self) -> None:
+        service = FakeService()
+        payload = {"search_spec": {"all_keywords": ["btc"]}}
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "POST",
+                "/manual/run/start",
+                body=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8"))["status"], "running")
+        self.assertEqual(service.calls[0], ("start_manual_run", payload))
 
     def test_post_jobs_alias_dispatches_to_create_job(self) -> None:
         service = FakeService()

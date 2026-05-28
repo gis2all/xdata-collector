@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import threading
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Any
 
 from backend.collector_rules import (
     build_query_from_search_spec,
+    build_execution_query_plan_from_search_spec,
     build_query_plan_from_search_spec,
     default_rule_set_definition,
     default_search_spec,
@@ -462,7 +464,7 @@ class DesktopService:
         rule_set = self._resolve_rule_set(inline_rule_set=pack.get("rule_set"))
         payload = copy.deepcopy(job)
         payload["keywords_json"] = self._job_keywords_preview(search_spec)
-        payload["days"] = int(search_spec.get("days", search_spec.get("days_filter", {}).get("max") or 20) or 20)
+        payload["days"] = int(search_spec.get("days", search_spec.get("days_filter", {}).get("max") or 1) or 1)
         payload["thresholds_json"] = {**search_spec.get("min_metrics", {}), "mode": search_spec.get("metric_mode", "OR")}
         payload["levels_json"] = [item.get("id") for item in rule_set.get("definition_json", {}).get("levels", [])]
         payload["search_spec_json"] = search_spec
@@ -760,7 +762,7 @@ class DesktopService:
             payload.get("search_spec")
             or {
                 "keywords": payload.get("keywords", []),
-                "days": payload.get("days", 20),
+                "days": payload.get("days", 1),
                 "thresholds": payload.get("thresholds", {}),
             }
         )
@@ -853,7 +855,7 @@ class DesktopService:
             search_spec = normalize_search_spec(
                 {
                     "keywords": payload.get("keywords", self._job_keywords_preview(current_pack.get("search_spec") or {})),
-                    "days": payload.get("days", 20),
+                    "days": payload.get("days", 1),
                     "thresholds": payload.get("thresholds", {}),
                 }
             )
@@ -978,22 +980,45 @@ class DesktopService:
             self._save_workspace(workspace)
         return report
 
+    def start_manual_run(self, payload: dict[str, Any], trigger_type: str = "manual", job_id: int | None = None) -> dict[str, Any]:
+        run_id = self._create_run(job_id=job_id, trigger_type=trigger_type)
+        thread = threading.Thread(
+            target=self._run_manual_in_background,
+            args=(run_id, copy.deepcopy(payload), trigger_type, job_id),
+            daemon=True,
+        )
+        thread.start()
+        return {"run_id": run_id, "status": "running"}
+
     def run_manual(self, payload: dict[str, Any], trigger_type: str = "manual", job_id: int | None = None) -> dict[str, Any]:
+        run_id = self._create_run(job_id=job_id, trigger_type=trigger_type)
+        return self._execute_manual_run(payload, trigger_type=trigger_type, job_id=job_id, run_id=run_id)
+
+    def _run_manual_in_background(self, run_id: int, payload: dict[str, Any], trigger_type: str, job_id: int | None) -> None:
+        try:
+            self._execute_manual_run(payload, trigger_type=trigger_type, job_id=job_id, run_id=run_id)
+        except Exception:
+            return
+
+    def _execute_manual_run(self, payload: dict[str, Any], *, trigger_type: str, job_id: int | None, run_id: int) -> dict[str, Any]:
         if payload.get("search_spec") is not None:
             search_spec = normalize_search_spec(payload.get("search_spec"))
         else:
             search_spec = normalize_search_spec(
                 {
                     "keywords": payload.get("keywords", []),
-                    "days": payload.get("days", 20),
+                    "days": payload.get("days", 1),
                     "thresholds": payload.get("thresholds", {}),
                     "max_results": payload.get("max_results", 100),
                 }
             )
-        final_queries = build_query_plan_from_search_spec(search_spec)
+        now_utc = datetime.now(timezone.utc)
+        final_queries = build_execution_query_plan_from_search_spec(
+            search_spec,
+            now_utc=now_utc,
+            slice_minutes=int(search_spec.get("time_slice_minutes") or 60),
+        )
         final_query = build_query_from_search_spec(search_spec)
-        if len(final_queries) > 1:
-            final_query = " || ".join(final_queries)
         if not search_spec.get("all_keywords") and not search_spec.get("raw_query") and not final_queries:
             raise ValueError("search_spec is empty")
         if not final_queries and final_query:
@@ -1003,12 +1028,21 @@ class DesktopService:
             rule_set_id=int(payload.get("rule_set_id") or 0) or None,
             inline_rule_set=payload.get("rule_set"),
         )
-        days = int(search_spec.get("days", 20))
+        days = int(search_spec.get("days", 1))
 
-        run_id = self._create_run(job_id=job_id, trigger_type=trigger_type)
         try:
             fetched_results: list[SearchResult] = []
             query_errors: list[str] = []
+            total_queries = len(final_queries)
+            self.runtime_store.update_run_progress(
+                run_id,
+                stats={
+                    "total_queries": total_queries,
+                    "completed_queries": 0,
+                    "progress_percent": 0,
+                    "fetched_raw": 0,
+                },
+            )
             for index, query in enumerate(final_queries, start=1):
                 try:
                     raw_payload = run_twitter_search(query, int(search_spec.get("max_results", 40)))
@@ -1016,6 +1050,18 @@ class DesktopService:
                     fetched_results.extend(normalized)
                 except Exception as exc:  # noqa: BLE001
                     query_errors.append(f"{query}: {exc}")
+                completed_queries = index
+                progress_percent = int((completed_queries / total_queries) * 100) if total_queries else 100
+                self.runtime_store.update_run_progress(
+                    run_id,
+                    stats={
+                        "total_queries": total_queries,
+                        "completed_queries": completed_queries,
+                        "progress_percent": progress_percent,
+                        "fetched_raw": len(fetched_results),
+                        "query_errors": len(query_errors),
+                    },
+                )
 
             if not fetched_results and query_errors:
                 raise RuntimeError("; ".join(query_errors[:3]))
@@ -1023,7 +1069,6 @@ class DesktopService:
             deduped_results = _dedupe_search_results(fetched_results)
             fetched_at = utc_now_iso()
             run_errors = query_errors[:10]
-            now_utc = datetime.now(timezone.utc)
             filtered_results = [item for item in deduped_results if passes_search_filters(item, search_spec, now_utc)]
             self._store_raw(run_id, filtered_results, fetched_at=fetched_at, tags=tags)
             matched_items, match_stats = evaluate_rule_set(
@@ -1087,10 +1132,10 @@ class DesktopService:
                 },
                 "errors": run_errors,
             }
-            self._finish_run(run_id, "success", report["stats"], "\n".join(run_errors))
+            self._finish_run(run_id, "success", report["stats"], "\n".join(run_errors), result=report)
             return report
         except Exception as exc:  # noqa: BLE001
-            self._finish_run(run_id, "failed", {}, str(exc))
+            self._finish_run(run_id, "failed", {}, str(exc), result={"run_id": run_id, "status": "failed", "errors": [str(exc)]})
             raise
 
     def get_run(self, run_id: int) -> dict[str, Any]:
@@ -1589,12 +1634,13 @@ class DesktopService:
     def _create_run(self, job_id: int | None, trigger_type: str) -> int:
         return self.runtime_store.create_run(job_id=job_id, trigger_type=trigger_type, started_at=utc_now_iso())
 
-    def _finish_run(self, run_id: int, status: str, stats: dict[str, Any], error_text: str) -> None:
+    def _finish_run(self, run_id: int, status: str, stats: dict[str, Any], error_text: str, result: dict[str, Any] | None = None) -> None:
         self.runtime_store.finish_run(
             int(run_id),
             status=status,
             stats=copy.deepcopy(stats),
             error_text=error_text or "",
+            result=copy.deepcopy(result) if isinstance(result, dict) else None,
             ended_at=utc_now_iso(),
         )
     def _store_raw(

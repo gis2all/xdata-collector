@@ -1,7 +1,8 @@
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from backend.collector_rules import (
+    build_execution_query_plan_from_search_spec,
     build_query_from_search_spec,
     build_query_plan_from_search_spec,
     build_result_summary,
@@ -89,6 +90,9 @@ class CollectorRulesTests(unittest.TestCase):
         spec = normalize_search_spec({})
 
         self.assertEqual(spec["max_results"], 100)
+        self.assertEqual(spec["days"], 1)
+        self.assertEqual(spec["days_filter"], {"mode": "lte", "min": None, "max": 1})
+        self.assertEqual(spec["time_slice_minutes"], 60)
 
     def test_normalize_search_spec_supports_explicit_range_filters(self) -> None:
         spec = normalize_search_spec(
@@ -135,7 +139,7 @@ class CollectorRulesTests(unittest.TestCase):
         self.assertEqual(definition["rules"][0]["effect"]["level"], "")
         self.assertEqual(definition["rules"][0]["conditions"][0]["value"], 0)
 
-    def test_build_query_plan_from_search_spec_generates_language_specific_queries(self) -> None:
+    def test_build_query_plan_from_search_spec_uses_combined_language_query(self) -> None:
         spec = normalize_search_spec(
             {
                 "all_keywords": ["BTC", "airdrop"],
@@ -154,9 +158,9 @@ class CollectorRulesTests(unittest.TestCase):
         )
 
         queries = build_query_plan_from_search_spec(spec)
-        self.assertEqual(len(queries), 2)
-        self.assertIn("lang:zh", queries[0])
-        self.assertIn("lang:en", queries[1])
+        self.assertEqual(len(queries), 1)
+        self.assertIn("(lang:zh OR lang:en)", queries[0])
+        self.assertEqual(queries[0].count("lang:"), 2)
         self.assertIn("BTC", queries[0])
         self.assertIn('"zero cost"', queries[0])
         self.assertIn("(claim OR quest)", queries[0])
@@ -169,6 +173,84 @@ class CollectorRulesTests(unittest.TestCase):
         self.assertIn("filter:links", queries[0])
         self.assertIn("min_faves:10", queries[0])
         self.assertIn("lang:zh", build_query_from_search_spec(spec, language_override="zh"))
+
+    def test_build_execution_query_plan_slices_bounded_days_by_one_hour(self) -> None:
+        now_utc = datetime(2026, 4, 13, 12, 30, tzinfo=timezone.utc)
+        spec = normalize_search_spec(
+            {
+                "all_keywords": ["BTC"],
+                "language_mode": "zh_en",
+                "days_filter": {"mode": "lte", "max": 0},
+                "include_retweets": False,
+            }
+        )
+
+        queries = build_execution_query_plan_from_search_spec(spec, now_utc=now_utc)
+
+        self.assertEqual(len(queries), 24)
+        self.assertIn("BTC", queries[0])
+        self.assertIn("(lang:zh OR lang:en)", queries[0])
+        self.assertIn("-is:retweet", queries[0])
+        self.assertIn("since_time:", queries[0])
+        self.assertIn("until_time:", queries[0])
+        self.assertIn(f"until_time:{int(now_utc.timestamp())}", queries[0])
+        self.assertIn(f"since_time:{int((now_utc - timedelta(hours=1)).timestamp())}", queries[0])
+        self.assertIn(f"since_time:{int((now_utc - timedelta(days=1)).timestamp())}", queries[-1])
+
+    def test_build_execution_query_plan_supports_fifteen_minute_slices(self) -> None:
+        now_utc = datetime(2026, 4, 13, 12, 0, tzinfo=timezone.utc)
+        spec = normalize_search_spec(
+            {
+                "all_keywords": ["BTC"],
+                "days_filter": {"mode": "lte", "max": 1},
+                "time_slice_minutes": 15,
+            }
+        )
+
+        queries = build_execution_query_plan_from_search_spec(spec, now_utc=now_utc)
+
+        self.assertEqual(len(queries), 96)
+        self.assertIn(f"until_time:{int(now_utc.timestamp())}", queries[0])
+        self.assertIn(f"since_time:{int((now_utc - timedelta(minutes=15)).timestamp())}", queries[0])
+
+    def test_build_execution_query_plan_caps_at_ten_thousand_queries(self) -> None:
+        now_utc = datetime(2026, 4, 13, 12, 0, tzinfo=timezone.utc)
+        spec = normalize_search_spec(
+            {
+                "all_keywords": ["BTC"],
+                "days_filter": {"mode": "lte", "max": 100},
+                "time_slice_minutes": 15,
+            }
+        )
+
+        queries = build_execution_query_plan_from_search_spec(spec, now_utc=now_utc)
+
+        self.assertEqual(len(queries), 9600)
+
+    def test_build_execution_query_plan_keeps_unbounded_days_unsliced(self) -> None:
+        now_utc = datetime(2026, 4, 13, 12, 30, tzinfo=timezone.utc)
+        spec = normalize_search_spec({"all_keywords": ["BTC"], "days_filter": {"mode": "any"}})
+
+        queries = build_execution_query_plan_from_search_spec(spec, now_utc=now_utc)
+
+        self.assertEqual(queries, build_query_plan_from_search_spec(spec))
+        self.assertNotIn("since_time:", queries[0])
+
+    def test_build_execution_query_plan_respects_explicit_time_operators(self) -> None:
+        now_utc = datetime(2026, 4, 13, 12, 30, tzinfo=timezone.utc)
+        spec = normalize_search_spec(
+            {
+                "all_keywords": ["BTC"],
+                "days_filter": {"mode": "lte", "max": 1},
+                "raw_query": "since_time:1779944400 until_time:1779948000",
+            }
+        )
+
+        queries = build_execution_query_plan_from_search_spec(spec, now_utc=now_utc)
+
+        self.assertEqual(len(queries), 1)
+        self.assertEqual(queries[0].count("since_time:"), 1)
+        self.assertEqual(queries[0].count("until_time:"), 1)
 
     def test_passes_metric_gate_supports_new_ranges_and_legacy_modes(self) -> None:
         item = make_result(metrics={"views": 150, "likes": 3, "replies": 1, "retweets": 0})

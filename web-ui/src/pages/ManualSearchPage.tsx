@@ -1,15 +1,17 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   CollectorRunResult,
+  RunRecord,
   RuleSet,
   RuleSetDefinition,
   TaskPackFile,
   TaskPackSummary,
   createTaskPack,
   deleteTaskPack,
+  getRun,
   getTaskPack,
   listTaskPacks,
-  runManual,
+  runManualStart,
   updateTaskPack,
 } from "../api";
 import {
@@ -86,7 +88,7 @@ function buildPackComparable(pack: TaskPackFile) {
 }
 
 type DraftSourceKind = "blank" | "pack" | "file";
-type ExecutionStatus = "idle" | "success" | "failed";
+type ExecutionStatus = "idle" | "running" | "success" | "failed";
 
 const DEFAULT_DRAFT_PACK_NAME = "__default_draft__";
 const DEFAULT_DRAFT_PACK_LABEL = "默认草稿";
@@ -109,6 +111,30 @@ const EMPTY_EXECUTION_SUMMARY: ExecutionSummary = {
   errorText: "",
 };
 
+type ManualRunProgress = {
+  runId: number | null;
+  status: ExecutionStatus;
+  totalQueries: number;
+  completedQueries: number;
+  progressPercent: number;
+  fetchedRaw: number;
+  queryErrors: number;
+  startedAt: string | null;
+  endedAt: string | null;
+};
+
+const EMPTY_RUN_PROGRESS: ManualRunProgress = {
+  runId: null,
+  status: "idle",
+  totalQueries: 0,
+  completedQueries: 0,
+  progressPercent: 0,
+  fetchedRaw: 0,
+  queryErrors: 0,
+  startedAt: null,
+  endedAt: null,
+};
+
 function draftSourceLabel(kind: DraftSourceKind) {
   if (kind === "pack") return "任务包载入";
   if (kind === "file") return "文件导入";
@@ -116,15 +142,83 @@ function draftSourceLabel(kind: DraftSourceKind) {
 }
 
 function executionStatusLabel(status: ExecutionStatus) {
+  if (status === "running") return "执行中";
   if (status === "success") return "执行成功";
   if (status === "failed") return "执行失败";
   return "未执行";
 }
 
 function executionStatusTone(status: ExecutionStatus) {
+  if (status === "running") return "running";
   if (status === "success") return "success";
   if (status === "failed") return "failed";
   return "neutral";
+}
+
+function normalizeExecutionStatus(status: string | null | undefined): ExecutionStatus {
+  if (status === "running") return "running";
+  if (status === "success") return "success";
+  if (status === "failed") return "failed";
+  return "idle";
+}
+
+function statNumber(stats: Record<string, number> | undefined, key: string) {
+  const value = Number(stats?.[key] ?? 0);
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function progressPercentForRun(status: ExecutionStatus, completedQueries: number, totalQueries: number, reportedPercent: number) {
+  if (status === "success") return 100;
+  if (status === "failed" && totalQueries > 0 && completedQueries >= totalQueries) return 100;
+  if (reportedPercent > 0) return clampPercent(reportedPercent);
+  if (totalQueries > 0) return clampPercent((completedQueries / totalQueries) * 100);
+  return 0;
+}
+
+function buildRunProgress(run: RunRecord): ManualRunProgress {
+  const status = normalizeExecutionStatus(run.status);
+  const totalQueries = statNumber(run.stats_json, "total_queries");
+  const completedQueries = statNumber(run.stats_json, "completed_queries");
+  const progressPercent = progressPercentForRun(
+    status,
+    completedQueries,
+    totalQueries,
+    statNumber(run.stats_json, "progress_percent"),
+  );
+  return {
+    runId: Number(run.id || 0) || null,
+    status,
+    totalQueries,
+    completedQueries,
+    progressPercent,
+    fetchedRaw: statNumber(run.stats_json, "fetched_raw"),
+    queryErrors: statNumber(run.stats_json, "query_errors"),
+    startedAt: run.started_at || null,
+    endedAt: run.ended_at || null,
+  };
+}
+
+function buildExecutionSummary(
+  status: Extract<ExecutionStatus, "success" | "failed">,
+  executedAt: string,
+  result: CollectorRunResult | null,
+  fallbackError: string,
+): ExecutionSummary {
+  const errors = Array.isArray(result?.errors) ? result?.errors : [];
+  const errorText = fallbackError || errors[0] || "";
+  return {
+    status,
+    executedAt,
+    rawTotal: Number(result?.raw_total || 0),
+    matchedTotal: Number(result?.matched_total || 0),
+    errorCount: errors.length || (errorText ? 1 : 0),
+    errorText,
+  };
 }
 
 function formatAuthorDisplay(authorName?: string | null, author?: string | null) {
@@ -167,9 +261,11 @@ export function ManualSearchPage() {
     cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION),
   );
   const [lastExecution, setLastExecution] = useState<ExecutionSummary>(EMPTY_EXECUTION_SUMMARY);
+  const [runProgress, setRunProgress] = useState<ManualRunProgress>(EMPTY_RUN_PROGRESS);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const resultsRef = useRef<HTMLElement | null>(null);
   const pendingFileActionRef = useRef<"draft" | "save_new">("draft");
+  const runPollTimerRef = useRef<number | null>(null);
 
   const ruleSetPreview = useMemo<RuleSet | null>(
     () => ({
@@ -215,6 +311,8 @@ export function ManualSearchPage() {
     () => (result ? (result.final_queries?.length ? result.final_queries : [result.final_query]).filter(Boolean) : []),
     [result],
   );
+  const displayedResultQueries = useMemo(() => resultQueries.slice(0, 5), [resultQueries]);
+  const hiddenResultQueryCount = Math.max(0, resultQueries.length - displayedResultQueries.length);
   const packBindingLabel = currentPack ? "已绑定本地任务包" : "未绑定";
   const packDraftLabel = currentPack ? (draftDirty ? "已修改未保存" : "未修改") : "未绑定";
   const packSourceLabel = draftSourceLabel(draftSource);
@@ -225,6 +323,39 @@ export function ManualSearchPage() {
   const resultsSummaryRawLabel = `raw_total：${lastExecution.status === "idle" ? "--" : lastExecution.rawTotal}`;
   const resultsSummaryMatchedLabel = `matched_total：${lastExecution.status === "idle" ? "--" : lastExecution.matchedTotal}`;
   const resultsSummaryErrorLabel = `errors：${lastExecution.status === "idle" ? "--" : lastExecution.errorCount}`;
+  const progressVisible = runProgress.status !== "idle";
+  const progressQueryLabel =
+    runProgress.totalQueries > 0 ? `${runProgress.completedQueries} / ${runProgress.totalQueries}` : "-- / --";
+  const progressPercentLabel = `${runProgress.progressPercent}%`;
+
+  function clearRunPollTimer() {
+    if (runPollTimerRef.current !== null) {
+      window.clearTimeout(runPollTimerRef.current);
+      runPollTimerRef.current = null;
+    }
+  }
+
+  function finishManualRun(current: RunRecord, progress: ManualRunProgress) {
+    clearRunPollTimer();
+    setRunProgress(progress);
+    setLoading(false);
+
+    const finishedAt = current.ended_at || current.started_at || new Date().toISOString();
+    const finalStatus = normalizeExecutionStatus(current.status);
+    const resultPayload = current.result_json ?? null;
+
+    if (finalStatus === "success" && resultPayload) {
+      setResult(resultPayload);
+      setLastExecution(buildExecutionSummary("success", finishedAt, resultPayload, ""));
+      return;
+    }
+
+    const errors = Array.isArray(resultPayload?.errors) ? resultPayload.errors : [];
+    const failureText = current.error_text || errors[0] || "采集失败";
+    setResult(null);
+    setError(failureText);
+    setLastExecution(buildExecutionSummary("failed", finishedAt, resultPayload, failureText));
+  }
 
   function resetToBlankDraft() {
     setSearchSpec(cloneSearchSpec(DEFAULT_SEARCH_SPEC));
@@ -267,6 +398,53 @@ export function ManualSearchPage() {
   useEffect(() => {
     refreshTaskPacks().catch((err) => setError(err instanceof Error ? err.message : "加载任务包失败"));
   }, []);
+
+  useEffect(() => () => clearRunPollTimer(), []);
+
+  useEffect(() => {
+    if (!loading || runProgress.runId === null || runProgress.status !== "running") return;
+
+    let cancelled = false;
+    const activeRunId = runProgress.runId;
+
+    const pollRun = async () => {
+      try {
+        const current = await getRun(activeRunId);
+        if (cancelled) return;
+
+        const nextProgress = buildRunProgress(current);
+        if (nextProgress.status === "running") {
+          setRunProgress(nextProgress);
+          clearRunPollTimer();
+          runPollTimerRef.current = window.setTimeout(() => {
+            void pollRun();
+          }, 300);
+          return;
+        }
+
+        finishManualRun(current, nextProgress);
+      } catch (err) {
+        if (cancelled) return;
+        const failureText = err instanceof Error ? err.message : "获取执行进度失败";
+        clearRunPollTimer();
+        setLoading(false);
+        setError(failureText);
+        setRunProgress((prev) => ({
+          ...prev,
+          status: "failed",
+          endedAt: new Date().toISOString(),
+        }));
+        setLastExecution(buildExecutionSummary("failed", new Date().toISOString(), null, failureText));
+      }
+    };
+
+    void pollRun();
+
+    return () => {
+      cancelled = true;
+      clearRunPollTimer();
+    };
+  }, [loading, runProgress.runId, runProgress.status]);
 
   async function importSelectedPack() {
     if (selectedPackName === DEFAULT_DRAFT_PACK_NAME) {
@@ -431,9 +609,17 @@ export function ManualSearchPage() {
     setMessage("");
     setLoading(true);
     setResult(null);
+    clearRunPollTimer();
+
+    const startedAt = new Date().toISOString();
+    setRunProgress({
+      ...EMPTY_RUN_PROGRESS,
+      status: "running",
+      startedAt,
+    });
 
     try {
-      const data = await runManual({
+      const data = await runManualStart({
         search_spec: searchSpec,
         tags: draftTags,
         rule_set: {
@@ -443,29 +629,22 @@ export function ManualSearchPage() {
           definition: cloneRuleDefinition(draftDefinition),
         },
       });
-
-      setResult(data);
-      setLastExecution({
-        status: data.status === "success" ? "success" : "failed",
-        executedAt: new Date().toISOString(),
-        rawTotal: data.raw_total || 0,
-        matchedTotal: data.matched_total || 0,
-        errorCount: data.errors?.length || 0,
-        errorText: data.errors?.[0] || "",
-      });
+      setRunProgress((prev) => ({
+        ...prev,
+        runId: Number(data.run_id || 0) || null,
+        status: "running",
+      }));
     } catch (err) {
       const failureText = err instanceof Error ? err.message : "采集失败";
       setError(failureText);
-      setLastExecution({
-        status: "failed",
-        executedAt: new Date().toISOString(),
-        rawTotal: 0,
-        matchedTotal: 0,
-        errorCount: 1,
-        errorText: failureText,
-      });
-    } finally {
       setLoading(false);
+      setRunProgress({
+        ...EMPTY_RUN_PROGRESS,
+        status: "failed",
+        startedAt,
+        endedAt: new Date().toISOString(),
+      });
+      setLastExecution(buildExecutionSummary("failed", new Date().toISOString(), null, failureText));
     }
   }
 
@@ -482,6 +661,50 @@ export function ManualSearchPage() {
           </button>
         </div>
       </header>
+
+      {progressVisible && (
+        <section className="card manual-run-progress-card workbench-layer" data-testid="manual-run-progress">
+          <div className="manual-run-progress-head">
+            <div className="manual-run-progress-copy">
+              <div className="workbench-section-eyebrow">执行进度</div>
+              <div className="manual-run-progress-title">
+                {runProgress.status === "success"
+                  ? "本次执行已完成"
+                  : runProgress.status === "failed"
+                    ? "本次执行已结束"
+                    : "正在按查询计划抓取"}
+              </div>
+              <div className="kv">
+                {runProgress.totalQueries > 0
+                  ? `已完成 ${progressQueryLabel} 个查询切片`
+                  : runProgress.runId
+                    ? `执行任务 #${runProgress.runId} 已启动，等待返回查询总数`
+                    : "正在创建执行任务..."}
+              </div>
+            </div>
+            <div className="manual-run-progress-side">
+              <span className={`jobs-summary-pill workbench-pill ${executionStatusTone(runProgress.status)}`}>
+                {executionStatusLabel(runProgress.status)}
+              </span>
+              <div className="manual-run-progress-percent">{progressPercentLabel}</div>
+            </div>
+          </div>
+          <div
+            className="manual-run-progress-track"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={runProgress.progressPercent}
+          >
+            <div className="manual-run-progress-fill" style={{ width: `${runProgress.progressPercent}%` }} />
+          </div>
+          <div className="manual-run-progress-meta">
+            <span>{`查询 ${progressQueryLabel}`}</span>
+            <span>{`raw ${runProgress.fetchedRaw}`}</span>
+            <span>{`errors ${runProgress.queryErrors}`}</span>
+          </div>
+        </section>
+      )}
 
       {error && (
         <div className="alert error" data-testid="manual-error">
@@ -869,11 +1092,12 @@ export function ManualSearchPage() {
               <div className="flat-row">
                 <span>实际查询</span>
                 <div>
-                  {resultQueries.map((query) => (
+                  {displayedResultQueries.map((query) => (
                     <div key={query} className="collector-text-snippet">
                       {query}
                     </div>
                   ))}
+                  {hiddenResultQueryCount > 0 && <div className="kv">{`还有 ${hiddenResultQueryCount} 条时间切片查询未展开`}</div>}
                   {!resultQueries.length && <strong>--</strong>}
                 </div>
               </div>
