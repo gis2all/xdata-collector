@@ -1,5 +1,6 @@
 import json
 import shutil
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -38,8 +39,8 @@ class DesktopServiceTests(unittest.TestCase):
                 cur = conn.execute(
                     """
                     INSERT INTO x_items_curated
-                    (run_id, dedupe_key, level, score, title, summary_zh, excerpt, is_zero_cost, source_url, author, created_at_x, reasons_json, rule_set_id, state)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (run_id, dedupe_key, level, score, title, summary_zh, excerpt, is_zero_cost, source_url, author, created_at_x, tags_json, reasons_json, rule_set_id, state)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         int(row.get("run_id", 1) or 1),
@@ -53,6 +54,7 @@ class DesktopServiceTests(unittest.TestCase):
                         str(row.get("source_url", f"https://example.com/{index}") or ""),
                         str(row.get("author", "") or ""),
                         row.get("created_at_x"),
+                        json.dumps(row.get("tags", []), ensure_ascii=False),
                         json.dumps(row.get("reasons_json", []), ensure_ascii=False),
                         row.get("rule_set_id"),
                         str(row.get("state", "new") or "new"),
@@ -68,8 +70,8 @@ class DesktopServiceTests(unittest.TestCase):
                 cur = conn.execute(
                     """
                     INSERT INTO x_items_raw
-                    (run_id, tweet_id, canonical_url, author, text, created_at_x, metrics_json, query_name, fetched_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (run_id, tweet_id, canonical_url, author, text, created_at_x, metrics_json, tags_json, query_name, fetched_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         int(row.get("run_id", index) or index),
@@ -79,6 +81,7 @@ class DesktopServiceTests(unittest.TestCase):
                         str(row.get("text", f"text-{index}") or ""),
                         row.get("created_at_x", "2026-04-10T00:00:00+00:00"),
                         json.dumps(row.get("metrics_json", {"views": 0, "likes": 0, "replies": 0, "retweets": 0}), ensure_ascii=False),
+                        json.dumps(row.get("tags", []), ensure_ascii=False),
                         str(row.get("query_name", f"manual:{index}") or ""),
                         str(row.get("fetched_at", "2026-04-10T00:10:00+00:00") or ""),
                     ),
@@ -92,6 +95,7 @@ class DesktopServiceTests(unittest.TestCase):
         tweet_id: str = "1001",
         url: str = "https://x.com/demo/status/1001",
         text: str = "Alpha drop is live https://example.com",
+        author_name: str = "",
         author: str = "demo",
         created_at: str = "2026-04-12T00:00:00+00:00",
         query: str = "Alpha lang:en",
@@ -102,6 +106,7 @@ class DesktopServiceTests(unittest.TestCase):
             tweet_id=tweet_id,
             url=url,
             text=text,
+            author_name=author_name,
             author=author,
             created_at=created_at,
             raw={"lang": "en", "metrics": {"views": 300, "likes": 10, "replies": 2, "retweets": 1}},
@@ -113,6 +118,7 @@ class DesktopServiceTests(unittest.TestCase):
         tweet_id: str = "1001",
         url: str = "https://x.com/demo/status/1001",
         text: str = "Alpha drop is live https://example.com",
+        author_name: str = "",
         author: str = "demo",
         created_at: str = "2026-04-12T00:00:00+00:00",
     ) -> dict[str, object]:
@@ -120,6 +126,7 @@ class DesktopServiceTests(unittest.TestCase):
             "tweet_id": tweet_id,
             "url": url,
             "text": text,
+            "author_name": author_name,
             "author": author,
             "created_at": created_at,
             "level": "A",
@@ -289,6 +296,7 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(job["search_spec_json"]["all_keywords"], ["\u6316\u77ff", "\u79ef\u5206"])
         self.assertEqual(job["search_spec_json"]["language_mode"], "zh_en")
         self.assertEqual(job["search_spec_json"]["days_filter"], {"mode": "between", "min": 1, "max": 10})
+        self.assertEqual(job["search_spec_json"]["time_slice_minutes"], 60)
         self.assertTrue(job["search_spec_json"]["metric_filters_explicit"])
         toggled = self.service.toggle_job(int(job["id"]), False)
         self.assertEqual(toggled["enabled"], 0)
@@ -438,10 +446,12 @@ class DesktopServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "requires deleted jobs"):
             self.service.batch_jobs({"action": "restore", "ids": [int(live_job["id"])]})
 
+    @patch("backend.collector_service.get_twitter_cli_version")
     @patch("backend.collector_service.find_twitter_cli")
     @patch("backend.collector_service.run_twitter_search")
-    def test_health_returns_snapshot_with_details(self, mock_search, mock_find_cli) -> None:
+    def test_health_returns_snapshot_with_details(self, mock_search, mock_find_cli, mock_cli_version) -> None:
         mock_find_cli.return_value = "twitter"
+        mock_cli_version.return_value = "0.8.6"
         mock_search.return_value = []
 
         default_rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
@@ -486,6 +496,7 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertTrue(health["x"]["configured"])
         self.assertTrue(health["x"]["connected"])
         self.assertEqual(health["x"]["auth_source"], "twitter-cli")
+        self.assertEqual(health["x"]["cli_version"], "0.8.6")
         self.assertEqual(health["x"]["account_hint"], "unknown")
         self.assertEqual(health["x"]["last_error"], "")
         self.assertEqual(set(health.keys()), {"summary", "db", "x"})
@@ -534,23 +545,11 @@ class DesktopServiceTests(unittest.TestCase):
             self.service.health_snapshot()
 
     @patch("backend.collector_service.run_twitter_search")
-    def test_manual_run_uses_multi_language_queries_dedupes_and_filters_results(self, mock_search) -> None:
+    def test_manual_run_uses_combined_language_query_dedupes_and_filters_results(self, mock_search) -> None:
         recent_created_at = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
         old_created_at = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
 
         def fake_search(query: str, _max_results: int):
-            if "lang:zh" in query:
-                return [
-                    {
-                        "id": "1001",
-                        "text": "Claim faucet on testnet now https://example.com",
-                        "author": {"screenName": "galxe"},
-                        "createdAtISO": recent_created_at,
-                        "metrics": {"views": 200, "likes": 10, "replies": 2, "retweets": 0},
-                        "lang": "zh",
-                        "url": "https://x.com/galxe/status/1001",
-                    }
-                ]
             return [
                 {
                     "id": "1001",
@@ -559,6 +558,15 @@ class DesktopServiceTests(unittest.TestCase):
                     "createdAtISO": recent_created_at,
                     "metrics": {"views": 200, "likes": 10, "replies": 2, "retweets": 0},
                     "lang": "en",
+                    "url": "https://x.com/galxe/status/1001",
+                },
+                {
+                    "id": "1001",
+                    "text": "Claim faucet on testnet now https://example.com",
+                    "author": {"screenName": "galxe"},
+                    "createdAtISO": recent_created_at,
+                    "metrics": {"views": 200, "likes": 10, "replies": 2, "retweets": 0},
+                    "lang": "zh",
                     "url": "https://x.com/galxe/status/1001",
                 },
                 {
@@ -601,21 +609,136 @@ class DesktopServiceTests(unittest.TestCase):
             }
         )
         self.assertEqual(report["status"], "success")
-        self.assertEqual(len(report["final_queries"]), 2)
-        self.assertIn("lang:zh", report["final_queries"][0])
-        self.assertIn("lang:en", report["final_queries"][1])
+        self.assertEqual(len(report["final_queries"]), 24)
+        self.assertIn("(lang:zh OR lang:en)", report["final_queries"][0])
+        self.assertIn("since_time:", report["final_queries"][0])
+        self.assertIn("until_time:", report["final_queries"][0])
         self.assertEqual(report["raw_total"], 1)
         self.assertEqual(len(report["raw_items"]), 1)
-        self.assertEqual(report["matched_total"], 1)
-        self.assertEqual(report["matched_items"][0]["author"], "galxe")
-        self.assertGreater(report["matched_items"][0]["score"], 0)
-        self.assertTrue(report["matched_items"][0]["reasons"])
+        self.assertEqual(report["matched_total"], 0)
+        self.assertEqual(report["matched_items"], [])
         self.assertEqual(report["rule_set_summary"]["id"], rule_set_id)
-        self.assertEqual(report["stats"]["queries"], 2)
-        self.assertEqual(report["stats"]["fetched_raw"], 4)
+        self.assertEqual(report["stats"]["queries"], 24)
+        self.assertEqual(report["stats"]["fetched_raw"], 72)
         self.assertEqual(report["stats"]["raw_deduped"], 3)
         self.assertEqual(report["stats"]["search_filter_passed"], 1)
-        self.assertEqual(mock_search.call_count, 2)
+        self.assertEqual(mock_search.call_count, 24)
+        raw_page = self.service.list_items(table="raw", page=1, page_size=10, sort_by="id", sort_dir="asc")
+        self.assertEqual(raw_page["total"], 1)
+        self.assertEqual(raw_page["items"][0]["tweet_id"], "1001")
+
+    @patch("backend.collector_service.run_twitter_search")
+    def test_manual_run_executes_one_hour_time_slices_for_recent_days(self, mock_search) -> None:
+        mock_search.return_value = []
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+
+        report = self.service.run_manual(
+            {
+                "search_spec": {
+                    "all_keywords": ["BTC"],
+                    "language_mode": "zh_en",
+                    "days_filter": {"mode": "lte", "max": 1},
+                    "metric_filters": {
+                        "views": {"mode": "any"},
+                        "likes": {"mode": "any"},
+                        "replies": {"mode": "any"},
+                        "retweets": {"mode": "any"},
+                    },
+                    "metric_filters_explicit": True,
+                },
+                "rule_set_id": rule_set_id,
+            }
+        )
+
+        self.assertEqual(report["status"], "success")
+        self.assertEqual(report["stats"]["queries"], 24)
+        self.assertEqual(len(report["final_queries"]), 24)
+        self.assertEqual(mock_search.call_count, 24)
+        self.assertTrue(all("since_time:" in query and "until_time:" in query for query in report["final_queries"]))
+
+    @patch("backend.collector_service.run_twitter_search")
+    def test_manual_run_executes_fifteen_minute_time_slices_when_configured(self, mock_search) -> None:
+        mock_search.return_value = []
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+
+        report = self.service.run_manual(
+            {
+                "search_spec": {
+                    "all_keywords": ["BTC"],
+                    "language_mode": "zh_en",
+                    "days_filter": {"mode": "lte", "max": 1},
+                    "time_slice_minutes": 15,
+                    "metric_filters": {
+                        "views": {"mode": "any"},
+                        "likes": {"mode": "any"},
+                        "replies": {"mode": "any"},
+                        "retweets": {"mode": "any"},
+                    },
+                    "metric_filters_explicit": True,
+                },
+                "rule_set_id": rule_set_id,
+            }
+        )
+
+        self.assertEqual(report["status"], "success")
+        self.assertEqual(report["stats"]["queries"], 96)
+        self.assertEqual(len(report["final_queries"]), 96)
+        self.assertEqual(mock_search.call_count, 96)
+
+    @patch("backend.collector_service.run_twitter_search")
+    def test_manual_run_stores_metrics_on_curated_items(self, mock_search) -> None:
+        mock_search.return_value = [
+            {
+                "id": "1001",
+                "text": "Claim Alpha airdrop is live https://example.com",
+                "author": {"screenName": "galxe", "name": "Galxe"},
+                "createdAtISO": "2026-04-12T00:00:00+00:00",
+                "metrics": {"views": 321, "likes": 12, "replies": 3, "retweets": 4},
+                "lang": "en",
+                "url": "https://x.com/galxe/status/1001",
+            }
+        ]
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+
+        report = self.service.run_manual(
+            {
+                "search_spec": {
+                    "all_keywords": ["Alpha"],
+                    "language_mode": "en",
+                    "days_filter": {"mode": "any"},
+                    "metric_filters": {
+                        "views": {"mode": "any"},
+                        "likes": {"mode": "any"},
+                        "replies": {"mode": "any"},
+                        "retweets": {"mode": "any"},
+                    },
+                    "metric_filters_explicit": True,
+                },
+                "rule_set": {
+                    "name": "Alpha Rule",
+                    "definition": {
+                        "levels": [{"id": "A", "label": "A", "min_score": 1, "color": "#2563eb"}],
+                        "rules": [
+                            {
+                                "id": "alpha",
+                                "name": "Alpha",
+                                "conditions": [{"type": "text_contains_any", "values": ["Alpha"]}],
+                                "effect": {"action": "score", "score": 1, "level": "A"},
+                            }
+                        ],
+                    },
+                },
+            }
+        )
+
+        page = self.service.list_items(table="curated", page=1, page_size=10)
+
+        self.assertEqual(report["status"], "success")
+        self.assertEqual(report["matched_total"], 1)
+        self.assertEqual(page["items"][0]["views"], 321)
+        self.assertEqual(page["items"][0]["likes"], 12)
+        self.assertEqual(page["items"][0]["replies"], 3)
+        self.assertEqual(page["items"][0]["retweets"], 4)
 
     @patch("backend.collector_service.evaluate_rule_set")
     @patch("backend.collector_service.normalize_search_payload")
@@ -664,7 +787,7 @@ class DesktopServiceTests(unittest.TestCase):
     @patch("backend.collector_service.evaluate_rule_set")
     @patch("backend.collector_service.normalize_search_payload")
     @patch("backend.collector_service.run_twitter_search")
-    def test_manual_run_auto_dedupes_raw_table_after_store(
+    def test_manual_run_keeps_existing_raw_rows_when_storing_filtered_results(
         self,
         mock_search,
         mock_normalize_payload,
@@ -693,12 +816,10 @@ class DesktopServiceTests(unittest.TestCase):
         page = self.service.list_items(table="raw", page=1, page_size=10, sort_by="id", sort_dir="asc")
 
         self.assertEqual(report["status"], "success")
-        self.assertEqual(report["stats"]["raw_dedupe_groups"], 1)
-        self.assertEqual(report["stats"]["raw_dedupe_deleted"], 1)
-        self.assertEqual(report["stats"]["raw_dedupe_kept"], 1)
-        self.assertEqual(report["stats"]["raw_dedupe_rows_after"], 1)
-        self.assertEqual(page["total"], 1)
-        self.assertEqual([item["id"] for item in page["items"]], [existing_id])
+        self.assertNotIn("raw_dedupe_groups", report["stats"])
+        self.assertEqual(page["total"], 2)
+        self.assertEqual(page["items"][0]["id"], existing_id)
+        self.assertEqual(page["items"][1]["tweet_id"], "1001")
 
     @patch("backend.collector_service.evaluate_rule_set")
     @patch("backend.collector_service.normalize_search_payload")
@@ -721,15 +842,12 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(report["matched_total"], 0)
         self.assertNotIn("dedupe_groups", report["stats"])
         self.assertEqual(report["errors"], [])
-        self.assertEqual(
-            [call.kwargs.get("table", "curated") for call in mock_dedupe.call_args_list],
-            ["raw"],
-        )
+        self.assertEqual(mock_dedupe.call_args_list, [])
 
     @patch("backend.collector_service.evaluate_rule_set")
     @patch("backend.collector_service.normalize_search_payload")
     @patch("backend.collector_service.run_twitter_search")
-    def test_manual_run_still_auto_dedupes_raw_when_no_curated_items(
+    def test_manual_run_keeps_raw_rows_when_no_curated_items(
         self,
         mock_search,
         mock_normalize_payload,
@@ -759,13 +877,11 @@ class DesktopServiceTests(unittest.TestCase):
 
         self.assertEqual(report["status"], "success")
         self.assertEqual(report["matched_total"], 0)
-        self.assertEqual(report["stats"]["raw_dedupe_groups"], 1)
-        self.assertEqual(report["stats"]["raw_dedupe_deleted"], 1)
-        self.assertEqual(report["stats"]["raw_dedupe_kept"], 1)
-        self.assertEqual(report["stats"]["raw_dedupe_rows_after"], 1)
+        self.assertNotIn("raw_dedupe_groups", report["stats"])
         self.assertNotIn("dedupe_groups", report["stats"])
-        self.assertEqual(page["total"], 1)
-        self.assertEqual([item["id"] for item in page["items"]], [existing_id])
+        self.assertEqual(page["total"], 2)
+        self.assertEqual(page["items"][0]["id"], existing_id)
+        self.assertEqual(page["items"][1]["tweet_id"], "1001")
 
     @patch("backend.collector_service.evaluate_rule_set")
     @patch("backend.collector_service.normalize_search_payload")
@@ -797,42 +913,6 @@ class DesktopServiceTests(unittest.TestCase):
     @patch("backend.collector_service.evaluate_rule_set")
     @patch("backend.collector_service.normalize_search_payload")
     @patch("backend.collector_service.run_twitter_search")
-    def test_manual_run_records_raw_dedupe_failure_but_stays_successful(
-        self,
-        mock_search,
-        mock_normalize_payload,
-        mock_evaluate_rule_set,
-    ) -> None:
-        mock_search.return_value = []
-        mock_normalize_payload.return_value = [self._make_search_result()]
-        mock_evaluate_rule_set.return_value = ([], {"matched": 0, "excluded": 0})
-
-        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
-        original_dedupe = self.service.dedupe_items
-
-        def fail_raw_only(*args, **kwargs):
-            table = kwargs.get("table")
-            if table is None and args:
-                table = args[0]
-            if str(table or "").strip().lower() == "raw":
-                raise RuntimeError("raw dedupe boom")
-            return original_dedupe(*args, **kwargs)
-
-        with patch.object(self.service, "dedupe_items", side_effect=fail_raw_only):
-            report = self.service.run_manual(self._manual_payload(rule_set_id=rule_set_id))
-
-        stored_run = self.service.get_run(int(report["run_id"]))
-
-        self.assertEqual(report["status"], "success")
-        self.assertEqual(report["stats"]["raw_dedupe_failed"], 1)
-        self.assertNotIn("dedupe_failed", report["stats"])
-        self.assertIn("raw dedupe boom", report["errors"][0])
-        self.assertEqual(stored_run["status"], "success")
-        self.assertEqual(stored_run["stats_json"]["raw_dedupe_failed"], 1)
-
-    @patch("backend.collector_service.evaluate_rule_set")
-    @patch("backend.collector_service.normalize_search_payload")
-    @patch("backend.collector_service.run_twitter_search")
     def test_run_job_now_triggers_auto_dedupe_after_successful_store(
         self,
         mock_search,
@@ -858,11 +938,10 @@ class DesktopServiceTests(unittest.TestCase):
             report = self.service.run_job_now(int(job["id"]))
 
         self.assertEqual(report["status"], "success")
-        self.assertIn("raw_dedupe_groups", report["stats"])
         self.assertIn("dedupe_groups", report["stats"])
         self.assertEqual(
             [call.kwargs.get("table", "curated") for call in mock_dedupe.call_args_list],
-            ["raw", "curated"],
+            ["curated"],
         )
 
     def test_list_runs_returns_recent_records_with_pagination(self) -> None:
@@ -882,6 +961,65 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(page["items"][0]["job_id"], 123)
         self.assertEqual(page["items"][0]["stats_json"]["matched"], 2)
         self.assertNotEqual(first, second)
+
+    @patch("backend.collector_service.run_twitter_search")
+    def test_start_manual_run_updates_progress_while_running(self, mock_search) -> None:
+        recent_created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+
+        def fake_search(query: str, _max_results: int):
+            time.sleep(0.05)
+            return [
+                {
+                    "id": f"tweet-{abs(hash(query)) % 100000}",
+                    "text": "Alpha progress https://example.com",
+                    "author": {"screenName": "galxe"},
+                    "createdAtISO": recent_created_at,
+                    "metrics": {"views": 200, "likes": 10, "replies": 1, "retweets": 0},
+                    "lang": "en",
+                    "url": "https://x.com/galxe/status/1001",
+                }
+            ]
+
+        mock_search.side_effect = fake_search
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        started = self.service.start_manual_run(
+            {
+                "search_spec": {
+                    "all_keywords": ["alpha"],
+                    "language_mode": "zh_en",
+                    "days_filter": {"mode": "lte", "max": 1},
+                    "metric_filters": {
+                        "views": {"mode": "any"},
+                        "likes": {"mode": "any"},
+                        "replies": {"mode": "any"},
+                        "retweets": {"mode": "any"},
+                    },
+                    "metric_filters_explicit": True,
+                },
+                "rule_set_id": rule_set_id,
+            }
+        )
+
+        run_id = int(started["run_id"])
+        observed_running_progress = False
+        deadline = time.time() + 5
+        final_run = None
+        while time.time() < deadline:
+            current = self.service.get_run(run_id)
+            stats = current.get("stats_json") or {}
+            if current.get("status") == "running" and int(stats.get("completed_queries", 0) or 0) > 0:
+                observed_running_progress = True
+            if current.get("status") != "running":
+                final_run = current
+                break
+            time.sleep(0.05)
+
+        self.assertTrue(observed_running_progress)
+        self.assertIsNotNone(final_run)
+        self.assertEqual(final_run["status"], "success")
+        self.assertEqual(final_run["stats_json"]["total_queries"], 24)
+        self.assertEqual(final_run["stats_json"]["completed_queries"], 24)
+        self.assertEqual(final_run["stats_json"]["progress_percent"], 100)
 
     def test_get_runtime_logs_reads_current_log_snapshots(self) -> None:
         from backend import collector_service as collector_service_module
@@ -1038,6 +1176,69 @@ class DesktopServiceTests(unittest.TestCase):
 
         self.assertEqual(raw_fetched_at, "2026-04-12T01:23:45+00:00")
         self.assertEqual(curated_fetched_at, raw_fetched_at)
+
+    @patch("backend.collector_service.evaluate_rule_set")
+    @patch("backend.collector_service.normalize_search_payload")
+    @patch("backend.collector_service.run_twitter_search")
+    def test_manual_run_snapshots_tags_to_raw_and_curated_items(
+        self,
+        mock_search,
+        mock_normalize_payload,
+        mock_evaluate_rule_set,
+    ) -> None:
+        mock_search.return_value = []
+        mock_normalize_payload.return_value = [self._make_search_result()]
+        mock_evaluate_rule_set.return_value = ([self._make_curated_match()], {"matched": 1, "excluded": 0})
+
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        report = self.service.run_manual(
+            {
+                **self._manual_payload(rule_set_id=rule_set_id),
+                "tags": ["DeFi", " wallet ", "defi"],
+            }
+        )
+
+        with connect(self.db_path) as conn:
+            raw_tags = conn.execute("SELECT tags_json FROM x_items_raw WHERE run_id = ?", (report["run_id"],)).fetchone()[0]
+            curated_tags = conn.execute("SELECT tags_json FROM x_items_curated WHERE run_id = ?", (report["run_id"],)).fetchone()[0]
+
+        self.assertEqual(json.loads(raw_tags), ["defi", "wallet"])
+        self.assertEqual(json.loads(curated_tags), ["defi", "wallet"])
+        self.assertEqual(report["tags"], ["defi", "wallet"])
+        self.assertEqual(self.service.list_items(table="raw")["items"][0]["tags"], ["defi", "wallet"])
+        self.assertEqual(self.service.list_items(table="curated")["items"][0]["tags"], ["defi", "wallet"])
+
+    @patch("backend.collector_service.evaluate_rule_set")
+    @patch("backend.collector_service.normalize_search_payload")
+    @patch("backend.collector_service.run_twitter_search")
+    def test_auto_run_inherits_tags_from_job_task_pack(
+        self,
+        mock_search,
+        mock_normalize_payload,
+        mock_evaluate_rule_set,
+    ) -> None:
+        mock_search.return_value = []
+        mock_normalize_payload.return_value = [self._make_search_result()]
+        mock_evaluate_rule_set.return_value = ([self._make_curated_match()], {"matched": 1, "excluded": 0})
+
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        job = self.service.create_job(
+            {
+                "name": "tagged-auto",
+                "interval_minutes": 30,
+                "enabled": True,
+                "rule_set_id": rule_set_id,
+                "tags": ["OnChain", "airdrop", "onchain"],
+                "search_spec": self._manual_payload(rule_set_id=rule_set_id)["search_spec"],
+            }
+        )
+
+        report = self.service.run_job_now(int(job["id"]))
+
+        self.assertEqual(job["tags"], ["onchain", "airdrop"])
+        self.assertEqual(report["tags"], ["onchain", "airdrop"])
+        self.assertEqual(self.service.list_items(table="raw")["items"][0]["tags"], ["onchain", "airdrop"])
+        self.assertEqual(self.service.list_items(table="curated")["items"][0]["tags"], ["onchain", "airdrop"])
 
     def test_list_items_invalid_sort_field_falls_back_to_default_id_desc(self) -> None:
         ids = self._seed_curated_items(

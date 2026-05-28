@@ -4,6 +4,7 @@ import copy
 import json
 import re
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,7 @@ DEFAULT_SEQUENCE_PATH = PROJECT_ROOT / "runtime" / "state" / "sequences.json"
 WORKSPACE_VERSION = 2
 TASK_PACK_VERSION = 1
 TASK_PACK_KIND = "task_pack"
+_RUNS_LOCK = threading.RLock()
 
 
 def _ensure_parent(path: Path) -> None:
@@ -53,6 +55,27 @@ def _decode_json_value(value: Any) -> Any:
 def _slugify(value: str, *, fallback: str) -> str:
     lowered = re.sub(r"[^a-zA-Z0-9]+", "-", str(value or "").strip().lower()).strip("-")
     return lowered or fallback
+
+
+def normalize_tags(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        raw_items = re.split(r"[,，\r\n\t]+", value)
+    elif isinstance(value, (list, tuple, set)):
+        raw_items = list(value)
+    else:
+        raw_items = [value]
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_items:
+        item = str(raw or "").strip().lower()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        normalized.append(item)
+    return normalized
 
 
 def _project_root_from_workspace_path(workspace_path: Path) -> Path:
@@ -125,6 +148,7 @@ def default_task_pack() -> dict[str, Any]:
             "description": "",
             "updated_at": now,
         },
+        "tags": [],
         "search_spec": normalize_search_spec(default_search_spec()),
         "rule_set": {
             "id": 1,
@@ -159,6 +183,7 @@ def _normalize_task_pack(payload: dict[str, Any] | None, *, fallback_name: str) 
     return {
         "version": int(source.get("version") or TASK_PACK_VERSION),
         "kind": TASK_PACK_KIND,
+        "tags": normalize_tags(source.get("tags") if "tags" in source else meta_source.get("tags")),
         "meta": {
             "name": str(meta_source.get("name") or fallback_name).strip() or fallback_name,
             "description": str(meta_source.get("description") or "").strip(),
@@ -272,6 +297,7 @@ class TaskPackStore:
             "name": payload["meta"]["name"],
             "description": payload["meta"].get("description", ""),
             "updated_at": payload["meta"].get("updated_at", ""),
+            "tags": normalize_tags(payload.get("tags")),
         }
 
     def list_packs(self) -> list[dict[str, Any]]:
@@ -621,21 +647,26 @@ class RuntimeStateStore:
         return next_value
 
     def _load_runs(self) -> list[dict[str, Any]]:
-        if not self.runs_path.exists():
-            return []
-        items: list[dict[str, Any]] = []
-        for line in self.runs_path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            items.append(json.loads(line))
-        return items
+        with _RUNS_LOCK:
+            if not self.runs_path.exists():
+                return []
+            items: list[dict[str, Any]] = []
+            for line in self.runs_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                items.append(json.loads(line))
+            return items
 
     def _save_runs(self, payload: list[dict[str, Any]]) -> None:
-        serialized = "\n".join(json.dumps(item, ensure_ascii=False) for item in payload)
-        if serialized:
-            serialized += "\n"
-        _atomic_write_text(self.runs_path, serialized)
+        with _RUNS_LOCK:
+            serialized = "\n".join(json.dumps(item, ensure_ascii=False) for item in payload)
+            if serialized:
+                serialized += "\n"
+            # Progress updates can be very frequent; on Windows, atomic replace on the same
+            # JSONL file is prone to transient access errors while other readers poll status.
+            _ensure_parent(self.runs_path)
+            self.runs_path.write_text(serialized, encoding="utf-8")
 
     def create_run(self, *, job_id: int | None, trigger_type: str, started_at: str | None = None) -> int:
         run_id = self._next_sequence("run_id")
@@ -647,6 +678,7 @@ class RuntimeStateStore:
                 "trigger_type": trigger_type,
                 "status": "running",
                 "stats_json": {},
+                "result_json": None,
                 "started_at": started_at or utc_now_iso(),
                 "ended_at": None,
                 "error_text": None,
@@ -662,6 +694,7 @@ class RuntimeStateStore:
         status: str,
         stats: dict[str, Any],
         error_text: str,
+        result: dict[str, Any] | None = None,
         ended_at: str | None = None,
     ) -> None:
         runs = self._load_runs()
@@ -670,9 +703,25 @@ class RuntimeStateStore:
             if int(item.get("id") or 0) != int(run_id):
                 continue
             item["status"] = status
-            item["stats_json"] = copy.deepcopy(stats)
+            current_stats = item.get("stats_json") if isinstance(item.get("stats_json"), dict) else {}
+            item["stats_json"] = {**copy.deepcopy(current_stats), **copy.deepcopy(stats)}
+            item["result_json"] = copy.deepcopy(result) if isinstance(result, dict) else None
             item["ended_at"] = ended_at or utc_now_iso()
             item["error_text"] = error_text or None
+            found = True
+            break
+        if not found:
+            raise ValueError(f"run {run_id} not found")
+        self._save_runs(runs)
+
+    def update_run_progress(self, run_id: int, *, stats: dict[str, Any]) -> None:
+        runs = self._load_runs()
+        found = False
+        for item in runs:
+            if int(item.get("id") or 0) != int(run_id):
+                continue
+            current_stats = item.get("stats_json") if isinstance(item.get("stats_json"), dict) else {}
+            item["stats_json"] = {**copy.deepcopy(current_stats), **copy.deepcopy(stats)}
             found = True
             break
         if not found:

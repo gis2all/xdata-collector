@@ -95,6 +95,9 @@ docker compose down
 - `config/`：`workspace.json` 和 `packs/*.json`
 - `runtime/`：运行记录、健康快照、日志、PID、临时文件
 - `data/app.db`：本地 SQLite 结果库，项目默认直接连接，首次启动会自动创建，当前只保存 `x_items_raw` 和 `x_items_curated`
+- 搜索语言选择 `中文 + 英文` 时会生成单条 `(lang:zh OR lang:en)` query；默认发布时间范围为 1 天，默认按 1 小时窗口切片，可选 15 分钟 / 30 分钟 / 1h / 2h / 4h。
+- 最大结果数是每个时间切片 query 的传参上限，但当前 `twitter-cli search` 实测单 query 通常最多返回约 40 条。
+- 自动时间切片仅在有界发布时间范围下生效；如果 `raw_query` 已显式写 `since:` / `until:` / `since_time:` / `until_time:`，不会再叠加自动切片。时间切片 query 总上限为 10000。
 
 ## 最小排障顺序
 

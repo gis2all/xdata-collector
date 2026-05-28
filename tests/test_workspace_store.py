@@ -179,6 +179,7 @@ class WorkspaceStoreTests(unittest.TestCase):
                 {
                     "version": 1,
                     "kind": "task_pack",
+                    "tags": ["Alpha", " alpha ", "", "DeFi"],
                     "meta": {
                         "name": "Alpha Watch",
                         "description": "watch alpha",
@@ -187,7 +188,8 @@ class WorkspaceStoreTests(unittest.TestCase):
                     "search_spec": {
                         "all_keywords": ["alpha"],
                         "language_mode": "en",
-                        "days_filter": {"mode": "lte", "min": None, "max": 20},
+                        "days_filter": {"mode": "lte", "min": None, "max": 1},
+                        "time_slice_minutes": 60,
                         "metric_filters": {
                             "views": {"mode": "any", "min": None, "max": None},
                             "likes": {"mode": "any", "min": None, "max": None},
@@ -207,17 +209,20 @@ class WorkspaceStoreTests(unittest.TestCase):
             )
 
             self.assertEqual(created["meta"]["name"], "Alpha Watch")
+            self.assertEqual(created["tags"], ["alpha", "defi"])
             self.assertTrue((root / "config" / "packs" / "alpha-watch.json").exists())
 
             listed = store.list_packs()
             self.assertEqual(len(listed), 1)
             self.assertEqual(listed[0]["pack_name"], "alpha-watch")
             self.assertEqual(listed[0]["pack_path"], "config/packs/alpha-watch.json")
+            self.assertEqual(listed[0]["tags"], ["alpha", "defi"])
 
             updated = store.update_pack(
                 "alpha-watch",
                 {
                     **created,
+                    "tags": "DeFi, Wallet\nwallet",
                     "meta": {
                         **created["meta"],
                         "description": "watch alpha updated",
@@ -232,10 +237,12 @@ class WorkspaceStoreTests(unittest.TestCase):
 
             self.assertEqual(updated["meta"]["description"], "watch alpha updated")
             self.assertEqual(updated["search_spec"]["all_keywords"], ["alpha", "beta"])
+            self.assertEqual(updated["tags"], ["defi", "wallet"])
 
             loaded = store.get_pack("alpha-watch")
             self.assertEqual(loaded["meta"]["updated_at"], "2026-04-15T00:00:00+00:00")
             self.assertEqual(loaded["search_spec"]["all_keywords"], ["alpha", "beta"])
+            self.assertEqual(loaded["tags"], ["defi", "wallet"])
 
 
 class RuntimeStateStoreTests(unittest.TestCase):
@@ -254,6 +261,7 @@ class RuntimeStateStoreTests(unittest.TestCase):
                 status="success",
                 stats={"matched": 3},
                 error_text="",
+                result={"run_id": run_id, "status": "success"},
                 ended_at="2026-04-14T00:01:00+00:00",
             )
             store.save_health_snapshots(
@@ -276,10 +284,39 @@ class RuntimeStateStoreTests(unittest.TestCase):
             self.assertEqual(page["items"][0]["id"], 1)
             self.assertEqual(page["items"][0]["job_id"], 12)
             self.assertEqual(page["items"][0]["stats_json"]["matched"], 3)
+            self.assertEqual(page["items"][0]["result_json"]["status"], "success")
             self.assertEqual(snapshots["db"]["detail"]["db_path"], "data/app.db")
             self.assertTrue((root / "runtime" / "history" / "search_runs.jsonl").exists())
             self.assertTrue((root / "runtime" / "state" / "runtime_health_snapshot.json").exists())
             self.assertTrue((root / "runtime" / "state" / "sequences.json").exists())
+
+    def test_updates_run_progress_stats_without_finishing_run(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            store = RuntimeStateStore(
+                runs_path=root / "runtime" / "history" / "search_runs.jsonl",
+                health_path=root / "runtime" / "state" / "runtime_health_snapshot.json",
+                sequence_path=root / "runtime" / "state" / "sequences.json",
+            )
+
+            run_id = store.create_run(job_id=None, trigger_type="manual", started_at="2026-04-14T00:00:00+00:00")
+            store.update_run_progress(
+                run_id,
+                stats={
+                    "total_queries": 24,
+                    "completed_queries": 7,
+                    "progress_percent": 29,
+                    "fetched_raw": 18,
+                },
+            )
+
+            stored = store.get_run(run_id)
+
+            self.assertEqual(stored["status"], "running")
+            self.assertEqual(stored["ended_at"], None)
+            self.assertEqual(stored["stats_json"]["total_queries"], 24)
+            self.assertEqual(stored["stats_json"]["completed_queries"], 7)
+            self.assertEqual(stored["stats_json"]["progress_percent"], 29)
 
 
 if __name__ == "__main__":

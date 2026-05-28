@@ -73,8 +73,9 @@ function blocksContainingSelector(selector: string) {
 describe("visual contract", () => {
   it("does not use gradients or rounded chrome", () => {
     expect(styles).not.toMatch(/(?:linear|radial)-gradient/);
-    const radiusValues = Array.from(styles.matchAll(/border-radius:\s*([^;]+);/g), ([, value]) => value.trim());
-    expect(radiusValues.every((value) => value === "0")).toBe(true);
+    const roundedChrome = Array.from(styles.matchAll(/([^{}]+)\{([^{}]*border-radius:\s*([^;]+);[^{}]*)\}/g))
+      .filter(([, selectorList, , value]) => value.trim() !== "0" && !selectorList.includes(".tag-pill"));
+    expect(roundedChrome).toEqual([]);
   });
 
   it("keeps primary workbench surfaces square and low chrome", () => {
@@ -185,7 +186,7 @@ describe("visual contract", () => {
     expect(blocksContainingSelector(".jobs-layout").some((block) => block.includes("minmax(320px, 320px)"))).toBe(true);
     expect(blocksContainingSelector(".jobs-layout").some((block) => block.includes("20px"))).toBe(true);
     expect(blocksContainingSelector(".jobs-layout").some((block) => block.includes("align-items: stretch;"))).toBe(true);
-    expect(blockFor(".jobs-table")).toContain("min-width: 760px;");
+    expect(blockFor(".jobs-table")).toContain("min-width: 900px;");
     expect(blockFor(".jobs-table")).not.toContain("table-layout: fixed;");
     expect(styles).not.toContain(".jobs-row-actions-stack");
   });

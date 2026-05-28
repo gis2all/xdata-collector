@@ -30,6 +30,7 @@ export type DatabaseHealth = HealthTarget & {
 };
 export type XHealth = HealthTarget & {
   auth_source: string;
+  cli_version: string;
   account_hint: string;
 };
 export type HealthSnapshot = {
@@ -50,6 +51,7 @@ export type SearchSpec = {
   authors_exclude: string[];
   language_mode: LanguageMode;
   days_filter: RangeFilter;
+  time_slice_minutes: 15 | 30 | 60 | 120 | 240;
   metric_filters: MetricFilters;
   metric_filters_explicit: boolean;
   max_results: number;
@@ -173,6 +175,7 @@ export type TaskPackSummary = {
   name: string;
   description: string;
   updated_at: string;
+  tags: string[];
   rule_set_summary?: RuleSetSummary | null;
   query_preview?: string;
 };
@@ -187,6 +190,7 @@ export type TaskPackFile = {
     description: string;
     updated_at: string;
   };
+  tags: string[];
   search_spec: SearchSpec;
   rule_set: {
     id?: number | null;
@@ -205,9 +209,11 @@ export type CollectorResultItem = {
   tweet_id: string;
   url: string;
   text: string;
+  author_name: string;
   author: string;
   created_at: string;
   fetched_at?: string | null;
+  tags: string[];
   raw: Record<string, unknown>;
   metrics: Record<string, number>;
   flags: {
@@ -238,6 +244,7 @@ export type CollectorRunResult = {
   run_id: number;
   status: string;
   search_spec: SearchSpec;
+  tags: string[];
   final_query: string;
   final_queries: string[];
   rule_set_summary: RuleSetSummary;
@@ -267,6 +274,7 @@ export type JobRecord = {
     description?: string;
     updated_at?: string;
   };
+  tags: string[];
   enabled: number;
   next_run_at: string | null;
   created_at: string;
@@ -319,6 +327,7 @@ export type RunRecord = {
   ended_at: string | null;
   error_text: string | null;
   stats_json: Record<string, number>;
+  result_json?: CollectorRunResult | null;
 };
 
 export type RuntimeLogFile = {
@@ -344,8 +353,14 @@ export type CuratedItemSortField =
   | "excerpt"
   | "is_zero_cost"
   | "source_url"
+  | "author_name"
   | "author"
+  | "tags"
   | "created_at_x"
+  | "views"
+  | "likes"
+  | "replies"
+  | "retweets"
   | "fetched_at"
   | "reasons_json"
   | "rule_set_id"
@@ -356,7 +371,9 @@ export type RawItemSortField =
   | "run_id"
   | "tweet_id"
   | "canonical_url"
+  | "author_name"
   | "author"
+  | "tags"
   | "text"
   | "created_at_x"
   | "views"
@@ -379,8 +396,14 @@ export type CuratedItemRecord = {
   excerpt: string;
   is_zero_cost: number;
   source_url: string;
+  author_name: string;
   author: string;
   created_at_x: string | null;
+  tags: string[];
+  views: number;
+  likes: number;
+  replies: number;
+  retweets: number;
   fetched_at: string | null;
   reasons_json: unknown;
   rule_set_id: number | null;
@@ -392,9 +415,11 @@ export type RawItemRecord = {
   run_id: number;
   tweet_id: string;
   canonical_url: string;
+  author_name: string;
   author: string;
   text: string;
   created_at_x: string | null;
+  tags: string[];
   views: number;
   likes: number;
   replies: number;
@@ -493,6 +518,7 @@ export function getTaskPack(packName: string) {
 export function createTaskPack(payload: {
   pack_name?: string;
   meta: { name: string; description?: string; updated_at?: string };
+  tags?: string[];
   search_spec: SearchSpec;
   rule_set: { id?: number | null; name: string; description?: string; version?: number; definition: RuleSetDefinition };
 }) {
@@ -506,6 +532,7 @@ export function updateTaskPack(
   packName: string,
   payload: {
     meta: { name: string; description?: string; updated_at?: string };
+    tags?: string[];
     search_spec: SearchSpec;
     rule_set: { id?: number | null; name: string; description?: string; version?: number; definition: RuleSetDefinition };
   },
@@ -536,8 +563,13 @@ export function getJob(id: number) {
   return req<JobRecord>(`/jobs/${id}`);
 }
 
-export function runManual(payload: { search_spec: SearchSpec; rule_set_id?: number | null; rule_set?: Partial<RuleSet> }) {
-  return req<CollectorRunResult>("/manual/run", {
+export function runManualStart(payload: {
+  search_spec: SearchSpec;
+  tags?: string[];
+  rule_set_id?: number | null;
+  rule_set?: { id?: number | null; name: string; description?: string; version?: number; definition: RuleSetDefinition };
+}) {
+  return req<{ run_id: number; status: string }>("/manual/run/start", {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -548,6 +580,10 @@ export function listRuns(params: { page?: number; page_size?: number }) {
   if (params.page) q.set("page", String(params.page));
   if (params.page_size) q.set("page_size", String(params.page_size));
   return req<{ total: number; page: number; page_size: number; items: RunRecord[] }>(`/runs?${q.toString()}`);
+}
+
+export function getRun(id: number) {
+  return req<RunRecord>(`/runs/${id}`);
 }
 
 export function getRuntimeLogs() {
@@ -594,6 +630,7 @@ export function createJob(payload: {
   interval_minutes: number;
   enabled: boolean;
   search_spec: SearchSpec;
+  tags?: string[];
   rule_set?: { id?: number | null; name: string; description?: string; version?: number; definition: RuleSetDefinition };
   rule_set_id?: number | null;
 }) {
@@ -607,6 +644,7 @@ export function updateJob(
     interval_minutes: number;
     enabled: boolean;
     search_spec: SearchSpec;
+    tags?: string[];
     rule_set?: { id?: number | null; name: string; description?: string; version?: number; definition: RuleSetDefinition };
     rule_set_id: number | null;
   }>,

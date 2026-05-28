@@ -9,20 +9,22 @@ vi.mock("../api", () => ({
   createTaskPack: vi.fn(),
   updateTaskPack: vi.fn(),
   deleteTaskPack: vi.fn(),
-  runManual: vi.fn(),
+  runManualStart: vi.fn(),
+  getRun: vi.fn(),
 }));
 
 vi.mock("../components/RuleSetEditor", () => ({
   RuleSetEditor: () => <div data-testid="rule-set-editor" />,
 }));
 
-import { createTaskPack, deleteTaskPack, getTaskPack, listTaskPacks, runManual } from "../api";
+import { createTaskPack, deleteTaskPack, getRun, getTaskPack, listTaskPacks, runManualStart } from "../api";
 
 const listTaskPacksMock = vi.mocked(listTaskPacks);
 const getTaskPackMock = vi.mocked(getTaskPack);
 const createTaskPackMock = vi.mocked(createTaskPack);
 const deleteTaskPackMock = vi.mocked(deleteTaskPack);
-const runManualMock = vi.mocked(runManual);
+const runManualStartMock = vi.mocked(runManualStart);
+const getRunMock = vi.mocked(getRun);
 
 const taskPackSummary = {
   pack_name: "alpha-watch",
@@ -30,6 +32,7 @@ const taskPackSummary = {
   name: "Alpha Watch",
   description: "watch alpha",
   updated_at: "2026-04-14T00:00:00+00:00",
+  tags: ["defi", "wallet"],
 };
 
 const taskPackFile = {
@@ -42,6 +45,7 @@ const taskPackFile = {
     description: "watch alpha",
     updated_at: "2026-04-14T00:00:00+00:00",
   },
+  tags: ["defi", "wallet"],
   search_spec: {
     all_keywords: ["alpha"],
     exact_phrases: [],
@@ -90,6 +94,7 @@ describe("ManualSearchPage", () => {
         description: payload.meta?.description || "",
         updated_at: "2026-04-14T00:00:00+00:00",
       },
+      tags: payload.tags || [],
       search_spec: payload.search_spec,
       rule_set: {
         id: payload.rule_set?.id ?? 1,
@@ -103,20 +108,50 @@ describe("ManualSearchPage", () => {
   });
 
   it("renders the execution-first workbench structure and updates the execution rail after a run", async () => {
-    runManualMock.mockResolvedValue({
-      run_id: 1,
-      status: "success",
-      search_spec: taskPackFile.search_spec,
-      final_query: "alpha lang:zh || alpha lang:en",
-      final_queries: ["alpha lang:zh -is:retweet", "alpha lang:en -is:retweet"],
-      rule_set_summary: { id: 1, name: "Default Rule Set", description: "", version: 1, is_builtin: true },
-      raw_total: 1,
-      matched_total: 0,
-      raw_items: [],
-      matched_items: [],
-      stats: {},
-      errors: [],
-    } as any);
+    runManualStartMock.mockResolvedValue({ run_id: 1, status: "running" } as any);
+    getRunMock
+      .mockResolvedValueOnce({
+        id: 1,
+        job_id: null,
+        trigger_type: "manual",
+        status: "running",
+        started_at: "2026-04-14T00:00:00+00:00",
+        ended_at: null,
+        error_text: null,
+        stats_json: { total_queries: 24, completed_queries: 6, progress_percent: 25, fetched_raw: 12 },
+      } as any)
+      .mockResolvedValue({
+        id: 1,
+        job_id: null,
+        trigger_type: "manual",
+        status: "success",
+        started_at: "2026-04-14T00:00:00+00:00",
+        ended_at: "2026-04-14T00:05:00+00:00",
+        error_text: null,
+        stats_json: { total_queries: 24, completed_queries: 24, progress_percent: 100 },
+        result_json: {
+          run_id: 1,
+          status: "success",
+          search_spec: taskPackFile.search_spec,
+          tags: [],
+          final_query: "alpha (lang:zh OR lang:en) -is:retweet",
+          final_queries: [
+            "alpha (lang:zh OR lang:en) -is:retweet since_time:100 until_time:200",
+            "alpha (lang:zh OR lang:en) -is:retweet since_time:200 until_time:300",
+            "alpha (lang:zh OR lang:en) -is:retweet since_time:300 until_time:400",
+            "alpha (lang:zh OR lang:en) -is:retweet since_time:400 until_time:500",
+            "alpha (lang:zh OR lang:en) -is:retweet since_time:500 until_time:600",
+            "alpha (lang:zh OR lang:en) -is:retweet since_time:600 until_time:700",
+          ],
+          rule_set_summary: { id: 1, name: "Default Rule Set", description: "", version: 1, is_builtin: true },
+          raw_total: 1,
+          matched_total: 0,
+          raw_items: [],
+          matched_items: [],
+          stats: { total_queries: 24, completed_queries: 24, progress_percent: 100 },
+          errors: [],
+        },
+      } as any);
 
     render(<ManualSearchPage />);
 
@@ -181,13 +216,24 @@ describe("ManualSearchPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "立即执行任务" }));
 
+    expect(runManualStartMock).toHaveBeenCalled();
+    expect(screen.getByTestId("manual-run-progress")).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText("alpha lang:zh -is:retweet")).toBeInTheDocument();
+      expect(getRunMock).toHaveBeenCalledWith(1);
+    });
+    await waitFor(() => {
+      expect(screen.getByText("25%")).toBeInTheDocument();
+    });
+    expect(screen.getByText("已完成 6 / 24 个查询切片")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText("alpha (lang:zh OR lang:en) -is:retweet since_time:100 until_time:200")).toBeInTheDocument();
     });
 
-    expect(runManualMock).toHaveBeenCalled();
-    expect(screen.getByText("alpha lang:en -is:retweet")).toBeInTheDocument();
-    expect(screen.getByText("执行成功")).toBeInTheDocument();
+    expect(screen.getByText("100%")).toBeInTheDocument();
+    expect(screen.getByText("还有 1 条时间切片查询未展开")).toBeInTheDocument();
+    expect(screen.queryByText("alpha (lang:zh OR lang:en) -is:retweet since_time:600 until_time:700")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("manual-run-progress")).getByText("执行成功")).toBeInTheDocument();
     expect(screen.getByText("最近状态：执行成功")).toBeInTheDocument();
     expect(screen.getByText("最近执行")).toBeInTheDocument();
     expect(screen.getByText("raw_total")).toBeInTheDocument();
@@ -219,6 +265,9 @@ describe("ManualSearchPage", () => {
 
     expect(screen.getAllByText("Alpha Watch").length).toBeGreaterThan(0);
     expect(screen.getByText("当前绑定：alpha-watch")).toBeInTheDocument();
+    expect(screen.getByLabelText("manual-pack-tags")).toHaveValue("defi\nwallet");
+    expect(screen.getByLabelText("manual-pack-tags")).toHaveAttribute("placeholder", "逗号或换行分隔，如：alpha, defi, wallet");
+    expect(screen.getByText("tags：defi, wallet")).toBeInTheDocument();
     expect(screen.getAllByText("草稿状态：未修改").length).toBeGreaterThan(0);
     expect(screen.getByText("当前来源：任务包载入")).toBeInTheDocument();
     expect(screen.queryByText("pack_name=alpha-watch")).not.toBeInTheDocument();
@@ -251,6 +300,28 @@ describe("ManualSearchPage", () => {
     await waitFor(() => {
       expect(createTaskPackMock).toHaveBeenCalled();
     });
+    expect(createTaskPackMock).toHaveBeenCalledWith(expect.objectContaining({ tags: ["defi", "wallet"] }));
+
+    promptSpy.mockRestore();
+  });
+
+  it("keeps comma-separated tag text while saving normalized tags", async () => {
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("manual-alpha");
+
+    render(<ManualSearchPage />);
+
+    await screen.findByLabelText("manual-pack-tags");
+    const tagsInput = screen.getByLabelText("manual-pack-tags");
+    fireEvent.change(tagsInput, { target: { value: "btc,eth" } });
+
+    expect(tagsInput).toHaveValue("btc,eth");
+
+    fireEvent.click(screen.getByTestId("manual-save-as-pack"));
+
+    await waitFor(() => {
+      expect(createTaskPackMock).toHaveBeenCalled();
+    });
+    expect(createTaskPackMock).toHaveBeenCalledWith(expect.objectContaining({ tags: ["btc", "eth"] }));
 
     promptSpy.mockRestore();
   });
@@ -363,19 +434,31 @@ describe("ManualSearchPage", () => {
   });
 
   it("submits multi-word phrases and comma-delimited authors as parsed arrays", async () => {
-    runManualMock.mockResolvedValue({
-      run_id: 2,
+    runManualStartMock.mockResolvedValue({ run_id: 2, status: "running" } as any);
+    getRunMock.mockResolvedValue({
+      id: 2,
+      job_id: null,
+      trigger_type: "manual",
       status: "success",
-      search_spec: taskPackFile.search_spec,
-      final_query: "btc lang:zh || btc lang:en",
-      final_queries: ["btc lang:zh -is:retweet", "btc lang:en -is:retweet"],
-      rule_set_summary: { id: 1, name: "Default Rule Set", description: "", version: 1, is_builtin: true },
-      raw_total: 0,
-      matched_total: 0,
-      raw_items: [],
-      matched_items: [],
-      stats: {},
-      errors: [],
+      started_at: "2026-04-14T00:00:00+00:00",
+      ended_at: "2026-04-14T00:01:00+00:00",
+      error_text: null,
+      stats_json: { total_queries: 1, completed_queries: 1, progress_percent: 100 },
+      result_json: {
+        run_id: 2,
+        status: "success",
+        search_spec: taskPackFile.search_spec,
+        tags: [],
+        final_query: "btc (lang:zh OR lang:en) -is:retweet",
+        final_queries: ["btc (lang:zh OR lang:en) -is:retweet"],
+        rule_set_summary: { id: 1, name: "Default Rule Set", description: "", version: 1, is_builtin: true },
+        raw_total: 0,
+        matched_total: 0,
+        raw_items: [],
+        matched_items: [],
+        stats: { total_queries: 1, completed_queries: 1, progress_percent: 100 },
+        errors: [],
+      },
     } as any);
 
     render(<ManualSearchPage />);
@@ -391,10 +474,10 @@ describe("ManualSearchPage", () => {
     fireEvent.click(screen.getByTestId("manual-run-button"));
 
     await waitFor(() => {
-      expect(runManualMock).toHaveBeenCalled();
+      expect(runManualStartMock).toHaveBeenCalled();
     });
 
-    const payload = runManualMock.mock.calls[0]?.[0] as any;
+    const payload = runManualStartMock.mock.calls[0]?.[0] as any;
     expect(payload.search_spec.all_keywords).toEqual(["BTC"]);
     expect(payload.search_spec.exact_phrases).toEqual(["social mining", "daily check-in"]);
     expect(payload.search_spec.authors_include).toEqual(["galxe", "layer3xyz"]);

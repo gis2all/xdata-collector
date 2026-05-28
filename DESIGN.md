@@ -393,10 +393,12 @@ font-family:
 
 ## 与当前项目语义对齐
 
-- `task pack = search_spec + rule_set`
+- `task pack = search_spec + rule_set + tags`
 - 自动任务是“调度壳 + 绑定任务包”
 - 手动执行页编辑并运行的是“任务包草稿”
-- 结果浏览是 `x_items_raw` / `x_items_curated` 双表工作台
+- 结果浏览是 `x_items_raw` / `x_items_curated` 双表工作台，结果中的 `tags` 是运行时继承自任务包的快照
+- `中文 + 英文` 搜索语言在查询层是一条 `(lang:zh OR lang:en)` query，界面文案不要暗示会分别执行两次搜索
+- 有界发布时间范围执行时按 1 小时窗口查询，界面展示执行 query 时只展开少量样例，避免长历史任务刷屏
 - `workspace.json` 是轻量环境与 jobs registry，不是大工作区快照
 
 这份规范描述的是目标 UI 语言。后续页面改版、组件调整和样式收口，都应以它为基线，而不是继续按单页临时判断。

@@ -7,82 +7,25 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from backend.models import SearchResult
-from backend.opportunity_signals import (
-    ACTION_KEYWORDS,
-    CRYPTO_CONTEXT_KEYWORDS,
-    TRADE_GATE_KEYWORDS,
-    TRUSTED_AUTHORS,
-)
-
 DEFAULT_LEVELS = [
     {"id": "S", "label": "强信号", "min_score": 90, "color": "#dc2626"},
     {"id": "A", "label": "高优先级", "min_score": 60, "color": "#ea580c"},
     {"id": "B", "label": "观察", "min_score": 30, "color": "#2563eb"},
 ]
 
-DEFAULT_RULES = [
-    {
-        "id": "exclude-trade-gated",
-        "name": "排除交易门槛",
-        "enabled": True,
-        "operator": "AND",
-        "conditions": [
-            {"type": "text_contains_any", "values": list(TRADE_GATE_KEYWORDS)},
-        ],
-        "effect": {"action": "exclude", "score": 0, "level": ""},
-    },
-    {
-        "id": "trusted-author-action",
-        "name": "官方账号 + 行动词",
-        "enabled": True,
-        "operator": "AND",
-        "conditions": [
-            {"type": "author_in", "values": sorted(TRUSTED_AUTHORS)},
-            {"type": "text_contains_any", "values": list(ACTION_KEYWORDS)},
-        ],
-        "effect": {"action": "score", "score": 65, "level": "A"},
-    },
-    {
-        "id": "action-keywords",
-        "name": "命中行动词",
-        "enabled": True,
-        "operator": "AND",
-        "conditions": [
-            {"type": "text_contains_any", "values": list(ACTION_KEYWORDS)},
-        ],
-        "effect": {"action": "score", "score": 35, "level": "B"},
-    },
-    {
-        "id": "crypto-context",
-        "name": "命中加密上下文",
-        "enabled": True,
-        "operator": "AND",
-        "conditions": [
-            {"type": "text_contains_any", "values": list(CRYPTO_CONTEXT_KEYWORDS)},
-        ],
-        "effect": {"action": "score", "score": 20, "level": "B"},
-    },
-    {
-        "id": "high-engagement",
-        "name": "高互动增强",
-        "enabled": True,
-        "operator": "AND",
-        "conditions": [
-            {"type": "metric_at_least", "metric": "views", "value": 500},
-            {"type": "metric_at_least", "metric": "replies", "value": 3},
-            {"type": "text_contains_any", "values": list(ACTION_KEYWORDS)},
-        ],
-        "effect": {"action": "score", "score": 20, "level": "A"},
-    },
-]
+DEFAULT_RULES: list[dict[str, Any]] = []
 
 EMOJI_RE = re.compile("[\U0001F300-\U0001FAFF\u2600-\u27BF]")
 HASHTAG_RE = re.compile(r"(^|\s)#\w+")
 CASHTAG_RE = re.compile(r"(^|\s)\$[A-Za-z][A-Za-z0-9_]{1,9}")
 URL_RE = re.compile(r"https?://", re.IGNORECASE)
+TIME_OPERATOR_RE = re.compile(r"\b(?:since|until|since_time|until_time):", re.IGNORECASE)
 
 LANGUAGE_MODES = {"zh", "en", "zh_en"}
 RANGE_MODES = {"any", "gte", "lte", "between"}
+TIME_SLICE_MINUTES = {15, 30, 60, 120, 240}
+DEFAULT_TIME_SLICE_MINUTES = 60
+MAX_TIME_SLICE_QUERIES = 10000
 
 
 def default_range_filter(mode: str = "any", *, minimum: int | None = None, maximum: int | None = None) -> dict[str, Any]:
@@ -107,12 +50,13 @@ def default_search_spec() -> dict[str, Any]:
         "authors_include": [],
         "authors_exclude": [],
         "language_mode": "zh_en",
-        "days_filter": default_range_filter("lte", maximum=20),
+        "days_filter": default_range_filter("lte", maximum=1),
+        "time_slice_minutes": DEFAULT_TIME_SLICE_MINUTES,
         "metric_filters": default_metric_filters(),
         "metric_filters_explicit": True,
         "language": "",
-        "days": 20,
-        "max_results": 40,
+        "days": 1,
+        "max_results": 100,
         "metric_mode": "OR",
         "min_metrics": {"views": 200, "likes": 0, "replies": 1, "retweets": 0},
         "include_retweets": False,
@@ -169,6 +113,13 @@ def resolve_language_codes(language_mode: str) -> list[str]:
     return ["zh", "en"]
 
 
+def build_language_query_clause(language_mode: str) -> str:
+    codes = resolve_language_codes(language_mode)
+    if len(codes) == 1:
+        return f"lang:{codes[0]}"
+    return "(" + " OR ".join([f"lang:{code}" for code in codes]) + ")"
+
+
 def normalize_range_filter(
     payload: Any,
     *,
@@ -214,7 +165,14 @@ def derive_legacy_days_value(days_filter: dict[str, Any]) -> int:
         return int(days_filter.get("min") or 0)
     if mode in {"lte", "between"}:
         return int(days_filter.get("max") or 0)
-    return 20
+    return 1
+
+
+def normalize_time_slice_minutes(value: Any, default: int = DEFAULT_TIME_SLICE_MINUTES) -> int:
+    numeric = clamp_non_negative(value, default)
+    if numeric in TIME_SLICE_MINUTES:
+        return numeric
+    return default
 
 
 def derive_legacy_min_metrics(metric_filters: dict[str, dict[str, Any]]) -> dict[str, int]:
@@ -244,7 +202,10 @@ def normalize_metric_filters(
 def normalize_search_spec(payload: dict[str, Any] | None) -> dict[str, Any]:
     base = default_search_spec()
     incoming = payload or {}
-    base["all_keywords"] = normalize_list(incoming.get("all_keywords") or incoming.get("keywords")) or base["all_keywords"]
+    if "all_keywords" in incoming:
+        base["all_keywords"] = normalize_list(incoming.get("all_keywords"))
+    elif "keywords" in incoming:
+        base["all_keywords"] = normalize_list(incoming.get("keywords"))
     base["exact_phrases"] = normalize_list(incoming.get("exact_phrases"))
     base["any_keywords"] = normalize_list(incoming.get("any_keywords"))
     base["exclude_keywords"] = normalize_list(incoming.get("exclude_keywords"))
@@ -258,6 +219,7 @@ def normalize_search_spec(payload: dict[str, Any] | None) -> dict[str, Any]:
         legacy_value=incoming.get("days"),
         legacy_mode="lte",
     )
+    base["time_slice_minutes"] = normalize_time_slice_minutes(incoming.get("time_slice_minutes"), base["time_slice_minutes"])
     base["max_results"] = max(1, min(100, coerce_int(incoming.get("max_results", base["max_results"]), base["max_results"])))
     metric_mode = str(incoming.get("metric_mode") or incoming.get("thresholds", {}).get("mode") or base["metric_mode"]).upper()
     base["metric_mode"] = "AND" if metric_mode == "AND" else "OR"
@@ -306,7 +268,7 @@ def normalize_rule_set_definition(payload: dict[str, Any] | None) -> dict[str, A
     if not normalized_levels:
         normalized_levels = copy.deepcopy(DEFAULT_LEVELS)
 
-    rules = incoming.get("rules") if isinstance(incoming.get("rules"), list) and incoming.get("rules") else copy.deepcopy(DEFAULT_RULES)
+    rules = incoming.get("rules") if isinstance(incoming.get("rules"), list) else copy.deepcopy(DEFAULT_RULES)
     normalized_rules: list[dict[str, Any]] = []
     level_ids = {level["id"] for level in normalized_levels}
     for index, rule in enumerate(rules, start=1):
@@ -332,8 +294,6 @@ def normalize_rule_set_definition(payload: dict[str, Any] | None) -> dict[str, A
                 },
             }
         )
-    if not normalized_rules:
-        normalized_rules = copy.deepcopy(DEFAULT_RULES)
     return {"levels": normalized_levels, "rules": normalized_rules}
 
 
@@ -371,9 +331,9 @@ def build_query_from_search_spec(spec: dict[str, Any], language_override: str | 
     if include_authors:
         parts.append("(" + " OR ".join([f"from:{author}" for author in include_authors]) + ")")
     parts.extend([f"-from:{author}" for author in spec.get("authors_exclude", [])])
-    language_code = language_override or spec.get("language")
-    if language_code:
-        parts.append(f"lang:{language_code}")
+    language_clause = f"lang:{language_override}" if language_override else build_language_query_clause(str(spec.get("language_mode") or spec.get("language") or "zh_en"))
+    if language_clause:
+        parts.append(language_clause)
     if not spec.get("include_retweets", True):
         parts.append("-is:retweet")
     if not spec.get("include_replies", True):
@@ -388,9 +348,64 @@ def build_query_from_search_spec(spec: dict[str, Any], language_override: str | 
 
 
 def build_query_plan_from_search_spec(spec: dict[str, Any]) -> list[str]:
-    codes = resolve_language_codes(str(spec.get("language_mode") or "zh_en"))
-    queries = [build_query_from_search_spec(spec, language_override=code) for code in codes]
+    queries = [build_query_from_search_spec(spec)]
     return [query for query in queries if query]
+
+
+def _bounded_search_window_from_days_filter(spec: dict[str, Any], now_utc: datetime) -> tuple[datetime, datetime] | None:
+    days_filter = spec.get("days_filter", {}) if isinstance(spec.get("days_filter"), dict) else {}
+    mode = str(days_filter.get("mode") or "any").lower()
+    if mode == "any":
+        return None
+
+    now_utc = now_utc.astimezone(timezone.utc)
+    if mode == "lte":
+        max_days = max(0, int(days_filter.get("max") or 0))
+        end_at = now_utc
+        start_at = now_utc - timedelta(days=max(1, max_days))
+    elif mode == "between":
+        min_days = max(0, int(days_filter.get("min") or 0))
+        max_days = max(min_days, int(days_filter.get("max") or min_days))
+        end_at = now_utc - timedelta(days=min_days)
+        start_at = now_utc - timedelta(days=max_days)
+    else:
+        return None
+
+    if start_at >= end_at:
+        start_at = end_at - timedelta(minutes=DEFAULT_TIME_SLICE_MINUTES)
+    return (start_at, end_at)
+
+
+def _append_time_window_to_query(query: str, start_at: datetime, end_at: datetime) -> str:
+    return f"{query} since_time:{int(start_at.timestamp())} until_time:{int(end_at.timestamp())}".strip()
+
+
+def build_execution_query_plan_from_search_spec(
+    spec: dict[str, Any],
+    *,
+    now_utc: datetime,
+    slice_minutes: int | None = None,
+    max_queries: int = MAX_TIME_SLICE_QUERIES,
+) -> list[str]:
+    base_queries = build_query_plan_from_search_spec(spec)
+    window = _bounded_search_window_from_days_filter(spec, now_utc)
+    if not window or any(TIME_OPERATOR_RE.search(query) for query in base_queries):
+        return base_queries
+
+    start_at, end_at = window
+    resolved_slice_minutes = normalize_time_slice_minutes(
+        slice_minutes if slice_minutes is not None else spec.get("time_slice_minutes"),
+        DEFAULT_TIME_SLICE_MINUTES,
+    )
+    step = timedelta(minutes=resolved_slice_minutes)
+    queries: list[str] = []
+    for base_query in base_queries:
+        cursor = end_at
+        while cursor > start_at and len(queries) < max_queries:
+            slice_start = max(start_at, cursor - step)
+            queries.append(_append_time_window_to_query(base_query, slice_start, cursor))
+            cursor = slice_start
+    return queries
 
 
 def extract_metrics(item: SearchResult) -> dict[str, int]:

@@ -48,6 +48,17 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 - `TWITTER_AUTH_TOKEN`
 - `TWITTER_CT0`
 
+### 5. X 搜索链路约定
+
+- 默认搜索入口是 `twitter-cli 0.8.6` 的 `twitter search ... --json`；本机和 Docker 安装脚本都应使用 `git+https://github.com/public-clis/twitter-cli.git`。
+- `xreach search` 只作为 `twitter-cli search` 失败后的 fallback，不作为默认搜索入口。
+- 语言模式 `zh_en` 生成单条 `(lang:zh OR lang:en)` 查询，不拆成中文、英文两次搜索；默认 `days_filter` 为最近 1 天，默认时间切片为 1 小时，可选 15 分钟 / 30 分钟 / 1h / 2h / 4h。
+- `max_results` 是每个时间切片 query 的传参上限；`twitter-cli search` 实测单 query 通常最多返回约 40 条，所以高频词仍可能需要更细切片。
+- 只有有界 `days_filter` 会自动追加 `since_time:<秒> until_time:<秒>` 切片查询；如果 `raw_query` 已显式包含 `since:` / `until:` / `since_time:` / `until_time:`，不要再自动叠加时间切片；时间切片 query 总上限为 10000。
+- 二次补全使用 `xreach tweet <tweet_id> --json`，只在核心字段缺失时触发：`author`、`author_name`、`text`、`created_at_x`、`views`、`likes`、`replies`、`retweets`。
+- 不要因为 `urls` 或 `media` 缺失触发二次补全；搜索结果自带就保留，没有就不强制慢查。这里的 `urls` 是推文正文里的外部链接，不是推文本身的 `canonical_url`。
+- 排查搜索速度时必须带 `.env` 里的 `TWITTER_AUTH_TOKEN` / `TWITTER_CT0` 实测，并先确认 `python -m pipx list` 里 `twitter-cli` 是 0.8.6；旧的 0.8.5 可能出现 search 404，不能拿来判断当前策略。
+
 ## 配置与存储模型
 
 ### 1. `config/workspace.json`
@@ -79,12 +90,15 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 - `version`
 - `kind: "task_pack"`
 - `meta`
+- `tags`
 - `search_spec`
 - `rule_set`
 
 当前口径：
 
-- `任务包 = 搜索条件 + 规则`
+- `任务包 = 搜索条件 + 规则 + tags`
+- `tags` 是任务包级分类标签，保存为简单字符串数组，规范化为 trim + lowercase + dedupe
+- 手动任务和自动任务运行时都继承当前任务包/草稿的 `tags`，结果表只保存当次运行的标签快照；后续修改任务包不会回改历史结果
 - 导入或载入任务包后，只替换当前表单草稿
 - 继续编辑不会自动回写原 pack
 - 只有显式“另存为新任务包 / 保存到当前任务包 / 导入并保存为新任务包”才会落盘
@@ -114,9 +128,11 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 补充口径：
 
 - `x_items_raw` 和 `x_items_curated` 都保留 `fetched_at`
-- 每次成功写入 raw 后，会自动对 `x_items_raw` 执行一次全表去重
+- `x_items_raw` 和 `x_items_curated` 都保留 `tags_json`，API 序列化为 `tags: string[]`
+- `x_items_raw` 只保存通过搜索条件过滤后的原始结果，不再保存抓取但被搜索条件排除的中间数据
+- raw 只做单次 run 内存去重；不会在成功 run 后自动执行全表去重
 - 每次成功写入 curated 后，会自动对 `x_items_curated` 执行一次全表去重
-- raw 自动去重统计会写入运行结果 `stats`，使用 `raw_dedupe_*` 一组键
+- raw 全表去重仍可通过结果页或 `POST /items/dedupe` 手动触发
 
 ## 核心架构
 
@@ -201,8 +217,8 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
    - 普通空格保留在单个条目内部
    - 支持多词短语，不会再吞空格或逗号
 6. 前端调用 `POST /manual/run`
-7. `run_manual()` 组装查询、拉取 X 结果、写 raw、评估规则、写 curated
-8. 成功 run 后会自动对 `x_items_raw` 和 `x_items_curated` 执行全表去重
+7. `run_manual()` 组装查询、拉取 X 结果、单次 run 内去重、应用搜索过滤条件、写 raw、评估规则、写 curated
+8. 成功 run 后只会自动对 `x_items_curated` 执行全表去重；raw 表保持“搜索条件通过后的原始结果”语义
 
 ### 2. 自动任务
 

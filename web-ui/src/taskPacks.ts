@@ -5,6 +5,7 @@ export type ImportedTaskPackDraft = {
   sourceName: string;
   metaName: string;
   description: string;
+  tags: string[];
   searchSpec: SearchSpec;
   ruleSet: {
     id?: number | null;
@@ -43,11 +44,13 @@ function normalizeImportedTaskPack(raw: unknown, sourceName: string): ImportedTa
   const fallbackName = sourceName.replace(/\.json$/i, "") || "imported-task-pack";
   const metaName = String(meta.name || rawRuleSet.name || fallbackName).trim() || fallbackName;
   const description = String(meta.description || rawRuleSet.description || "").trim();
+  const tags = Array.isArray(payload.tags) ? payload.tags.map((item) => String(item || "").trim().toLowerCase()).filter(Boolean) : [];
 
   return {
     sourceName,
     metaName,
     description,
+    tags,
     searchSpec: cloneSearchSpec(payload.search_spec as Partial<SearchSpec>),
     ruleSet: {
       id: rawRuleSet.id == null ? null : Number(rawRuleSet.id),

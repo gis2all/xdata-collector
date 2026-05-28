@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import threading
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Any
 
 from backend.collector_rules import (
     build_query_from_search_spec,
+    build_execution_query_plan_from_search_spec,
     build_query_plan_from_search_spec,
     default_rule_set_definition,
     default_search_spec,
@@ -27,8 +29,8 @@ from backend.source_identity import (
     build_source_dedupe_key,
     canonicalize_source_url,
 )
-from backend.twitter_cli import find_twitter_cli, normalize_search_payload, run_twitter_search
-from backend.workspace_store import RuntimeStateStore, WorkspaceStore, default_builtin_rule_set
+from backend.twitter_cli import find_twitter_cli, get_twitter_cli_version, normalize_search_payload, run_twitter_search
+from backend.workspace_store import RuntimeStateStore, WorkspaceStore, default_builtin_rule_set, normalize_tags
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SQLITE_DEFAULT = Path("data") / "app.db"
@@ -53,31 +55,28 @@ CURATED_ITEM_FIELDS = (
     "excerpt",
     "is_zero_cost",
     "source_url",
+    "author_name",
     "author",
     "created_at_x",
+    "views",
+    "likes",
+    "replies",
+    "retweets",
     "fetched_at",
+    "tags",
     "reasons_json",
     "rule_set_id",
     "state",
 )
+CURATED_ITEM_DB_FIELDS = tuple("tags_json" if field == "tags" else field for field in CURATED_ITEM_FIELDS)
 CURATED_ITEM_SORT_FIELDS = {field: field for field in CURATED_ITEM_FIELDS}
-RAW_ITEM_DB_FIELDS = (
-    "id",
-    "run_id",
-    "tweet_id",
-    "canonical_url",
-    "author",
-    "text",
-    "created_at_x",
-    "metrics_json",
-    "query_name",
-    "fetched_at",
-)
+CURATED_ITEM_SORT_FIELDS["tags"] = "tags_json"
 RAW_ITEM_FIELDS = (
     "id",
     "run_id",
     "tweet_id",
     "canonical_url",
+    "author_name",
     "author",
     "text",
     "created_at_x",
@@ -87,8 +86,24 @@ RAW_ITEM_FIELDS = (
     "retweets",
     "query_name",
     "fetched_at",
+    "tags",
 )
 RAW_ITEM_SORT_FIELDS = {field: field for field in RAW_ITEM_FIELDS}
+RAW_ITEM_SORT_FIELDS["tags"] = "tags_json"
+RAW_ITEM_DB_FIELDS = (
+    "id",
+    "run_id",
+    "tweet_id",
+    "canonical_url",
+    "author_name",
+    "author",
+    "text",
+    "created_at_x",
+    "metrics_json",
+    "tags_json",
+    "query_name",
+    "fetched_at",
+)
 RAW_ITEM_PYTHON_SORT_FIELDS = {"created_at_x", "views", "likes", "replies", "retweets"}
 MAX_ITEM_PAGE_SIZE = 200
 
@@ -136,6 +151,17 @@ def _raw_metrics(payload: dict[str, Any]) -> dict[str, int]:
     return normalized
 
 
+def _row_tags(payload: dict[str, Any]) -> list[str]:
+    return normalize_tags(payload.get("tags") if "tags" in payload else payload.get("tags_json"))
+
+
+def _curated_row_to_item(row: Any) -> dict[str, Any]:
+    payload = row_to_dict(row)
+    payload["tags"] = _row_tags(payload)
+    payload.pop("tags_json", None)
+    return payload
+
+
 def _raw_row_to_item(row: Any) -> dict[str, Any]:
     payload = row_to_dict(row)
     metrics = _raw_metrics(payload)
@@ -144,6 +170,7 @@ def _raw_row_to_item(row: Any) -> dict[str, Any]:
         "run_id": int(payload["run_id"]),
         "tweet_id": str(payload.get("tweet_id") or ""),
         "canonical_url": str(payload.get("canonical_url") or ""),
+        "author_name": str(payload.get("author_name") or ""),
         "author": str(payload.get("author") or ""),
         "text": str(payload.get("text") or ""),
         "created_at_x": payload.get("created_at_x"),
@@ -153,6 +180,7 @@ def _raw_row_to_item(row: Any) -> dict[str, Any]:
         "retweets": metrics["retweets"],
         "query_name": str(payload.get("query_name") or ""),
         "fetched_at": payload.get("fetched_at"),
+        "tags": _row_tags(payload),
     }
 
 
@@ -161,6 +189,15 @@ def _metric(item: SearchResult, key: str) -> int:
     value = metrics.get(key, 0)
     try:
         return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _item_metric(payload: dict[str, Any], key: str) -> int:
+    metrics = payload.get("metrics", {})
+    value = metrics.get(key, payload.get(key, 0)) if isinstance(metrics, dict) else payload.get(key, 0)
+    try:
+        return int(value or 0)
     except (TypeError, ValueError):
         return 0
 
@@ -375,6 +412,7 @@ class DesktopService:
                     raise
         return {
             "meta": {"name": job.get("name") or "", "description": "", "updated_at": job.get("updated_at") or utc_now_iso()},
+            "tags": [],
             "search_spec": normalize_search_spec(default_search_spec()),
             "rule_set": {
                 "id": 1,
@@ -414,6 +452,7 @@ class DesktopService:
         haystacks = [
             str(job.get("name") or "").lower(),
             json.dumps(self._job_keywords_preview(search_spec), ensure_ascii=False).lower(),
+            json.dumps(normalize_tags(self._load_job_pack(job, allow_missing=True).get("tags")), ensure_ascii=False).lower(),
             str(rule_set.get("name") or "").lower(),
             str(rule_set.get("description") or "").lower(),
         ]
@@ -425,13 +464,14 @@ class DesktopService:
         rule_set = self._resolve_rule_set(inline_rule_set=pack.get("rule_set"))
         payload = copy.deepcopy(job)
         payload["keywords_json"] = self._job_keywords_preview(search_spec)
-        payload["days"] = int(search_spec.get("days", search_spec.get("days_filter", {}).get("max") or 20) or 20)
+        payload["days"] = int(search_spec.get("days", search_spec.get("days_filter", {}).get("max") or 1) or 1)
         payload["thresholds_json"] = {**search_spec.get("min_metrics", {}), "mode": search_spec.get("metric_mode", "OR")}
         payload["levels_json"] = [item.get("id") for item in rule_set.get("definition_json", {}).get("levels", [])]
         payload["search_spec_json"] = search_spec
         payload["rule_set_id"] = int(rule_set.get("id") or 0) if rule_set.get("id") is not None else None
         payload["rule_set_summary"] = self._build_rule_set_summary(rule_set)
         payload["pack_meta"] = copy.deepcopy(pack.get("meta") or {})
+        payload["tags"] = normalize_tags(pack.get("tags"))
         payload["last_run_id"] = int(last_run["id"]) if last_run is not None else None
         payload["last_run_status"] = last_run.get("status") if last_run is not None else None
         payload["last_run_started_at"] = last_run.get("started_at") if last_run is not None else None
@@ -571,9 +611,11 @@ class DesktopService:
         search_spec: dict[str, Any],
         rule_set: dict[str, Any],
         updated_at: str,
+        tags: Any = None,
     ) -> dict[str, Any]:
         return {
             "meta": {"name": name, "description": description, "updated_at": updated_at},
+            "tags": normalize_tags(tags),
             "search_spec": normalize_search_spec(search_spec),
             "rule_set": {
                 "id": int(rule_set.get("id") or 0) if rule_set.get("id") is not None else None,
@@ -653,6 +695,7 @@ class DesktopService:
                     "definition_json": normalize_rule_set_definition(payload.get("definition") or payload.get("definition_json") or default_rule_set_definition()),
                 },
                 updated_at=now,
+                tags=[],
             ),
         )
         return self.get_rule_set(next_rule_set_id)
@@ -679,6 +722,7 @@ class DesktopService:
                     "definition_json": normalize_rule_set_definition(payload.get("definition") or payload.get("definition_json") or current_rule_set.get("definition_json")),
                 },
                 updated_at=utc_now_iso(),
+                tags=current.get("tags") or [],
             ),
         )
         return self.get_rule_set(rule_set_id)
@@ -718,7 +762,7 @@ class DesktopService:
             payload.get("search_spec")
             or {
                 "keywords": payload.get("keywords", []),
-                "days": payload.get("days", 20),
+                "days": payload.get("days", 1),
                 "thresholds": payload.get("thresholds", {}),
             }
         )
@@ -735,6 +779,7 @@ class DesktopService:
                 search_spec=search_spec,
                 rule_set=rule_set,
                 updated_at=now,
+                tags=payload.get("tags"),
             ),
         )
         workspace["jobs"] = [
@@ -750,6 +795,7 @@ class DesktopService:
                 "created_at": now,
                 "updated_at": now,
                 "deleted_at": None,
+                "tags": normalize_tags(payload.get("tags")),
             },
         ]
         workspace.setdefault("meta", {})["next_job_id"] = job_id + 1
@@ -809,7 +855,7 @@ class DesktopService:
             search_spec = normalize_search_spec(
                 {
                     "keywords": payload.get("keywords", self._job_keywords_preview(current_pack.get("search_spec") or {})),
-                    "days": payload.get("days", 20),
+                    "days": payload.get("days", 1),
                     "thresholds": payload.get("thresholds", {}),
                 }
             )
@@ -832,6 +878,7 @@ class DesktopService:
                 search_spec=search_spec,
                 rule_set=rule_set,
                 updated_at=now,
+                tags=payload.get("tags", current_pack.get("tags")),
             ),
         )
         current.update(
@@ -841,6 +888,7 @@ class DesktopService:
                 "enabled": 1 if enabled else 0,
                 "next_run_at": next_run_at,
                 "updated_at": now,
+                "tags": normalize_tags(payload.get("tags", current_pack.get("tags"))),
             }
         )
         workspace["jobs"][index] = current
@@ -908,9 +956,11 @@ class DesktopService:
             raise ValueError(f"job {job_id} is deleted")
         pack = self._load_job_pack(job)
         rule_set = self._resolve_rule_set(inline_rule_set=pack.get("rule_set"))
+        tags = normalize_tags(pack.get("tags"))
         report = self.run_manual(
             {
                 "search_spec": normalize_search_spec(pack.get("search_spec") or default_search_spec()),
+                "tags": tags,
                 "rule_set": {
                     "id": rule_set.get("id"),
                     "name": rule_set.get("name"),
@@ -930,36 +980,69 @@ class DesktopService:
             self._save_workspace(workspace)
         return report
 
+    def start_manual_run(self, payload: dict[str, Any], trigger_type: str = "manual", job_id: int | None = None) -> dict[str, Any]:
+        run_id = self._create_run(job_id=job_id, trigger_type=trigger_type)
+        thread = threading.Thread(
+            target=self._run_manual_in_background,
+            args=(run_id, copy.deepcopy(payload), trigger_type, job_id),
+            daemon=True,
+        )
+        thread.start()
+        return {"run_id": run_id, "status": "running"}
+
     def run_manual(self, payload: dict[str, Any], trigger_type: str = "manual", job_id: int | None = None) -> dict[str, Any]:
+        run_id = self._create_run(job_id=job_id, trigger_type=trigger_type)
+        return self._execute_manual_run(payload, trigger_type=trigger_type, job_id=job_id, run_id=run_id)
+
+    def _run_manual_in_background(self, run_id: int, payload: dict[str, Any], trigger_type: str, job_id: int | None) -> None:
+        try:
+            self._execute_manual_run(payload, trigger_type=trigger_type, job_id=job_id, run_id=run_id)
+        except Exception:
+            return
+
+    def _execute_manual_run(self, payload: dict[str, Any], *, trigger_type: str, job_id: int | None, run_id: int) -> dict[str, Any]:
         if payload.get("search_spec") is not None:
             search_spec = normalize_search_spec(payload.get("search_spec"))
         else:
             search_spec = normalize_search_spec(
                 {
                     "keywords": payload.get("keywords", []),
-                    "days": payload.get("days", 20),
+                    "days": payload.get("days", 1),
                     "thresholds": payload.get("thresholds", {}),
-                    "max_results": payload.get("max_results", 40),
+                    "max_results": payload.get("max_results", 100),
                 }
             )
-        final_queries = build_query_plan_from_search_spec(search_spec)
+        now_utc = datetime.now(timezone.utc)
+        final_queries = build_execution_query_plan_from_search_spec(
+            search_spec,
+            now_utc=now_utc,
+            slice_minutes=int(search_spec.get("time_slice_minutes") or 60),
+        )
         final_query = build_query_from_search_spec(search_spec)
-        if len(final_queries) > 1:
-            final_query = " || ".join(final_queries)
         if not search_spec.get("all_keywords") and not search_spec.get("raw_query") and not final_queries:
             raise ValueError("search_spec is empty")
         if not final_queries and final_query:
             final_queries = [final_query]
+        tags = normalize_tags(payload.get("tags"))
         rule_set = self._resolve_rule_set(
             rule_set_id=int(payload.get("rule_set_id") or 0) or None,
             inline_rule_set=payload.get("rule_set"),
         )
-        days = int(search_spec.get("days", 20))
+        days = int(search_spec.get("days", 1))
 
-        run_id = self._create_run(job_id=job_id, trigger_type=trigger_type)
         try:
             fetched_results: list[SearchResult] = []
             query_errors: list[str] = []
+            total_queries = len(final_queries)
+            self.runtime_store.update_run_progress(
+                run_id,
+                stats={
+                    "total_queries": total_queries,
+                    "completed_queries": 0,
+                    "progress_percent": 0,
+                    "fetched_raw": 0,
+                },
+            )
             for index, query in enumerate(final_queries, start=1):
                 try:
                     raw_payload = run_twitter_search(query, int(search_spec.get("max_results", 40)))
@@ -967,33 +1050,27 @@ class DesktopService:
                     fetched_results.extend(normalized)
                 except Exception as exc:  # noqa: BLE001
                     query_errors.append(f"{query}: {exc}")
+                completed_queries = index
+                progress_percent = int((completed_queries / total_queries) * 100) if total_queries else 100
+                self.runtime_store.update_run_progress(
+                    run_id,
+                    stats={
+                        "total_queries": total_queries,
+                        "completed_queries": completed_queries,
+                        "progress_percent": progress_percent,
+                        "fetched_raw": len(fetched_results),
+                        "query_errors": len(query_errors),
+                    },
+                )
 
             if not fetched_results and query_errors:
                 raise RuntimeError("; ".join(query_errors[:3]))
 
             deduped_results = _dedupe_search_results(fetched_results)
             fetched_at = utc_now_iso()
-            self._store_raw(run_id, deduped_results, fetched_at=fetched_at)
             run_errors = query_errors[:10]
-
-            raw_dedupe_stats: dict[str, Any] = {}
-            if deduped_results:
-                try:
-                    raw_dedupe_summary = self.dedupe_items(table="raw")
-                    raw_dedupe_stats = {
-                        "raw_dedupe_groups": int(raw_dedupe_summary.get("groups", 0) or 0),
-                        "raw_dedupe_deleted": int(raw_dedupe_summary.get("deleted", 0) or 0),
-                        "raw_dedupe_kept": int(raw_dedupe_summary.get("kept", 0) or 0),
-                        "raw_dedupe_rows_after": int(raw_dedupe_summary.get("rows_after", 0) or 0),
-                    }
-                except Exception as exc:  # noqa: BLE001
-                    raw_dedupe_stats = {"raw_dedupe_failed": 1}
-                    if len(run_errors) >= 10:
-                        run_errors = run_errors[:9]
-                    run_errors.append(f"raw auto dedupe failed: {exc}")
-
-            now_utc = datetime.now(timezone.utc)
             filtered_results = [item for item in deduped_results if passes_search_filters(item, search_spec, now_utc)]
+            self._store_raw(run_id, filtered_results, fetched_at=fetched_at, tags=tags)
             matched_items, match_stats = evaluate_rule_set(
                 items=filtered_results,
                 rule_definition=rule_set["definition_json"],
@@ -1002,7 +1079,8 @@ class DesktopService:
             )
             for item in matched_items:
                 item["fetched_at"] = item.get("fetched_at") or fetched_at
-            self._store_curated(run_id, matched_items, int(rule_set.get("id") or 0) or None, fetched_at=fetched_at)
+                item["tags"] = tags
+            self._store_curated(run_id, matched_items, int(rule_set.get("id") or 0) or None, fetched_at=fetched_at, tags=tags)
 
             dedupe_stats: dict[str, Any] = {}
             if matched_items:
@@ -1021,6 +1099,8 @@ class DesktopService:
                     run_errors.append(f"auto dedupe failed: {exc}")
 
             raw_items = [{**serialize_search_result(item), "fetched_at": fetched_at} for item in filtered_results[:100]]
+            for item in raw_items:
+                item["tags"] = tags
             rule_set_summary = {
                 "id": int(rule_set.get("id") or 0) if rule_set.get("id") else None,
                 "name": rule_set.get("name", ""),
@@ -1032,6 +1112,7 @@ class DesktopService:
                 "run_id": run_id,
                 "status": "success",
                 "search_spec": search_spec,
+                "tags": tags,
                 "final_query": final_query,
                 "final_queries": final_queries,
                 "rule_set_summary": rule_set_summary,
@@ -1046,16 +1127,15 @@ class DesktopService:
                     "raw": len(filtered_results),
                     "search_filter_passed": len(filtered_results),
                     "query_errors": len(query_errors),
-                    **raw_dedupe_stats,
                     **match_stats,
                     **dedupe_stats,
                 },
                 "errors": run_errors,
             }
-            self._finish_run(run_id, "success", report["stats"], "\n".join(run_errors))
+            self._finish_run(run_id, "success", report["stats"], "\n".join(run_errors), result=report)
             return report
         except Exception as exc:  # noqa: BLE001
-            self._finish_run(run_id, "failed", {}, str(exc))
+            self._finish_run(run_id, "failed", {}, str(exc), result={"run_id": run_id, "status": "failed", "errors": [str(exc)]})
             raise
 
     def get_run(self, run_id: int) -> dict[str, Any]:
@@ -1121,13 +1201,13 @@ class DesktopService:
                 params.append(normalized_level.upper())
             if normalized_keyword:
                 token = f"%{normalized_keyword}%"
-                where.append("(title LIKE ? OR excerpt LIKE ?)")
-                params.extend([token, token])
+                where.append("(title LIKE ? OR excerpt LIKE ? OR tags_json LIKE ?)")
+                params.extend([token, token, token])
         else:
             if normalized_keyword:
                 token = f"%{normalized_keyword}%"
-                where.append("(text LIKE ? OR author LIKE ? OR canonical_url LIKE ?)")
-                params.extend([token, token, token])
+                where.append("(text LIKE ? OR author LIKE ? OR canonical_url LIKE ? OR tags_json LIKE ?)")
+                params.extend([token, token, token, token])
         where_sql = f"WHERE {' AND '.join(where)}" if where else ""
         return where_sql, params
 
@@ -1143,7 +1223,7 @@ class DesktopService:
         offset = max(0, (page - 1) * page_size)
         where_sql, params = self._item_where_clause("curated", level=level, keyword=keyword)
         sort_column, sort_direction = self._normalize_item_sort("curated", sort_by, sort_dir)
-        selected_fields = ", ".join(CURATED_ITEM_FIELDS)
+        selected_fields = ", ".join(CURATED_ITEM_DB_FIELDS)
         with connect(self.db_path) as conn:
             total = conn.execute(f"SELECT COUNT(1) FROM x_items_curated {where_sql}", tuple(params)).fetchone()[0]
             if sort_column == "created_at_x":
@@ -1167,7 +1247,7 @@ class DesktopService:
                     """,
                     tuple(params + [page_size, offset]),
                 ).fetchall()
-        items = [row_to_dict(row) for row in rows]
+        items = [_curated_row_to_item(row) for row in rows]
         if sort_column == "created_at_x":
             items = sorted(items, key=lambda item: _item_created_at_sort_key(item, sort_direction))
             items = items[offset : offset + page_size]
@@ -1410,6 +1490,7 @@ class DesktopService:
                 "configured": x_snapshot["configured"],
                 "connected": x_snapshot["connected"],
                 "auth_source": x_snapshot["detail"].get("auth_source", "unknown"),
+                "cli_version": x_snapshot["detail"].get("cli_version", "unknown"),
                 "account_hint": x_snapshot["detail"].get("account_hint", "unknown"),
                 "last_checked_at": x_snapshot["last_checked_at"],
                 "last_error": x_snapshot["last_error"],
@@ -1462,10 +1543,13 @@ class DesktopService:
             find_twitter_cli()
             auth_source = "twitter-cli"
             configured = True
+            cli_version = get_twitter_cli_version()
         except Exception:
+            cli_version = "unknown"
             pass
         detail = {
             "auth_source": auth_source,
+            "cli_version": cli_version,
             "account_hint": "unknown",
         }
         if not configured:
@@ -1550,16 +1634,24 @@ class DesktopService:
     def _create_run(self, job_id: int | None, trigger_type: str) -> int:
         return self.runtime_store.create_run(job_id=job_id, trigger_type=trigger_type, started_at=utc_now_iso())
 
-    def _finish_run(self, run_id: int, status: str, stats: dict[str, Any], error_text: str) -> None:
+    def _finish_run(self, run_id: int, status: str, stats: dict[str, Any], error_text: str, result: dict[str, Any] | None = None) -> None:
         self.runtime_store.finish_run(
             int(run_id),
             status=status,
             stats=copy.deepcopy(stats),
             error_text=error_text or "",
+            result=copy.deepcopy(result) if isinstance(result, dict) else None,
             ended_at=utc_now_iso(),
         )
-    def _store_raw(self, run_id: int, items: list[SearchResult], fetched_at: str | None = None) -> None:
+    def _store_raw(
+        self,
+        run_id: int,
+        items: list[SearchResult],
+        fetched_at: str | None = None,
+        tags: Any = None,
+    ) -> None:
         now = fetched_at or utc_now_iso()
+        normalized_tags = normalize_tags(tags)
         with connect(self.db_path) as conn:
             for item in items:
                 canonical_url = canonicalize_source_url(item.url)
@@ -1567,17 +1659,19 @@ class DesktopService:
                 conn.execute(
                     """
                     INSERT INTO x_items_raw
-                    (run_id, tweet_id, canonical_url, author, text, created_at_x, metrics_json, query_name, fetched_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (run_id, tweet_id, canonical_url, author_name, author, text, created_at_x, metrics_json, tags_json, query_name, fetched_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         run_id,
                         item.tweet_id,
                         canonical_url,
+                        item.author_name,
                         item.author,
                         item.text,
                         item.created_at,
                         json.dumps(metrics, ensure_ascii=False),
+                        json.dumps(normalized_tags, ensure_ascii=False),
                         item.query_name,
                         now,
                     ),
@@ -1589,7 +1683,9 @@ class DesktopService:
         curated_items: list[dict[str, Any]],
         rule_set_id: int | None,
         fetched_at: str | None = None,
+        tags: Any = None,
     ) -> None:
+        normalized_tags = normalize_tags(tags)
         with connect(self.db_path) as conn:
             for item in curated_items:
                 dedupe_key = build_source_dedupe_key(
@@ -1602,8 +1698,8 @@ class DesktopService:
                 conn.execute(
                     """
                     INSERT INTO x_items_curated
-                    (run_id, dedupe_key, level, score, title, summary_zh, excerpt, is_zero_cost, source_url, author, created_at_x, fetched_at, reasons_json, rule_set_id, state)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (run_id, dedupe_key, level, score, title, summary_zh, excerpt, is_zero_cost, source_url, author_name, author, created_at_x, views, likes, replies, retweets, fetched_at, tags_json, reasons_json, rule_set_id, state)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         run_id,
@@ -1615,9 +1711,15 @@ class DesktopService:
                         " ".join((item.get("text", "") or "").split())[:900],
                         1,
                         item.get("url", ""),
+                        item.get("author_name", ""),
                         item.get("author", ""),
                         item.get("created_at", ""),
+                        _item_metric(item, "views"),
+                        _item_metric(item, "likes"),
+                        _item_metric(item, "replies"),
+                        _item_metric(item, "retweets"),
                         item_fetched_at,
+                        json.dumps(normalize_tags(item.get("tags") or normalized_tags), ensure_ascii=False),
                         json.dumps(item.get("reasons", []), ensure_ascii=False),
                         rule_set_id,
                         "new",

@@ -1,15 +1,17 @@
 import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   CollectorRunResult,
+  RunRecord,
   RuleSet,
   RuleSetDefinition,
   TaskPackFile,
   TaskPackSummary,
   createTaskPack,
   deleteTaskPack,
+  getRun,
   getTaskPack,
   listTaskPacks,
-  runManual,
+  runManualStart,
   updateTaskPack,
 } from "../api";
 import {
@@ -18,6 +20,8 @@ import {
   buildQueryPreview,
   cloneRuleDefinition,
   cloneSearchSpec,
+  joinCommaLinesForTextarea,
+  splitCommaLines,
 } from "../collector";
 import { SearchSpecEditor } from "../components/SearchSpecEditor";
 import { RuleSetEditor } from "../components/RuleSetEditor";
@@ -31,6 +35,7 @@ function metricValue(item: any, key: string) {
 function buildPackPayload(
   name: string,
   description: string,
+  tags: string[],
   searchSpec: ReturnType<typeof cloneSearchSpec>,
   ruleName: string,
   ruleDescription: string,
@@ -41,6 +46,7 @@ function buildPackPayload(
       name,
       description,
     },
+    tags,
     search_spec: cloneSearchSpec(searchSpec),
     rule_set: {
       name: ruleName.trim() || name,
@@ -52,12 +58,14 @@ function buildPackPayload(
 }
 
 function buildDraftComparable(
+  tags: string[],
   searchSpec: ReturnType<typeof cloneSearchSpec>,
   ruleName: string,
   ruleDescription: string,
   draftDefinition: RuleSetDefinition,
 ) {
   return {
+    tags: [...tags],
     search_spec: cloneSearchSpec(searchSpec),
     rule_set: {
       name: ruleName.trim(),
@@ -69,6 +77,7 @@ function buildDraftComparable(
 
 function buildPackComparable(pack: TaskPackFile) {
   return {
+    tags: [...(pack.tags || [])],
     search_spec: cloneSearchSpec(pack.search_spec),
     rule_set: {
       name: String(pack.rule_set.name || "").trim(),
@@ -79,7 +88,7 @@ function buildPackComparable(pack: TaskPackFile) {
 }
 
 type DraftSourceKind = "blank" | "pack" | "file";
-type ExecutionStatus = "idle" | "success" | "failed";
+type ExecutionStatus = "idle" | "running" | "success" | "failed";
 
 const DEFAULT_DRAFT_PACK_NAME = "__default_draft__";
 const DEFAULT_DRAFT_PACK_LABEL = "默认草稿";
@@ -102,6 +111,30 @@ const EMPTY_EXECUTION_SUMMARY: ExecutionSummary = {
   errorText: "",
 };
 
+type ManualRunProgress = {
+  runId: number | null;
+  status: ExecutionStatus;
+  totalQueries: number;
+  completedQueries: number;
+  progressPercent: number;
+  fetchedRaw: number;
+  queryErrors: number;
+  startedAt: string | null;
+  endedAt: string | null;
+};
+
+const EMPTY_RUN_PROGRESS: ManualRunProgress = {
+  runId: null,
+  status: "idle",
+  totalQueries: 0,
+  completedQueries: 0,
+  progressPercent: 0,
+  fetchedRaw: 0,
+  queryErrors: 0,
+  startedAt: null,
+  endedAt: null,
+};
+
 function draftSourceLabel(kind: DraftSourceKind) {
   if (kind === "pack") return "任务包载入";
   if (kind === "file") return "文件导入";
@@ -109,15 +142,92 @@ function draftSourceLabel(kind: DraftSourceKind) {
 }
 
 function executionStatusLabel(status: ExecutionStatus) {
+  if (status === "running") return "执行中";
   if (status === "success") return "执行成功";
   if (status === "failed") return "执行失败";
   return "未执行";
 }
 
 function executionStatusTone(status: ExecutionStatus) {
+  if (status === "running") return "running";
   if (status === "success") return "success";
   if (status === "failed") return "failed";
   return "neutral";
+}
+
+function normalizeExecutionStatus(status: string | null | undefined): ExecutionStatus {
+  if (status === "running") return "running";
+  if (status === "success") return "success";
+  if (status === "failed") return "failed";
+  return "idle";
+}
+
+function statNumber(stats: Record<string, number> | undefined, key: string) {
+  const value = Number(stats?.[key] ?? 0);
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+function clampPercent(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function progressPercentForRun(status: ExecutionStatus, completedQueries: number, totalQueries: number, reportedPercent: number) {
+  if (status === "success") return 100;
+  if (status === "failed" && totalQueries > 0 && completedQueries >= totalQueries) return 100;
+  if (reportedPercent > 0) return clampPercent(reportedPercent);
+  if (totalQueries > 0) return clampPercent((completedQueries / totalQueries) * 100);
+  return 0;
+}
+
+function buildRunProgress(run: RunRecord): ManualRunProgress {
+  const status = normalizeExecutionStatus(run.status);
+  const totalQueries = statNumber(run.stats_json, "total_queries");
+  const completedQueries = statNumber(run.stats_json, "completed_queries");
+  const progressPercent = progressPercentForRun(
+    status,
+    completedQueries,
+    totalQueries,
+    statNumber(run.stats_json, "progress_percent"),
+  );
+  return {
+    runId: Number(run.id || 0) || null,
+    status,
+    totalQueries,
+    completedQueries,
+    progressPercent,
+    fetchedRaw: statNumber(run.stats_json, "fetched_raw"),
+    queryErrors: statNumber(run.stats_json, "query_errors"),
+    startedAt: run.started_at || null,
+    endedAt: run.ended_at || null,
+  };
+}
+
+function buildExecutionSummary(
+  status: Extract<ExecutionStatus, "success" | "failed">,
+  executedAt: string,
+  result: CollectorRunResult | null,
+  fallbackError: string,
+): ExecutionSummary {
+  const errors = Array.isArray(result?.errors) ? result?.errors : [];
+  const errorText = fallbackError || errors[0] || "";
+  return {
+    status,
+    executedAt,
+    rawTotal: Number(result?.raw_total || 0),
+    matchedTotal: Number(result?.matched_total || 0),
+    errorCount: errors.length || (errorText ? 1 : 0),
+    errorText,
+  };
+}
+
+function formatAuthorDisplay(authorName?: string | null, author?: string | null) {
+  const name = String(authorName || "").trim();
+  const handle = String(author || "").trim();
+  if (name && handle) return `${name} @${handle.replace(/^@+/, "")}`;
+  if (name) return name;
+  if (handle) return `@${handle.replace(/^@+/, "")}`;
+  return "--";
 }
 
 function ManualSectionHeader(props: { title: string; description: string; aside?: ReactNode }) {
@@ -146,13 +256,16 @@ export function ManualSearchPage() {
   const [draftSource, setDraftSource] = useState<DraftSourceKind>("blank");
   const [draftRuleName, setDraftRuleName] = useState("Default Rule Set");
   const [draftRuleDescription, setDraftRuleDescription] = useState("Built-in opportunity discovery rules.");
+  const [draftTagsText, setDraftTagsText] = useState("");
   const [draftDefinition, setDraftDefinition] = useState<RuleSetDefinition>(
     cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION),
   );
   const [lastExecution, setLastExecution] = useState<ExecutionSummary>(EMPTY_EXECUTION_SUMMARY);
+  const [runProgress, setRunProgress] = useState<ManualRunProgress>(EMPTY_RUN_PROGRESS);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const resultsRef = useRef<HTMLElement | null>(null);
   const pendingFileActionRef = useRef<"draft" | "save_new">("draft");
+  const runPollTimerRef = useRef<number | null>(null);
 
   const ruleSetPreview = useMemo<RuleSet | null>(
     () => ({
@@ -167,10 +280,11 @@ export function ManualSearchPage() {
     [currentPack, draftDefinition, draftRuleDescription, draftRuleName],
   );
 
+  const draftTags = useMemo(() => splitCommaLines(draftTagsText), [draftTagsText]);
   const currentPackComparable = useMemo(() => (currentPack ? buildPackComparable(currentPack) : null), [currentPack]);
   const currentDraftComparable = useMemo(
-    () => buildDraftComparable(searchSpec, draftRuleName, draftRuleDescription, draftDefinition),
-    [searchSpec, draftDefinition, draftRuleDescription, draftRuleName],
+    () => buildDraftComparable(draftTags, searchSpec, draftRuleName, draftRuleDescription, draftDefinition),
+    [draftTags, searchSpec, draftDefinition, draftRuleDescription, draftRuleName],
   );
   const draftDirty = useMemo(() => {
     if (!currentPackComparable) return false;
@@ -197,6 +311,8 @@ export function ManualSearchPage() {
     () => (result ? (result.final_queries?.length ? result.final_queries : [result.final_query]).filter(Boolean) : []),
     [result],
   );
+  const displayedResultQueries = useMemo(() => resultQueries.slice(0, 5), [resultQueries]);
+  const hiddenResultQueryCount = Math.max(0, resultQueries.length - displayedResultQueries.length);
   const packBindingLabel = currentPack ? "已绑定本地任务包" : "未绑定";
   const packDraftLabel = currentPack ? (draftDirty ? "已修改未保存" : "未修改") : "未绑定";
   const packSourceLabel = draftSourceLabel(draftSource);
@@ -207,11 +323,45 @@ export function ManualSearchPage() {
   const resultsSummaryRawLabel = `raw_total：${lastExecution.status === "idle" ? "--" : lastExecution.rawTotal}`;
   const resultsSummaryMatchedLabel = `matched_total：${lastExecution.status === "idle" ? "--" : lastExecution.matchedTotal}`;
   const resultsSummaryErrorLabel = `errors：${lastExecution.status === "idle" ? "--" : lastExecution.errorCount}`;
+  const progressVisible = runProgress.status !== "idle";
+  const progressQueryLabel =
+    runProgress.totalQueries > 0 ? `${runProgress.completedQueries} / ${runProgress.totalQueries}` : "-- / --";
+  const progressPercentLabel = `${runProgress.progressPercent}%`;
+
+  function clearRunPollTimer() {
+    if (runPollTimerRef.current !== null) {
+      window.clearTimeout(runPollTimerRef.current);
+      runPollTimerRef.current = null;
+    }
+  }
+
+  function finishManualRun(current: RunRecord, progress: ManualRunProgress) {
+    clearRunPollTimer();
+    setRunProgress(progress);
+    setLoading(false);
+
+    const finishedAt = current.ended_at || current.started_at || new Date().toISOString();
+    const finalStatus = normalizeExecutionStatus(current.status);
+    const resultPayload = current.result_json ?? null;
+
+    if (finalStatus === "success" && resultPayload) {
+      setResult(resultPayload);
+      setLastExecution(buildExecutionSummary("success", finishedAt, resultPayload, ""));
+      return;
+    }
+
+    const errors = Array.isArray(resultPayload?.errors) ? resultPayload.errors : [];
+    const failureText = current.error_text || errors[0] || "采集失败";
+    setResult(null);
+    setError(failureText);
+    setLastExecution(buildExecutionSummary("failed", finishedAt, resultPayload, failureText));
+  }
 
   function resetToBlankDraft() {
     setSearchSpec(cloneSearchSpec(DEFAULT_SEARCH_SPEC));
     setDraftRuleName("Default Rule Set");
     setDraftRuleDescription("Built-in opportunity discovery rules.");
+    setDraftTagsText("");
     setDraftDefinition(cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION));
     setCurrentPack(null);
     setSelectedPackName(DEFAULT_DRAFT_PACK_NAME);
@@ -221,6 +371,7 @@ export function ManualSearchPage() {
   function resetDraft() {
     if (currentPack) {
       setSearchSpec(cloneSearchSpec(currentPack.search_spec));
+      setDraftTagsText(joinCommaLinesForTextarea(currentPack.tags || []));
       setDraftRuleName(currentPack.rule_set.name || currentPack.meta.name);
       setDraftRuleDescription(currentPack.rule_set.description || currentPack.meta.description || "");
       setDraftDefinition(cloneRuleDefinition(currentPack.rule_set.definition));
@@ -248,6 +399,53 @@ export function ManualSearchPage() {
     refreshTaskPacks().catch((err) => setError(err instanceof Error ? err.message : "加载任务包失败"));
   }, []);
 
+  useEffect(() => () => clearRunPollTimer(), []);
+
+  useEffect(() => {
+    if (!loading || runProgress.runId === null || runProgress.status !== "running") return;
+
+    let cancelled = false;
+    const activeRunId = runProgress.runId;
+
+    const pollRun = async () => {
+      try {
+        const current = await getRun(activeRunId);
+        if (cancelled) return;
+
+        const nextProgress = buildRunProgress(current);
+        if (nextProgress.status === "running") {
+          setRunProgress(nextProgress);
+          clearRunPollTimer();
+          runPollTimerRef.current = window.setTimeout(() => {
+            void pollRun();
+          }, 300);
+          return;
+        }
+
+        finishManualRun(current, nextProgress);
+      } catch (err) {
+        if (cancelled) return;
+        const failureText = err instanceof Error ? err.message : "获取执行进度失败";
+        clearRunPollTimer();
+        setLoading(false);
+        setError(failureText);
+        setRunProgress((prev) => ({
+          ...prev,
+          status: "failed",
+          endedAt: new Date().toISOString(),
+        }));
+        setLastExecution(buildExecutionSummary("failed", new Date().toISOString(), null, failureText));
+      }
+    };
+
+    void pollRun();
+
+    return () => {
+      cancelled = true;
+      clearRunPollTimer();
+    };
+  }, [loading, runProgress.runId, runProgress.status]);
+
   async function importSelectedPack() {
     if (selectedPackName === DEFAULT_DRAFT_PACK_NAME) {
       resetToBlankDraft();
@@ -261,6 +459,7 @@ export function ManualSearchPage() {
     try {
       const pack = await getTaskPack(selectedPackName);
       setSearchSpec(cloneSearchSpec(pack.search_spec));
+      setDraftTagsText(joinCommaLinesForTextarea(pack.tags || []));
       setDraftRuleName(pack.rule_set.name || pack.meta.name);
       setDraftRuleDescription(pack.rule_set.description || pack.meta.description || "");
       setDraftDefinition(cloneRuleDefinition(pack.rule_set.definition));
@@ -288,6 +487,7 @@ export function ManualSearchPage() {
       const payload = buildPackPayload(
         targetName,
         draftRuleDescription,
+        draftTags,
         searchSpec,
         draftRuleName,
         draftRuleDescription,
@@ -302,6 +502,7 @@ export function ManualSearchPage() {
       setDraftSource("pack");
       setDraftRuleName(saved.rule_set.name || targetName);
       setDraftRuleDescription(saved.rule_set.description || "");
+      setDraftTagsText(joinCommaLinesForTextarea(saved.tags || []));
       setDraftDefinition(cloneRuleDefinition(saved.rule_set.definition));
       setMessage(mode === "overwrite" ? "已保存到当前任务包" : `已另存为新任务包 ${saved.pack_name}`);
       await refreshTaskPacks();
@@ -320,6 +521,7 @@ export function ManualSearchPage() {
     try {
       const imported = await readImportedTaskPack(file);
       setSearchSpec(imported.searchSpec);
+      setDraftTagsText(joinCommaLinesForTextarea(imported.tags || []));
       setDraftRuleName(imported.ruleSet.name);
       setDraftRuleDescription(imported.ruleSet.description || imported.description);
       setDraftDefinition(cloneRuleDefinition(imported.ruleSet.definition));
@@ -347,6 +549,7 @@ export function ManualSearchPage() {
       const payload = buildPackPayload(
         targetName,
         imported.description,
+        imported.tags,
         imported.searchSpec,
         imported.ruleSet.name,
         imported.ruleSet.description,
@@ -354,6 +557,7 @@ export function ManualSearchPage() {
       );
       const saved = await createTaskPack({ pack_name: targetName, ...payload });
       setSearchSpec(cloneSearchSpec(saved.search_spec));
+      setDraftTagsText(joinCommaLinesForTextarea(saved.tags || []));
       setDraftRuleName(saved.rule_set.name || targetName);
       setDraftRuleDescription(saved.rule_set.description || "");
       setDraftDefinition(cloneRuleDefinition(saved.rule_set.definition));
@@ -405,10 +609,19 @@ export function ManualSearchPage() {
     setMessage("");
     setLoading(true);
     setResult(null);
+    clearRunPollTimer();
+
+    const startedAt = new Date().toISOString();
+    setRunProgress({
+      ...EMPTY_RUN_PROGRESS,
+      status: "running",
+      startedAt,
+    });
 
     try {
-      const data = await runManual({
+      const data = await runManualStart({
         search_spec: searchSpec,
+        tags: draftTags,
         rule_set: {
           name: draftRuleName,
           description: draftRuleDescription,
@@ -416,29 +629,22 @@ export function ManualSearchPage() {
           definition: cloneRuleDefinition(draftDefinition),
         },
       });
-
-      setResult(data);
-      setLastExecution({
-        status: data.status === "success" ? "success" : "failed",
-        executedAt: new Date().toISOString(),
-        rawTotal: data.raw_total || 0,
-        matchedTotal: data.matched_total || 0,
-        errorCount: data.errors?.length || 0,
-        errorText: data.errors?.[0] || "",
-      });
+      setRunProgress((prev) => ({
+        ...prev,
+        runId: Number(data.run_id || 0) || null,
+        status: "running",
+      }));
     } catch (err) {
       const failureText = err instanceof Error ? err.message : "采集失败";
       setError(failureText);
-      setLastExecution({
-        status: "failed",
-        executedAt: new Date().toISOString(),
-        rawTotal: 0,
-        matchedTotal: 0,
-        errorCount: 1,
-        errorText: failureText,
-      });
-    } finally {
       setLoading(false);
+      setRunProgress({
+        ...EMPTY_RUN_PROGRESS,
+        status: "failed",
+        startedAt,
+        endedAt: new Date().toISOString(),
+      });
+      setLastExecution(buildExecutionSummary("failed", new Date().toISOString(), null, failureText));
     }
   }
 
@@ -455,6 +661,50 @@ export function ManualSearchPage() {
           </button>
         </div>
       </header>
+
+      {progressVisible && (
+        <section className="card manual-run-progress-card workbench-layer" data-testid="manual-run-progress">
+          <div className="manual-run-progress-head">
+            <div className="manual-run-progress-copy">
+              <div className="workbench-section-eyebrow">执行进度</div>
+              <div className="manual-run-progress-title">
+                {runProgress.status === "success"
+                  ? "本次执行已完成"
+                  : runProgress.status === "failed"
+                    ? "本次执行已结束"
+                    : "正在按查询计划抓取"}
+              </div>
+              <div className="kv">
+                {runProgress.totalQueries > 0
+                  ? `已完成 ${progressQueryLabel} 个查询切片`
+                  : runProgress.runId
+                    ? `执行任务 #${runProgress.runId} 已启动，等待返回查询总数`
+                    : "正在创建执行任务..."}
+              </div>
+            </div>
+            <div className="manual-run-progress-side">
+              <span className={`jobs-summary-pill workbench-pill ${executionStatusTone(runProgress.status)}`}>
+                {executionStatusLabel(runProgress.status)}
+              </span>
+              <div className="manual-run-progress-percent">{progressPercentLabel}</div>
+            </div>
+          </div>
+          <div
+            className="manual-run-progress-track"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={runProgress.progressPercent}
+          >
+            <div className="manual-run-progress-fill" style={{ width: `${runProgress.progressPercent}%` }} />
+          </div>
+          <div className="manual-run-progress-meta">
+            <span>{`查询 ${progressQueryLabel}`}</span>
+            <span>{`raw ${runProgress.fetchedRaw}`}</span>
+            <span>{`errors ${runProgress.queryErrors}`}</span>
+          </div>
+        </section>
+      )}
 
       {error && (
         <div className="alert error" data-testid="manual-error">
@@ -497,6 +747,7 @@ export function ManualSearchPage() {
               <div className="workbench-pill-row">
                 <span className="jobs-summary-pill workbench-pill">{`当前来源：${packSourceLabel}`}</span>
                 <span className="jobs-summary-pill workbench-pill">{`当前绑定：${currentPack?.pack_name || "--"}`}</span>
+                <span className="jobs-summary-pill workbench-pill">{`tags：${draftTags.length ? draftTags.join(", ") : "--"}`}</span>
                 <span className="jobs-summary-pill workbench-pill">{`草稿状态：${packDraftLabel}`}</span>
               </div>
             </div>
@@ -576,6 +827,17 @@ export function ManualSearchPage() {
                   </div>
                   <div className="kv manual-pack-note">从文件导入只替换当前草稿。</div>
                   <div className="kv manual-pack-note">导入并保存会新建并绑定任务包。</div>
+                </div>
+                <div className="manual-action-group">
+                  <div className="manual-action-group-label">tags</div>
+                  <textarea
+                    className="workbench-textarea"
+                    rows={3}
+                    value={draftTagsText}
+                    onChange={(event) => setDraftTagsText(event.target.value)}
+                    placeholder="逗号或换行分隔，如：alpha, defi, wallet"
+                    aria-label="manual-pack-tags"
+                  />
                 </div>
               </div>
               <div className="manual-action-card flat-section" data-testid="manual-pack-save-card">
@@ -830,11 +1092,12 @@ export function ManualSearchPage() {
               <div className="flat-row">
                 <span>实际查询</span>
                 <div>
-                  {resultQueries.map((query) => (
+                  {displayedResultQueries.map((query) => (
                     <div key={query} className="collector-text-snippet">
                       {query}
                     </div>
                   ))}
+                  {hiddenResultQueryCount > 0 && <div className="kv">{`还有 ${hiddenResultQueryCount} 条时间切片查询未展开`}</div>}
                   {!resultQueries.length && <strong>--</strong>}
                 </div>
               </div>
@@ -871,7 +1134,7 @@ export function ManualSearchPage() {
                     {result.raw_items.map((item) => (
                       <tr key={`${item.tweet_id}-${item.url}`}>
                         <td>
-                          <div className="job-name">{item.author || "unknown"}</div>
+                          <div className="job-name">{formatAuthorDisplay(item.author_name, item.author)}</div>
                           <div className="kv">{formatUtcPlus8Time(item.created_at)}</div>
                         </td>
                         <td>
@@ -939,7 +1202,7 @@ export function ManualSearchPage() {
                           </div>
                         </td>
                         <td>
-                          <div className="job-name">{item.author || "unknown"}</div>
+                          <div className="job-name">{formatAuthorDisplay(item.author_name, item.author)}</div>
                           <div className="kv">{formatUtcPlus8Time(item.created_at)}</div>
                         </td>
                       </tr>

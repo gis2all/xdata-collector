@@ -23,6 +23,14 @@ const RANGE_MODE_OPTIONS: Array<{ value: RangeMode; label: string }> = [
   { value: "between", label: "\u533a\u95f4" },
 ];
 
+const TIME_SLICE_OPTIONS: Array<{ value: SearchSpec["time_slice_minutes"]; label: string }> = [
+  { value: 15, label: "15分钟" },
+  { value: 30, label: "30分钟" },
+  { value: 60, label: "1h" },
+  { value: 120, label: "2h" },
+  { value: 240, label: "4h" },
+];
+
 const TEXT = {
   keywordsTitle: "\u5173\u952e\u8bcd\u4e0e\u4f5c\u8005\u8303\u56f4",
   keywordsDescription: "\u5148\u5b9a\u4e49\u67e5\u8be2\u8bcd\u7ec4\u5408\uff0c\u518d\u8865\u5145\u4f5c\u8005\u767d\u540d\u5355\u6216\u9ed1\u540d\u5355\u7ea6\u675f\u3002",
@@ -53,7 +61,12 @@ const TEXT = {
   language: "\u8bed\u8a00",
   publishedRange: "\u53d1\u5e03\u65f6\u95f4\u8303\u56f4",
   maxDaysHint: "\u6700\u5927 100 \u5929",
+  timeSlice: "\u65f6\u95f4\u5207\u7247",
+  timeSliceHint: "\u4ec5\u5728\u53d1\u5e03\u65f6\u95f4\u4e3a\u6709\u754c\u8303\u56f4\u65f6\u751f\u6548\u3002",
+  timeSliceDisabledUnbounded: "\u5f53\u524d\u53d1\u5e03\u65f6\u95f4\u4e3a\u4e0d\u9650/\u81f3\u5c11\uff0c\u4e0d\u4f1a\u81ea\u52a8\u5207\u7247\u3002",
+  timeSliceDisabledRawQuery: "raw_query \u5df2\u5305\u542b since/until \u65f6\u95f4\u8bed\u6cd5\uff0c\u4e0d\u4f1a\u518d\u53e0\u52a0\u81ea\u52a8\u5207\u7247\u3002",
   maxResults: "\u6700\u5927\u7ed3\u679c\u6570",
+  maxResultsHint: "\u4f20\u7ed9\u6bcf\u4e2a\u65f6\u95f4\u5207\u7247 query \u7684\u4e0a\u9650\u3002twitter-cli search \u5b9e\u6d4b\u5355 query \u6700\u591a\u8fd4\u56de\u7ea6 40 \u6761\uff1b\u4e2d\u6587 + \u82f1\u6587\u4f1a\u5408\u5e76\u4e3a\u4e00\u6761\u8bed\u8a00 OR \u67e5\u8be2\u3002",
   views: "\u6d4f\u89c8\u91cf",
   likes: "\u70b9\u8d5e\u6570",
   replies: "\u56de\u590d\u6570",
@@ -66,6 +79,10 @@ const TEXT = {
   rawQueryPlaceholder: "\u4f8b\u5982 min_faves:20",
   between: "\u5230",
 } as const;
+
+function rawQueryHasExplicitTimeOperators(value: string) {
+  return /\b(?:since|until|since_time|until_time):/i.test(value || "");
+}
 
 function normalizeNumberInput(value: string, maximum?: number): number | null {
   if (!value.trim()) return null;
@@ -201,8 +218,22 @@ function RangeField({ label, value, onChange, disabled, maximum, hint }: RangeFi
 }
 
 export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
+  const timeSliceDisabledByDays = value.days_filter.mode === "any" || value.days_filter.mode === "gte";
+  const timeSliceDisabledByRawQuery = rawQueryHasExplicitTimeOperators(value.raw_query);
+  const timeSliceDisabled = disabled || timeSliceDisabledByDays || timeSliceDisabledByRawQuery;
+  const timeSliceHint = timeSliceDisabledByRawQuery
+    ? TEXT.timeSliceDisabledRawQuery
+    : timeSliceDisabledByDays
+      ? TEXT.timeSliceDisabledUnbounded
+      : TEXT.timeSliceHint;
+
   function update<K extends keyof SearchSpec>(key: K, next: SearchSpec[K]) {
     onChange({ ...value, [key]: next });
+  }
+
+  function updateMaxResults(rawValue: string) {
+    const normalized = normalizeNumberInput(rawValue, 100) ?? 1;
+    update("max_results", Math.max(1, normalized));
   }
 
   function updateMetric(metric: keyof SearchSpec["metric_filters"], next: RangeFilter) {
@@ -302,7 +333,7 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
           title={TEXT.scopeTitle}
           description={TEXT.scopeDescription}
         />
-        <div className="collector-grid collector-grid-3">
+        <div className="collector-grid collector-grid-4">
           <label className="field">
             <span>{TEXT.language}</span>
             <select value={value.language_mode} onChange={(e) => update("language_mode", e.target.value as LanguageMode)} disabled={disabled}>
@@ -322,8 +353,33 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
             hint={TEXT.maxDaysHint}
           />
           <label className="field">
+            <span>{TEXT.timeSlice}</span>
+            <select
+              aria-label={TEXT.timeSlice}
+              value={String(value.time_slice_minutes)}
+              onChange={(e) => update("time_slice_minutes", Number(e.target.value) as SearchSpec["time_slice_minutes"])}
+              disabled={timeSliceDisabled}
+            >
+              {TIME_SLICE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <div className="kv">{timeSliceHint}</div>
+          </label>
+          <label className="field">
             <span>{TEXT.maxResults}</span>
-            <input type="number" value={value.max_results} onChange={(e) => update("max_results", Number(e.target.value))} disabled={disabled} />
+            <input
+              type="number"
+              aria-label={TEXT.maxResults}
+              min={1}
+              max={100}
+              value={value.max_results}
+              onChange={(e) => updateMaxResults(e.target.value)}
+              disabled={disabled}
+            />
+            <div className="kv">{TEXT.maxResultsHint}</div>
           </label>
         </div>
       </section>

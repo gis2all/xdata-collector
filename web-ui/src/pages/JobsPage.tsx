@@ -23,9 +23,18 @@ import {
   updateJob,
   updateTaskPack,
 } from "../api";
-import { DEFAULT_RULE_SET_DEFINITION, DEFAULT_SEARCH_SPEC, buildQueryPreview, cloneRuleDefinition, cloneSearchSpec } from "../collector";
+import {
+  DEFAULT_RULE_SET_DEFINITION,
+  DEFAULT_SEARCH_SPEC,
+  buildQueryPreview,
+  cloneRuleDefinition,
+  cloneSearchSpec,
+  joinCommaLinesForTextarea,
+  splitCommaLines,
+} from "../collector";
 import { RuleSetEditor } from "../components/RuleSetEditor";
 import { SearchSpecEditor } from "../components/SearchSpecEditor";
+import { TagPills } from "../components/TagPills";
 import { ImportedTaskPackDraft, readImportedTaskPack } from "../taskPacks";
 import { formatUtcPlus8Time } from "../time";
 
@@ -46,6 +55,7 @@ type JobFormState = {
   enabled: boolean;
   pack_name: string | null;
   import_pack_name: string;
+  tagsText: string;
   search_spec: ReturnType<typeof cloneSearchSpec>;
   rule_set: {
     id?: number | null;
@@ -68,6 +78,7 @@ const DEFAULT_FORM: JobFormState = {
   enabled: true,
   pack_name: null,
   import_pack_name: "",
+  tagsText: "",
   search_spec: cloneSearchSpec(DEFAULT_SEARCH_SPEC),
   rule_set: {
     id: 1,
@@ -128,7 +139,9 @@ function batchConfirmText(action: JobBatchAction, count: number) {
 }
 
 function buildJobDraftComparable(form: JobFormState) {
+  const tags = splitCommaLines(form.tagsText);
   return {
+    tags,
     search_spec: cloneSearchSpec(form.search_spec),
     rule_set: {
       name: form.rule_set.name.trim(),
@@ -140,6 +153,7 @@ function buildJobDraftComparable(form: JobFormState) {
 
 function buildJobPackComparable(pack: TaskPackFile) {
   return {
+    tags: [...(pack.tags || [])],
     search_spec: cloneSearchSpec(pack.search_spec),
     rule_set: {
       name: String(pack.rule_set.name || "").trim(),
@@ -155,6 +169,7 @@ function buildPackPayload(form: JobFormState, packName: string) {
       name: packName,
       description: form.rule_set.description,
     },
+    tags: splitCommaLines(form.tagsText),
     search_spec: cloneSearchSpec(form.search_spec),
     rule_set: {
       id: form.rule_set.id ?? null,
@@ -201,6 +216,7 @@ export function JobsPage() {
   const [selectedJob, setSelectedJob] = useState<JobRecord | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [form, setForm] = useState<JobFormState>(DEFAULT_FORM);
+  const formTags = useMemo(() => splitCommaLines(form.tagsText), [form.tagsText]);
   const [saving, setSaving] = useState(false);
   const [deletingPack, setDeletingPack] = useState(false);
   const [actionMessage, setActionMessage] = useState("");
@@ -399,7 +415,13 @@ export function JobsPage() {
   }, [selectionState]);
 
   function resetForm() {
-    setForm({ ...DEFAULT_FORM, search_spec: cloneSearchSpec(DEFAULT_SEARCH_SPEC), rule_set: { ...DEFAULT_FORM.rule_set, definition: cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION) }, import_pack_name: taskPacks[0]?.pack_name || "" });
+    setForm({
+      ...DEFAULT_FORM,
+      search_spec: cloneSearchSpec(DEFAULT_SEARCH_SPEC),
+      tagsText: "",
+      rule_set: { ...DEFAULT_FORM.rule_set, definition: cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION) },
+      import_pack_name: taskPacks[0]?.pack_name || "",
+    });
     setCurrentTaskPack(null);
     setDraftSource("blank");
   }
@@ -409,6 +431,7 @@ export function JobsPage() {
       ...prev,
       pack_name: null,
       import_pack_name: taskPacks[0]?.pack_name || "",
+      tagsText: "",
       search_spec: cloneSearchSpec(DEFAULT_SEARCH_SPEC),
       rule_set: {
         ...prev.rule_set,
@@ -469,6 +492,7 @@ export function JobsPage() {
         enabled: Boolean(detail.enabled),
         pack_name: detail.pack_name || pack?.pack_name || null,
         import_pack_name: detail.pack_name || taskPacks[0]?.pack_name || "",
+        tagsText: joinCommaLinesForTextarea(pack?.tags || detail.tags || []),
         search_spec: cloneSearchSpec(pack?.search_spec || detail.search_spec_json),
         rule_set: {
           id: pack?.rule_set?.id ?? detail.rule_set_id ?? null,
@@ -574,6 +598,7 @@ export function JobsPage() {
       setForm((prev) => ({
         ...prev,
         search_spec: cloneSearchSpec(pack.search_spec),
+        tagsText: joinCommaLinesForTextarea(pack.tags || []),
         rule_set: {
           id: pack.rule_set.id ?? null,
           name: pack.rule_set.name,
@@ -601,9 +626,10 @@ export function JobsPage() {
       const saved = mode === "overwrite" && form.pack_name ? await updateTaskPack(form.pack_name, payload) : await createTaskPack({ pack_name: targetName, ...payload });
       setCurrentTaskPack(saved);
       setDraftSource("pack");
-      setForm((prev) => ({ ...prev, pack_name: saved.pack_name, import_pack_name: saved.pack_name }));
+      setForm((prev) => ({ ...prev, pack_name: saved.pack_name, import_pack_name: saved.pack_name, tagsText: joinCommaLinesForTextarea(saved.tags || []) }));
       setActionMessage(mode === "overwrite" ? "已保存到当前任务包" : `已另存为新任务包 ${saved.pack_name}`);
       await loadTaskPacks();
+      await refreshJobs({ keepDrawer: true, reloadSelected: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存任务包失败");
     } finally {
@@ -621,6 +647,7 @@ export function JobsPage() {
         name: form.name.trim(),
         interval_minutes: Number(form.interval_minutes),
         enabled: form.enabled,
+        tags: splitCommaLines(form.tagsText),
         search_spec: form.search_spec,
         rule_set: {
           id: form.rule_set.id ?? null,
@@ -735,6 +762,7 @@ export function JobsPage() {
         ...prev,
         pack_name: null,
         import_pack_name: taskPacks[0]?.pack_name || "",
+        tagsText: joinCommaLinesForTextarea(imported.tags || []),
         search_spec: cloneSearchSpec(imported.searchSpec),
         rule_set: {
           id: imported.ruleSet.id ?? null,
@@ -764,6 +792,7 @@ export function JobsPage() {
           name: targetName,
           description: imported.ruleSet.description || imported.description,
         },
+        tags: imported.tags,
         search_spec: cloneSearchSpec(imported.searchSpec),
         rule_set: {
           id: imported.ruleSet.id ?? null,
@@ -781,6 +810,7 @@ export function JobsPage() {
         pack_name: saved.pack_name,
         import_pack_name: saved.pack_name,
         search_spec: cloneSearchSpec(saved.search_spec),
+        tagsText: joinCommaLinesForTextarea(saved.tags || []),
         rule_set: {
           id: saved.rule_set.id ?? null,
           name: saved.rule_set.name,
@@ -1079,6 +1109,7 @@ export function JobsPage() {
                       </th>
                       <th>{"任务"}</th>
                       <th>{"任务包"}</th>
+                      <th>{"任务标签"}</th>
                       <th>{"间隔"}</th>
                       <th>{"状态"}</th>
                       <th>{"下次运行"}</th>
@@ -1110,6 +1141,7 @@ export function JobsPage() {
                           <div className="job-name jobs-row-title">{job.pack_meta?.name || job.pack_name || "--"}</div>
                           <div className="kv jobs-row-meta">{job.pack_name || "--"}</div>
                         </td>
+                        <td><TagPills tags={job.tags} /></td>
                         <td>{job.interval_minutes} {"分钟"}</td>
                         <td><span className={`badge ${job.deleted_at ? "b" : job.enabled ? "a" : ""}`}>{jobState(job)}</span></td>
                         <td>{formatUtcPlus8Time(job.next_run_at)}</td>
@@ -1122,7 +1154,7 @@ export function JobsPage() {
                     ))}
                     {!jobs.length && (
                       <tr>
-                        <td colSpan={8} style={{ textAlign: "center", color: "#64748b" }}>{status === "deleted" ? "暂无已删除任务" : "暂无任务"}</td>
+                        <td colSpan={9} style={{ textAlign: "center", color: "#64748b" }}>{status === "deleted" ? "暂无已删除任务" : "暂无任务"}</td>
                       </tr>
                     )}
                   </tbody>
@@ -1225,6 +1257,7 @@ export function JobsPage() {
                   <div className="workbench-pill-row">
                     <span className="jobs-summary-pill workbench-pill">{`当前绑定：${currentTaskPackName || "--"}`}</span>
                     <span className="jobs-summary-pill workbench-pill">{`绑定状态：${currentTaskPackBindingLabel}`}</span>
+                    <span className="jobs-summary-pill workbench-pill">{`tags：${formTags.length ? formTags.join(", ") : "--"}`}</span>
                     <span className="jobs-summary-pill workbench-pill">{`草稿状态：${currentTaskPackDraftLabel}`}</span>
                   </div>
                 </div>
@@ -1285,6 +1318,18 @@ export function JobsPage() {
                   <div className="jobs-pack-action-group flat-section">
                     <div className="collector-subtitle">{"保存当前草稿"}</div>
                     <div className="kv" style={{ marginTop: 6 }}>{"可另存为新任务包，或保存回当前任务包。"}</div>
+                    <label className="field" style={{ marginTop: 12 }}>
+                      <span>{"tags"}</span>
+                      <textarea
+                        className="workbench-textarea"
+                        rows={3}
+                        aria-label="job-pack-tags"
+                        value={form.tagsText}
+                        onChange={(event) => updateForm("tagsText", event.target.value)}
+                        disabled={drawerDisabled}
+                        placeholder="逗号或换行分隔，如：alpha, defi, wallet"
+                      />
+                    </label>
                     <div className="collector-toolbar" style={{ marginTop: 12, flexWrap: "wrap" }}>
                       <button
                         type="button"

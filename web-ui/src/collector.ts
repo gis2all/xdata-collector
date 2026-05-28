@@ -2,8 +2,10 @@ import { LanguageMode, MetricFilters, RangeFilter, RangeMode, RuleCondition, Rul
 
 const RANGE_MODES: RangeMode[] = ["any", "gte", "lte", "between"];
 const METRIC_KEYS = ["views", "likes", "replies", "retweets"] as const;
+const TIME_SLICE_MINUTES = [15, 30, 60, 120, 240] as const;
 
 type MetricKey = (typeof METRIC_KEYS)[number];
+type TimeSliceMinutes = (typeof TIME_SLICE_MINUTES)[number];
 
 export function defaultRangeFilter(mode: RangeMode = "any", min: number | null = null, max: number | null = null): RangeFilter {
   return { mode, min, max };
@@ -26,17 +28,18 @@ export const DEFAULT_SEARCH_SPEC: SearchSpec = {
   authors_include: [],
   authors_exclude: [],
   language_mode: "zh_en",
-  days_filter: defaultRangeFilter("lte", null, 20),
+  days_filter: defaultRangeFilter("lte", null, 1),
+  time_slice_minutes: 60,
   metric_filters: defaultMetricFilters(),
   metric_filters_explicit: true,
-  max_results: 40,
+  max_results: 100,
   include_retweets: false,
   include_replies: true,
   require_media: false,
   require_links: false,
   raw_query: "",
   language: "",
-  days: 20,
+  days: 1,
   metric_mode: "OR",
   min_metrics: {
     views: 200,
@@ -122,7 +125,15 @@ function normalizeRangeFilter(
 function deriveLegacyDaysValue(filter: RangeFilter): number {
   if (filter.mode === "gte") return clampNonNegative(filter.min ?? 0);
   if (filter.mode === "lte" || filter.mode === "between") return clampNonNegative(filter.max ?? 0);
-  return 20;
+  return 1;
+}
+
+function normalizeTimeSliceMinutes(value: unknown): TimeSliceMinutes {
+  const parsed = Number(value);
+  if (TIME_SLICE_MINUTES.includes(parsed as TimeSliceMinutes)) {
+    return parsed as TimeSliceMinutes;
+  }
+  return DEFAULT_SEARCH_SPEC.time_slice_minutes;
 }
 
 function deriveLegacyMinMetrics(filters: MetricFilters) {
@@ -166,6 +177,7 @@ export function normalizeSearchSpecForUi(spec?: Partial<SearchSpec> | null): Sea
     authors_exclude: Array.isArray(source.authors_exclude) ? [...source.authors_exclude] : [],
     language_mode: languageMode,
     days_filter: daysFilter,
+    time_slice_minutes: normalizeTimeSliceMinutes(source.time_slice_minutes),
     metric_filters: metricFilters,
     metric_filters_explicit: metricFiltersExplicit,
     max_results: Math.min(100, Math.max(1, clampNonNegative(source.max_results ?? DEFAULT_SEARCH_SPEC.max_results, DEFAULT_SEARCH_SPEC.max_results))),
@@ -214,6 +226,7 @@ export function buildQueryPreview(spec: SearchSpec): string {
   const segments: string[] = [
     `\u8bed\u8a00: ${languageModeLabel(normalized.language_mode)}`,
     `\u5929\u6570: ${rangeFilterLabel(normalized.days_filter, "\u5929")}`,
+    `\u5207\u7247: ${normalized.time_slice_minutes >= 60 ? `${normalized.time_slice_minutes / 60}h` : `${normalized.time_slice_minutes}\u5206\u949f`}`,
   ];
 
   for (const key of METRIC_KEYS) {

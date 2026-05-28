@@ -11,6 +11,7 @@ class SearchResult:
     tweet_id: str
     url: str
     text: str
+    author_name: str
     author: str
     created_at: str
     raw: dict[str, Any]
