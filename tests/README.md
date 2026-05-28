@@ -13,6 +13,11 @@ python -m pytest -c tests/pytest.ini tests
 - `pytest.ini`：pytest 配置
 - `test_*.py`：当前保留的单元 / 集成级测试
 
+## 约束
+
+- 涉及 `backend/twitter_cli.py` 的 CLI runtime 测试必须完整 mock `find_twitter_cli()` / `find_xreach_cli()`，不能依赖本机已安装的 `twitter-cli`、`xreach` 或用户 PATH。
+- 默认按 GitHub Actions 这类干净环境来写测试；本机能通过但 CI 缺少 CLI 时失败，视为测试隔离不完整。
+
 ## 当前边界
 
 - 旧 `e2e_smoke.py` / `browser_smoke.ps1` 链路已移除
