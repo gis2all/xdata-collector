@@ -290,7 +290,9 @@ class TwitterCliRuntimeTests(unittest.TestCase):
                 self.stdout = stdout
                 self.stderr = stderr
 
-        with patch("backend.twitter_cli.find_xreach_cli", return_value="xreach.cmd"), patch(
+        with patch("backend.twitter_cli.find_twitter_cli", return_value="twitter.exe"), patch(
+            "backend.twitter_cli.find_xreach_cli", return_value="xreach.cmd"
+        ), patch(
             "backend.twitter_cli.subprocess.run"
         ) as run_mock:
             run_mock.side_effect = [
