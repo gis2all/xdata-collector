@@ -85,6 +85,11 @@ class CollectorRulesTests(unittest.TestCase):
 
         self.assertEqual(spec["all_keywords"], [])
 
+    def test_normalize_search_spec_defaults_max_results_to_100(self) -> None:
+        spec = normalize_search_spec({})
+
+        self.assertEqual(spec["max_results"], 100)
+
     def test_normalize_search_spec_supports_explicit_range_filters(self) -> None:
         spec = normalize_search_spec(
             {

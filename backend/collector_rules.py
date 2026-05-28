@@ -51,7 +51,7 @@ def default_search_spec() -> dict[str, Any]:
         "metric_filters_explicit": True,
         "language": "",
         "days": 20,
-        "max_results": 40,
+        "max_results": 100,
         "metric_mode": "OR",
         "min_metrics": {"views": 200, "likes": 0, "replies": 1, "retweets": 0},
         "include_retweets": False,

@@ -987,7 +987,7 @@ class DesktopService:
                     "keywords": payload.get("keywords", []),
                     "days": payload.get("days", 20),
                     "thresholds": payload.get("thresholds", {}),
-                    "max_results": payload.get("max_results", 40),
+                    "max_results": payload.get("max_results", 100),
                 }
             )
         final_queries = build_query_plan_from_search_spec(search_spec)

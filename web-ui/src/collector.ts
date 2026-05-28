@@ -29,7 +29,7 @@ export const DEFAULT_SEARCH_SPEC: SearchSpec = {
   days_filter: defaultRangeFilter("lte", null, 20),
   metric_filters: defaultMetricFilters(),
   metric_filters_explicit: true,
-  max_results: 40,
+  max_results: 100,
   include_retweets: false,
   include_replies: true,
   require_media: false,

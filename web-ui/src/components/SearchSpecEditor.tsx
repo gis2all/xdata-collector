@@ -54,6 +54,7 @@ const TEXT = {
   publishedRange: "\u53d1\u5e03\u65f6\u95f4\u8303\u56f4",
   maxDaysHint: "\u6700\u5927 100 \u5929",
   maxResults: "\u6700\u5927\u7ed3\u679c\u6570",
+  maxResultsHint: "\u4f20\u7ed9\u6bcf\u4e2a query \u7684\u4e0a\u9650\u3002twitter-cli search \u5b9e\u6d4b\u5355 query \u6700\u591a\u8fd4\u56de\u7ea6 40 \u6761\uff1b\u4e2d\u6587 + \u82f1\u6587\u4f1a\u5206\u522b\u67e5\u8be2\u540e\u5408\u5e76\u53bb\u91cd\u3002",
   views: "\u6d4f\u89c8\u91cf",
   likes: "\u70b9\u8d5e\u6570",
   replies: "\u56de\u590d\u6570",
@@ -205,6 +206,11 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
     onChange({ ...value, [key]: next });
   }
 
+  function updateMaxResults(rawValue: string) {
+    const normalized = normalizeNumberInput(rawValue, 100) ?? 1;
+    update("max_results", Math.max(1, normalized));
+  }
+
   function updateMetric(metric: keyof SearchSpec["metric_filters"], next: RangeFilter) {
     onChange({
       ...value,
@@ -323,7 +329,16 @@ export function SearchSpecEditor({ value, onChange, disabled = false }: Props) {
           />
           <label className="field">
             <span>{TEXT.maxResults}</span>
-            <input type="number" value={value.max_results} onChange={(e) => update("max_results", Number(e.target.value))} disabled={disabled} />
+            <input
+              type="number"
+              aria-label={TEXT.maxResults}
+              min={1}
+              max={100}
+              value={value.max_results}
+              onChange={(e) => updateMaxResults(e.target.value)}
+              disabled={disabled}
+            />
+            <div className="kv">{TEXT.maxResultsHint}</div>
           </label>
         </div>
       </section>

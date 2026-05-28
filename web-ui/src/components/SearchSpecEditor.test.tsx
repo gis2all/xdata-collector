@@ -96,6 +96,22 @@ describe("SearchSpecEditor", () => {
     );
   });
 
+  it("defaults max results to 100, clamps input, and explains the twitter-cli per-query ceiling", () => {
+    const onValueChange = vi.fn();
+    render(<SearchSpecEditorHarness onValueChange={onValueChange} />);
+
+    const maxResultsInput = screen.getByRole("spinbutton", { name: "\u6700\u5927\u7ed3\u679c\u6570" });
+    expect(maxResultsInput).toHaveValue(100);
+    expect(maxResultsInput).toHaveAttribute("min", "1");
+    expect(maxResultsInput).toHaveAttribute("max", "100");
+    expect(screen.getByText("\u4f20\u7ed9\u6bcf\u4e2a query \u7684\u4e0a\u9650\u3002twitter-cli search \u5b9e\u6d4b\u5355 query \u6700\u591a\u8fd4\u56de\u7ea6 40 \u6761\uff1b\u4e2d\u6587 + \u82f1\u6587\u4f1a\u5206\u522b\u67e5\u8be2\u540e\u5408\u5e76\u53bb\u91cd\u3002")).toBeInTheDocument();
+
+    fireEvent.change(maxResultsInput, { target: { value: "999" } });
+
+    expect(onValueChange).toHaveBeenLastCalledWith(expect.objectContaining({ max_results: 100 }));
+    expect(maxResultsInput).toHaveValue(100);
+  });
+
   it("keeps in-progress spaces and commas while editing while still emitting parsed arrays", () => {
     const onValueChange = vi.fn();
     render(<SearchSpecEditorHarness onValueChange={onValueChange} />);
