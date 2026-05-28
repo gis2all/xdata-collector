@@ -341,17 +341,17 @@ const COLUMN_DEFINITIONS_BY_TABLE: Record<ItemTable, ColumnDefinition[]> = {
 };
 
 const DEFAULT_VISIBLE_COLUMNS_BY_TABLE: Record<ItemTable, ItemSortField[]> = {
-  curated: CURATED_COLUMN_DEFINITIONS.filter((column) => column.defaultVisible).map((column) => column.key),
-  raw: RAW_COLUMN_DEFINITIONS.filter((column) => column.defaultVisible).map((column) => column.key),
+  curated: ["level", "score", "title", "source_url", "author_name", "tags", "created_at_x", "views", "likes", "replies", "fetched_at"],
+  raw: ["author_name", "tags", "text", "created_at_x", "views", "likes", "replies", "fetched_at"],
 };
 
 function orderVisibleColumns(table: ItemTable, keys: Iterable<ItemSortField>) {
   const allowed = COLUMN_DEFINITIONS_BY_TABLE[table].map((column) => column.key);
   const keySet = new Set(keys);
-  if (keySet.has("author") && !keySet.has("author_name")) {
+  if (table === "curated" && keySet.has("author") && !keySet.has("author_name")) {
     keySet.add("author_name");
   }
-  if (keySet.has("author_name") && !keySet.has("author")) {
+  if (table === "curated" && keySet.has("author_name") && !keySet.has("author")) {
     keySet.add("author");
   }
   return allowed.filter((key) => keySet.has(key));
