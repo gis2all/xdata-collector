@@ -1,4 +1,4 @@
-import { LanguageMode, MetricFilters, RangeFilter, RangeMode, RuleCondition, RuleSetDefinition, ScoringRule, SearchSpec } from "./api";
+import type { LanguageMode, MetricFilters, RangeFilter, RangeMode, RuleCondition, RuleSetDefinition, ScoringRule, SearchSpec } from "./api";
 
 const RANGE_MODES: RangeMode[] = ["any", "gte", "lte", "between"];
 const METRIC_KEYS = ["views", "likes", "replies", "retweets"] as const;

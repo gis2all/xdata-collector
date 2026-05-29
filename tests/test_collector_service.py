@@ -539,6 +539,7 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(first["x"]["last_error"], "")
 
         mock_search.side_effect = RuntimeError("x probe failed")
+        self.service._health_x_last_probe_at -= 31
 
         second = self.service.health()
         self.assertTrue(second["x"]["configured"])
@@ -570,6 +571,25 @@ class DesktopServiceTests(unittest.TestCase):
 
         with self.assertRaises(FileNotFoundError):
             self.service.health_snapshot()
+
+    @patch("backend.collector_service.find_twitter_cli")
+    @patch("backend.collector_service.run_twitter_search")
+    def test_health_caches_x_probe_within_30_seconds(self, mock_search, mock_find_cli) -> None:
+        mock_find_cli.return_value = "twitter"
+        mock_search.return_value = []
+
+        first = self.service.health()
+        self.assertTrue(first["x"]["connected"])
+        self.assertEqual(mock_search.call_count, 1)
+
+        second = self.service.health()
+        self.assertTrue(second["x"]["connected"])
+        self.assertEqual(mock_search.call_count, 1, "cached call should not re-probe X")
+
+        self.service._health_x_last_probe_at -= 31
+        third = self.service.health()
+        self.assertTrue(third["x"]["connected"])
+        self.assertEqual(mock_search.call_count, 2, "expired cache should re-probe X")
 
     @patch("backend.collector_service.run_twitter_search")
     def test_manual_run_uses_combined_language_query_dedupes_and_filters_results(self, mock_search) -> None:
@@ -1071,6 +1091,34 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(page["items"][0]["job_id"], 123)
         self.assertEqual(page["items"][0]["stats_json"]["matched"], 2)
         self.assertNotEqual(first, second)
+
+    def test_manual_background_run_marks_failure_when_worker_raises(self) -> None:
+        run_id = self.service._create_run(job_id=None, trigger_type="manual")
+
+        with patch.object(self.service, "_execute_manual_run", side_effect=RuntimeError("worker boom")):
+            self.service._run_manual_in_background(run_id, {"search_spec": {"all_keywords": ["alpha"]}}, "manual", None)
+
+        stored_run = self.service.get_run(run_id)
+        self.assertEqual(stored_run["status"], "failed")
+        self.assertIn("worker boom", stored_run["error_text"])
+
+    def test_auto_background_run_marks_failure_when_worker_raises(self) -> None:
+        run_id = self.service._create_run(job_id=7, trigger_type="auto")
+
+        with patch.object(self.service, "_execute_manual_run", side_effect=RuntimeError("auto boom")):
+            self.service._run_auto_job_in_background(run_id, {"search_spec": {"all_keywords": ["alpha"]}}, 7, 30)
+
+        stored_run = self.service.get_run(run_id)
+        self.assertEqual(stored_run["status"], "failed")
+        self.assertIn("auto boom", stored_run["error_text"])
+
+    def test_start_manual_run_rejects_when_background_run_limit_is_exhausted(self) -> None:
+        with (
+            patch.object(self.service, "_try_acquire_run_slot", return_value=False, create=True),
+            patch("backend.collector_service.threading.Thread.start"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "too many background runs"):
+                self.service.start_manual_run({"search_spec": {"all_keywords": ["alpha"]}})
 
     @patch("backend.collector_service.run_twitter_search")
     def test_start_manual_run_updates_progress_while_running(self, mock_search) -> None:

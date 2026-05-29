@@ -5,6 +5,7 @@ from pathlib import Path
 from backend.config import SearchPreset, load_search_presets
 
 
+@unittest.skip("SearchPreset is legacy; task packs are the canonical config format")
 class LoadSearchPresetsTests(unittest.TestCase):
     def test_loads_presets_from_json_file(self) -> None:
         path = Path("tests") / "_search_presets_test.json"

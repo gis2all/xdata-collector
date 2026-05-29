@@ -28,7 +28,7 @@ jobs:
         run: python -m pip install --upgrade pip pytest
 
       - name: Compile key Python entrypoints
-        run: python -m py_compile install.py services.py run/bootstrap.py backend/twitter_cli.py backend/collector_service.py backend/workspace_store.py
+        run: python -m py_compile install.py services.py run/api.py run/bootstrap.py run/scheduler.py run/static_web_server.py backend/*.py
 
       - name: Run backend tests
         run: python -m pytest -c tests/pytest.ini tests

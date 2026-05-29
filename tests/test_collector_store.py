@@ -2,6 +2,7 @@ import sqlite3
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from backend.collector_store import connect, ensure_schema_columns, row_to_dict
 
@@ -155,6 +156,18 @@ class CollectorStoreTests(unittest.TestCase):
                 count = conn.execute("SELECT COUNT(1) FROM x_items_raw").fetchone()[0]
 
             self.assertEqual(count, 1)
+
+    def test_connect_runs_schema_maintenance_once_per_database_path(self) -> None:
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "collector.db"
+
+            with patch("backend.collector_store._backfill_curated_metrics_from_raw") as backfill:
+                with connect(db_path) as conn:
+                    conn.execute("SELECT 1").fetchone()
+                with connect(db_path) as conn:
+                    conn.execute("SELECT 1").fetchone()
+
+            self.assertEqual(backfill.call_count, 1)
 
     def test_row_to_dict_decodes_json_fields_and_keeps_invalid_json_as_string(self) -> None:
         conn = sqlite3.connect(":memory:")

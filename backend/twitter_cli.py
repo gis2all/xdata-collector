@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.models import SearchResult
+from backend.models import RunCancelled
 
 
 def find_twitter_cli() -> str:
@@ -89,7 +90,7 @@ def _run_cli_command(
         if cancel_event is not None and cancel_event.is_set():
             process.kill()
             stdout, stderr = process.communicate()
-            raise RuntimeError("cancelled")
+            raise RunCancelled("cancelled")
         try:
             stdout, stderr = process.communicate(timeout=0.1)
             break

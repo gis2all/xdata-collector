@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
+
+_SCHEMA_INIT_LOCK = threading.RLock()
+_SCHEMA_INITIALIZED_PATHS: set[str] = set()
 
 
 def utc_now_iso() -> str:
@@ -16,14 +20,43 @@ def ensure_parent(path: str | Path) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 
 
+def _is_memory_database(db_path: str | Path) -> bool:
+    return str(db_path) == ":memory:"
+
+
+def _schema_init_key(db_path: str | Path) -> str:
+    return str(Path(db_path).resolve())
+
+
+def initialize_database(db_path: str | Path) -> None:
+    if _is_memory_database(db_path):
+        return
+    key = _schema_init_key(db_path)
+    with _SCHEMA_INIT_LOCK:
+        if key in _SCHEMA_INITIALIZED_PATHS and Path(db_path).exists():
+            return
+        ensure_parent(db_path)
+        conn = sqlite3.connect(str(db_path))
+        try:
+            init_schema(conn)
+            ensure_schema_columns(conn)
+            conn.commit()
+        finally:
+            conn.close()
+        _SCHEMA_INITIALIZED_PATHS.add(key)
+
+
 @contextmanager
 def connect(db_path: str | Path) -> Iterator[sqlite3.Connection]:
     ensure_parent(db_path)
+    if not _is_memory_database(db_path):
+        initialize_database(db_path)
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
-        init_schema(conn)
-        ensure_schema_columns(conn)
+        if _is_memory_database(db_path):
+            init_schema(conn)
+            ensure_schema_columns(conn)
         yield conn
         conn.commit()
     finally:

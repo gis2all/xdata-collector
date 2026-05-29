@@ -13,6 +13,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.collector_service import DesktopService
+from backend.models import RequestTooLarge
+
+MAX_BODY_SIZE = 10 * 1024 * 1024
 
 
 def parse_args() -> argparse.Namespace:
@@ -22,6 +25,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--db-path", default=str(Path("data") / "app.db"))
     parser.add_argument("--env-file", default=".env")
     return parser.parse_args()
+
+
+def _path_segments(path: str) -> list[str]:
+    return [segment for segment in path.split("/") if segment]
+
+
+def _path_segment(path: str, index: int) -> str:
+    segments = _path_segments(path)
+    return segments[index]
+
+
+def _path_int_segment(path: str, index: int) -> int:
+    return int(_path_segment(path, index))
+
+
+def _is_allowed_origin(origin: str) -> bool:
+    parsed = urlparse(origin)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    if host in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    return host.endswith(".localhost")
 
 
 class ApiHandler(BaseHTTPRequestHandler):
@@ -45,7 +71,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, self.service.list_task_packs())
                 return
             if parsed.path.startswith("/task-packs/"):
-                pack_name = parsed.path.split("/")[-1]
+                pack_name = _path_segment(parsed.path, 1)
                 self._json(HTTPStatus.OK, self.service.get_task_pack(pack_name))
                 return
             if parsed.path == "/health":
@@ -69,11 +95,11 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, self.service.list_rule_sets())
                 return
             if parsed.path.startswith("/rule-sets/"):
-                rule_set_id = int(parsed.path.split("/")[-1])
+                rule_set_id = _path_int_segment(parsed.path, 1)
                 self._json(HTTPStatus.OK, self.service.get_rule_set(rule_set_id))
                 return
             if parsed.path.startswith("/jobs/"):
-                job_id = int(parsed.path.split("/")[-1])
+                job_id = _path_int_segment(parsed.path, 1)
                 self._json(HTTPStatus.OK, self.service.get_job(job_id))
                 return
             if parsed.path == "/runs":
@@ -83,7 +109,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, self.service.list_runs(page=page, page_size=page_size))
                 return
             if parsed.path.startswith("/runs/"):
-                run_id = int(parsed.path.split("/")[-1])
+                run_id = _path_int_segment(parsed.path, 1)
                 self._json(HTTPStatus.OK, self.service.get_run(run_id))
                 return
             if parsed.path == "/logs/runtime":
@@ -112,10 +138,16 @@ class ApiHandler(BaseHTTPRequestHandler):
                 )
                 return
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+        except json.JSONDecodeError:
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid json"})
+        except (IndexError, ValueError) as exc:
+            self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
         except FileNotFoundError as exc:
             self._json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
-        except Exception as exc:  # noqa: BLE001
-            self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+        except RequestTooLarge as exc:
+            self._json(HTTPStatus.CONTENT_TOO_LARGE, {"error": str(exc)})
+        except Exception:  # noqa: BLE001
+            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "internal server error"})
 
     def do_PUT(self) -> None:  # noqa: N802
         try:
@@ -125,12 +157,20 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, self.service.update_workspace(payload))
                 return
             if parsed.path.startswith("/task-packs/"):
-                pack_name = parsed.path.split("/")[-1]
+                pack_name = _path_segment(parsed.path, 1)
                 self._json(HTTPStatus.OK, self.service.update_task_pack(pack_name, payload))
                 return
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
-        except Exception as exc:  # noqa: BLE001
-            self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+        except json.JSONDecodeError:
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid json"})
+        except (IndexError, ValueError) as exc:
+            self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+        except FileNotFoundError as exc:
+            self._json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
+        except RequestTooLarge as exc:
+            self._json(HTTPStatus.CONTENT_TOO_LARGE, {"error": str(exc)})
+        except Exception:  # noqa: BLE001
+            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "internal server error"})
 
     def do_POST(self) -> None:  # noqa: N802
         try:
@@ -144,7 +184,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, self.service.create_task_pack(payload))
                 return
             if path.startswith("/task-packs/") and path.endswith("/delete"):
-                pack_name = path.split("/")[2]
+                pack_name = _path_segment(path, 1)
                 self._json(HTTPStatus.OK, self.service.delete_task_pack(pack_name))
                 return
             if path == "/manual/run":
@@ -163,43 +203,43 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, self.service.create_rule_set(payload))
                 return
             if path.startswith("/rule-sets/") and path.endswith("/clone"):
-                rule_set_id = int(path.split("/")[2])
+                rule_set_id = _path_int_segment(path, 1)
                 self._json(HTTPStatus.OK, self.service.clone_rule_set(rule_set_id))
                 return
             if path.startswith("/rule-sets/") and path.endswith("/update"):
-                rule_set_id = int(path.split("/")[2])
+                rule_set_id = _path_int_segment(path, 1)
                 self._json(HTTPStatus.OK, self.service.update_rule_set(rule_set_id, payload))
                 return
             if path.startswith("/rule-sets/") and path.endswith("/delete"):
-                rule_set_id = int(path.split("/")[2])
+                rule_set_id = _path_int_segment(path, 1)
                 self._json(HTTPStatus.OK, self.service.delete_rule_set(rule_set_id))
                 return
             if path.startswith("/jobs/") and path.endswith("/update"):
-                job_id = int(path.split("/")[2])
+                job_id = _path_int_segment(path, 1)
                 self._json(HTTPStatus.OK, self.service.update_job(job_id, payload))
                 return
             if path.startswith("/jobs/") and path.endswith("/toggle"):
-                job_id = int(path.split("/")[2])
+                job_id = _path_int_segment(path, 1)
                 self._json(HTTPStatus.OK, self.service.toggle_job(job_id, bool(payload.get("enabled", False))))
                 return
             if path.startswith("/jobs/") and (path.endswith("/run-now") or path.endswith("/run")):
-                job_id = int(path.split("/")[2])
+                job_id = _path_int_segment(path, 1)
                 self._json(HTTPStatus.OK, self.service.run_job_now(job_id))
                 return
             if path.startswith("/runs/") and path.endswith("/cancel"):
-                run_id = int(path.split("/")[2])
+                run_id = _path_int_segment(path, 1)
                 self._json(HTTPStatus.OK, self.service.cancel_run(run_id))
                 return
             if path.startswith("/jobs/") and path.endswith("/delete"):
-                job_id = int(path.split("/")[2])
+                job_id = _path_int_segment(path, 1)
                 self._json(HTTPStatus.OK, self.service.delete_job(job_id))
                 return
             if path.startswith("/jobs/") and path.endswith("/restore"):
-                job_id = int(path.split("/")[2])
+                job_id = _path_int_segment(path, 1)
                 self._json(HTTPStatus.OK, self.service.restore_job(job_id))
                 return
             if path.startswith("/jobs/") and path.endswith("/purge"):
-                job_id = int(path.split("/")[2])
+                job_id = _path_int_segment(path, 1)
                 self._json(HTTPStatus.OK, self.service.purge_job(job_id))
                 return
             if path == "/items/delete":
@@ -236,21 +276,31 @@ class ApiHandler(BaseHTTPRequestHandler):
                 )
                 return
             if path.startswith("/items/") and path.endswith("/delete"):
-                item_id = int(path.split("/")[2])
+                item_id = _path_int_segment(path, 1)
                 self._json(HTTPStatus.OK, self.service.delete_item(item_id, table=payload.get("table", "curated")))
                 return
             if path == "/scheduler/tick":
                 self._json(HTTPStatus.OK, self.service.tick())
                 return
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
-        except Exception as exc:  # noqa: BLE001
-            self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+        except json.JSONDecodeError:
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid json"})
+        except (IndexError, ValueError) as exc:
+            self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+        except FileNotFoundError as exc:
+            self._json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
+        except RequestTooLarge as exc:
+            self._json(HTTPStatus.CONTENT_TOO_LARGE, {"error": str(exc)})
+        except Exception:  # noqa: BLE001
+            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "internal server error"})
 
     def log_message(self, format: str, *args) -> None:  # noqa: A003
         return
 
     def _read_json(self) -> dict:
         length = int(self.headers.get("Content-Length", "0"))
+        if length > MAX_BODY_SIZE:
+            raise RequestTooLarge("request body too large")
         raw = self.rfile.read(length) if length > 0 else b"{}"
         if not raw:
             return {}
@@ -266,9 +316,17 @@ class ApiHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _set_cors_headers(self) -> None:
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        origin = self.headers.get("Origin")
+        if origin is None:
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            return
+        if _is_allowed_origin(origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
 
 def main() -> int:

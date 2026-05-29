@@ -239,6 +239,33 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(json.loads(body.decode("utf-8"))["summary"]["source"], "backend_snapshot")
         self.assertEqual(service.calls[0][0], "health")
 
+    def test_get_health_reflects_allowed_loopback_origin(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, headers, body = self.request(
+                server,
+                "GET",
+                "/health",
+                headers={"Origin": "http://127.0.0.1:5177"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Access-Control-Allow-Origin"], "http://127.0.0.1:5177")
+        self.assertEqual(json.loads(body.decode("utf-8"))["summary"]["source"], "backend_snapshot")
+
+    def test_get_health_does_not_echo_non_local_origin(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, headers, _ = self.request(
+                server,
+                "GET",
+                "/health",
+                headers={"Origin": "https://evil.example"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertNotIn("Access-Control-Allow-Origin", headers)
+
     def test_get_health_snapshot_returns_json_and_cors_headers(self) -> None:
         service = FakeService()
         with serve(service) as server:
