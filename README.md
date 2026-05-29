@@ -1,7 +1,7 @@
 # X数据采集器
 
 [![CI](https://github.com/gis2all/xdata-collector/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gis2all/xdata-collector/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/github/license/gis2all/xdata-collector)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 这是一个本地运行的 `X` 数据采集与规则筛选工作台，用于定义任务、采集 `X` 数据、按规则筛选结果，并将数据沉淀到本地 `SQLite`，再通过 `Web UI` 进行浏览、复盘与调度。
 
