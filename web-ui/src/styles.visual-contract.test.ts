@@ -209,6 +209,23 @@ describe("visual contract", () => {
     expect(blocksContainingSelector(".results-resizer::before").some((block) => block.includes("width: 1px;"))).toBe(true);
   });
 
+  it("keeps jobs table column dividers visible by default like the results table", () => {
+    const jobsDivider = blockFor(".jobs-column-resizer::before");
+    expect(jobsDivider).toContain("background: #cbd5e1;");
+    expect(jobsDivider).toContain("top: 3px;");
+    expect(jobsDivider).toContain("bottom: 3px;");
+    expect(jobsDivider).toContain("width: 1px;");
+  });
+
+  it("hides the jobs table horizontal scrollbar chrome while keeping horizontal scrolling available", () => {
+    const jobsWrap = blockFor(".jobs-table-wrap");
+    const jobsWrapScrollbar = blockFor(".jobs-table-wrap::-webkit-scrollbar");
+    expect(jobsWrap).toContain("overflow-x: auto;");
+    expect(jobsWrap).toContain("scrollbar-width: none;");
+    expect(jobsWrap).toContain("-ms-overflow-style: none;");
+    expect(jobsWrapScrollbar).toContain("display: none;");
+  });
+
   it("keeps the Results control layer aligned to the same horizontal gutter as nearby sections", () => {
     expect(blocksContainingSelector(".results-control-layer").some((block) => block.includes("padding: 12px 18px;"))).toBe(true);
   });

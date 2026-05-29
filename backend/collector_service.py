@@ -107,6 +107,69 @@ RAW_ITEM_DB_FIELDS = (
 )
 RAW_ITEM_PYTHON_SORT_FIELDS = {"created_at_x", "views", "likes", "replies", "retweets"}
 MAX_ITEM_PAGE_SIZE = 200
+RESULTS_FILTER_RELATIONS = {"AND", "OR"}
+RESULTS_FIELD_KINDS_BY_TABLE: dict[str, dict[str, str]] = {
+    "curated": {
+        "id": "number",
+        "run_id": "number",
+        "dedupe_key": "text",
+        "level": "text",
+        "score": "number",
+        "title": "text",
+        "summary_zh": "text",
+        "excerpt": "text",
+        "is_zero_cost": "boolean",
+        "source_url": "text",
+        "author_name": "text",
+        "author": "text",
+        "created_at_x": "datetime",
+        "views": "number",
+        "likes": "number",
+        "replies": "number",
+        "retweets": "number",
+        "fetched_at": "datetime",
+        "tags": "tags",
+        "reasons_json": "text",
+        "rule_set_id": "number",
+        "state": "text",
+    },
+    "raw": {
+        "id": "number",
+        "run_id": "number",
+        "tweet_id": "text",
+        "canonical_url": "text",
+        "author_name": "text",
+        "author": "text",
+        "text": "text",
+        "created_at_x": "datetime",
+        "views": "number",
+        "likes": "number",
+        "replies": "number",
+        "retweets": "number",
+        "query_name": "text",
+        "fetched_at": "datetime",
+        "tags": "tags",
+    },
+}
+TEXT_FILTER_OPERATORS = {
+    "contains",
+    "not_contains",
+    "equals",
+    "not_equals",
+    "starts_with",
+    "ends_with",
+    "is_empty",
+    "is_not_empty",
+    "length_gt",
+    "length_gte",
+    "length_lt",
+    "length_lte",
+    "length_between",
+}
+NUMBER_FILTER_OPERATORS = {"eq", "neq", "gt", "gte", "lt", "lte", "between", "is_empty", "is_not_empty"}
+DATETIME_FILTER_OPERATORS = {"on_or_after", "on_or_before", "between", "is_empty", "is_not_empty"}
+BOOLEAN_FILTER_OPERATORS = {"is_true", "is_false"}
+TAG_FILTER_OPERATORS = {"has_any", "has_all", "is_empty", "is_not_empty"}
 
 
 def _parse_item_created_at(value: Any) -> datetime | None:
@@ -183,6 +246,349 @@ def _raw_row_to_item(row: Any) -> dict[str, Any]:
         "fetched_at": payload.get("fetched_at"),
         "tags": _row_tags(payload),
     }
+
+
+def _empty_results_filter_tree() -> dict[str, Any]:
+    return {"type": "group", "relation": "AND", "children": []}
+
+
+def _normalize_results_filter_relation(value: Any) -> str:
+    relation = str(value or "AND").strip().upper()
+    return relation if relation in RESULTS_FILTER_RELATIONS else "AND"
+
+
+def _normalize_results_filter_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _normalize_results_filter_number(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_results_filter_scalar(value: Any, kind: str) -> str | int | bool | None:
+    if kind == "number":
+        return _normalize_results_filter_number(value)
+    if kind == "boolean":
+        if isinstance(value, bool):
+            return value
+        text = str(value or "").strip().lower()
+        if text in {"1", "true", "yes"}:
+            return True
+        if text in {"0", "false", "no"}:
+            return False
+        return None
+    return _normalize_results_filter_text(value)
+
+
+def _normalize_results_filter_node(node: Any, table: str) -> dict[str, Any] | None:
+    if not isinstance(node, dict):
+        return None
+    node_type = str(node.get("type") or "condition").strip().lower()
+    field_kinds = RESULTS_FIELD_KINDS_BY_TABLE[table]
+    if node_type == "group":
+        children = [
+            child
+            for child in (_normalize_results_filter_node(item, table) for item in node.get("children", []))
+            if child is not None
+        ]
+        return {
+            "type": "group",
+            "relation": _normalize_results_filter_relation(node.get("relation")),
+            "children": children,
+        }
+
+    field = str(node.get("field") or "").strip()
+    if field not in field_kinds:
+        return None
+    kind = field_kinds[field]
+    if kind == "text":
+        operator = str(node.get("operator") or "contains").strip().lower()
+        if operator not in TEXT_FILTER_OPERATORS:
+            operator = "contains"
+        normalized: dict[str, Any] = {"type": "condition", "field": field, "operator": operator}
+        if operator == "length_between":
+            minimum = _normalize_results_filter_number(node.get("min"))
+            maximum = _normalize_results_filter_number(node.get("max"))
+            if minimum is None or maximum is None:
+                return None
+            if minimum > maximum:
+                minimum, maximum = maximum, minimum
+            normalized["min"] = minimum
+            normalized["max"] = maximum
+            return normalized
+        if operator not in {"is_empty", "is_not_empty"}:
+            value = _normalize_results_filter_text(node.get("value"))
+            if not value and not operator.startswith("length_"):
+                return None
+            if operator.startswith("length_"):
+                numeric = _normalize_results_filter_number(node.get("value"))
+                if numeric is None:
+                    return None
+                normalized["value"] = numeric
+            else:
+                normalized["value"] = value
+        return normalized
+    if kind == "number":
+        operator = str(node.get("operator") or "gte").strip().lower()
+        if operator not in NUMBER_FILTER_OPERATORS:
+            operator = "gte"
+        normalized = {"type": "condition", "field": field, "operator": operator}
+        if operator == "between":
+            minimum = _normalize_results_filter_number(node.get("min"))
+            maximum = _normalize_results_filter_number(node.get("max"))
+            if minimum is None or maximum is None:
+                return None
+            if minimum > maximum:
+                minimum, maximum = maximum, minimum
+            normalized["min"] = minimum
+            normalized["max"] = maximum
+            return normalized
+        if operator not in {"is_empty", "is_not_empty"}:
+            value = _normalize_results_filter_number(node.get("value"))
+            if value is None:
+                return None
+            normalized["value"] = value
+        return normalized
+    if kind == "datetime":
+        operator = str(node.get("operator") or "on_or_after").strip().lower()
+        if operator not in DATETIME_FILTER_OPERATORS:
+            operator = "on_or_after"
+        normalized = {"type": "condition", "field": field, "operator": operator}
+        if operator == "between":
+            minimum = _normalize_results_filter_text(node.get("min"))
+            maximum = _normalize_results_filter_text(node.get("max"))
+            if not minimum or not maximum:
+                return None
+            normalized["min"] = minimum
+            normalized["max"] = maximum
+            return normalized
+        if operator not in {"is_empty", "is_not_empty"}:
+            value = _normalize_results_filter_text(node.get("value"))
+            if not value:
+                return None
+            normalized["value"] = value
+        return normalized
+    if kind == "boolean":
+        operator = str(node.get("operator") or "is_true").strip().lower()
+        if operator not in BOOLEAN_FILTER_OPERATORS:
+            operator = "is_true"
+        return {"type": "condition", "field": field, "operator": operator}
+    if kind == "tags":
+        operator = str(node.get("operator") or "has_any").strip().lower()
+        if operator not in TAG_FILTER_OPERATORS:
+            operator = "has_any"
+        normalized = {"type": "condition", "field": field, "operator": operator}
+        if operator not in {"is_empty", "is_not_empty"}:
+            values = normalize_tags(node.get("values") if "values" in node else node.get("value"))
+            if not values:
+                return None
+            normalized["values"] = values
+        return normalized
+    return None
+
+
+def _normalize_results_filter_tree(payload: Any, table: str) -> dict[str, Any]:
+    normalized = _normalize_results_filter_node(payload, table)
+    if not isinstance(normalized, dict) or normalized.get("type") != "group":
+        return _empty_results_filter_tree()
+    return normalized
+
+
+def _results_filter_tree_has_conditions(node: dict[str, Any] | None) -> bool:
+    if not isinstance(node, dict):
+        return False
+    if node.get("type") == "condition":
+        return True
+    return any(_results_filter_tree_has_conditions(child) for child in node.get("children", []))
+
+
+def _stringify_results_filter_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _item_results_filter_value(item: dict[str, Any], field: str, kind: str) -> Any:
+    value = item.get(field)
+    if kind == "tags":
+        return normalize_tags(value)
+    if kind == "number":
+        return _normalize_results_filter_number(value)
+    if kind == "boolean":
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return value
+        try:
+            return bool(int(value))
+        except (TypeError, ValueError):
+            return bool(value)
+    if kind == "datetime":
+        return parse_created_at(str(value or ""))
+    return _stringify_results_filter_value(value)
+
+
+def _evaluate_results_filter_condition(condition: dict[str, Any], item: dict[str, Any], table: str) -> bool:
+    field = str(condition.get("field") or "").strip()
+    kind = RESULTS_FIELD_KINDS_BY_TABLE[table].get(field)
+    if not kind:
+        return False
+    operator = str(condition.get("operator") or "").strip().lower()
+    current = _item_results_filter_value(item, field, kind)
+    if kind == "tags":
+        tags = [value.lower() for value in current or []]
+        if operator == "is_empty":
+            return not tags
+        if operator == "is_not_empty":
+            return bool(tags)
+        values = [value.lower() for value in condition.get("values", [])]
+        if operator == "has_all":
+            return all(value in tags for value in values)
+        return any(value in tags for value in values)
+    if kind == "boolean":
+        if operator == "is_true":
+            return bool(current) is True
+        if operator == "is_false":
+            return bool(current) is False
+        return False
+    if kind == "datetime":
+        if operator == "is_empty":
+            return current is None
+        if operator == "is_not_empty":
+            return current is not None
+        if current is None:
+            return False
+        if operator == "between":
+            minimum = parse_created_at(str(condition.get("min") or ""))
+            maximum = parse_created_at(str(condition.get("max") or ""))
+            if minimum is None or maximum is None:
+                return False
+            if minimum > maximum:
+                minimum, maximum = maximum, minimum
+            return minimum <= current <= maximum
+        value = parse_created_at(str(condition.get("value") or ""))
+        if value is None:
+            return False
+        if operator == "on_or_after":
+            return current >= value
+        if operator == "on_or_before":
+            return current <= value
+        return False
+    if kind == "number":
+        if operator == "is_empty":
+            return current is None
+        if operator == "is_not_empty":
+            return current is not None
+        if current is None:
+            return False
+        target = _normalize_results_filter_number(condition.get("value"))
+        if operator == "between":
+            minimum = _normalize_results_filter_number(condition.get("min"))
+            maximum = _normalize_results_filter_number(condition.get("max"))
+            if minimum is None or maximum is None:
+                return False
+            return minimum <= current <= maximum
+        if target is None:
+            return False
+        if operator == "eq":
+            return current == target
+        if operator == "neq":
+            return current != target
+        if operator == "gt":
+            return current > target
+        if operator == "gte":
+            return current >= target
+        if operator == "lt":
+            return current < target
+        if operator == "lte":
+            return current <= target
+        return False
+
+    text_value = str(current or "")
+    lowered = text_value.lower()
+    if operator == "is_empty":
+        return not text_value.strip()
+    if operator == "is_not_empty":
+        return bool(text_value.strip())
+    if operator == "length_between":
+        minimum = _normalize_results_filter_number(condition.get("min"))
+        maximum = _normalize_results_filter_number(condition.get("max"))
+        if minimum is None or maximum is None:
+            return False
+        return minimum <= len(text_value) <= maximum
+    if operator.startswith("length_"):
+        target = _normalize_results_filter_number(condition.get("value"))
+        if target is None:
+            return False
+        if operator == "length_gt":
+            return len(text_value) > target
+        if operator == "length_gte":
+            return len(text_value) >= target
+        if operator == "length_lt":
+            return len(text_value) < target
+        if operator == "length_lte":
+            return len(text_value) <= target
+        return False
+    target_text = str(condition.get("value") or "")
+    target_lower = target_text.lower()
+    if operator == "contains":
+        return target_lower in lowered
+    if operator == "not_contains":
+        return target_lower not in lowered
+    if operator == "equals":
+        return lowered == target_lower
+    if operator == "not_equals":
+        return lowered != target_lower
+    if operator == "starts_with":
+        return lowered.startswith(target_lower)
+    if operator == "ends_with":
+        return lowered.endswith(target_lower)
+    return False
+
+
+def _evaluate_results_filter_tree(node: dict[str, Any], item: dict[str, Any], table: str) -> bool:
+    if node.get("type") == "condition":
+        return _evaluate_results_filter_condition(node, item, table)
+    children = [child for child in node.get("children", []) if isinstance(child, dict)]
+    if not children:
+        return True
+    if str(node.get("relation") or "AND").upper() == "OR":
+        return any(_evaluate_results_filter_tree(child, item, table) for child in children)
+    return all(_evaluate_results_filter_tree(child, item, table) for child in children)
+
+
+def _filter_items_in_memory(items: list[dict[str, Any]], table: str, filter_tree: dict[str, Any] | None) -> list[dict[str, Any]]:
+    normalized_tree = _normalize_results_filter_tree(filter_tree, table)
+    if not _results_filter_tree_has_conditions(normalized_tree):
+        return items
+    return [item for item in items if _evaluate_results_filter_tree(normalized_tree, item, table)]
+
+
+def _sort_items_in_memory(items: list[dict[str, Any]], table: str, sort_by: str | None, sort_dir: str | None) -> list[dict[str, Any]]:
+    requested = str(sort_by or "").strip()
+    allowed = RAW_ITEM_SORT_FIELDS if table == "raw" else CURATED_ITEM_SORT_FIELDS
+    field = requested if requested in allowed else "id"
+    direction = "ASC" if str(sort_dir or "").strip().lower() == "asc" else "DESC"
+    kind = RESULTS_FIELD_KINDS_BY_TABLE[table].get(field, "text")
+    if kind == "datetime":
+        return sorted(items, key=lambda item: _item_created_at_sort_key({"id": item["id"], "created_at_x": item.get(field)}, direction))
+    if kind in {"number", "boolean"}:
+        return sorted(items, key=lambda item: _number_sort_key({"id": item["id"], field: item.get(field)}, field, direction))
+    return sorted(
+        items,
+        key=lambda item: (_stringify_results_filter_value(item.get(field)).lower(), int(item["id"])),
+        reverse=direction == "DESC",
+    )
 
 
 def _metric(item: SearchResult, key: str) -> int:
@@ -1373,9 +1779,33 @@ class DesktopService:
         keyword: str | None,
         sort_by: str | None,
         sort_dir: str | None,
+        filter_tree: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         offset = max(0, (page - 1) * page_size)
         where_sql, params = self._item_where_clause("curated", level=level, keyword=keyword)
+        normalized_filter_tree = _normalize_results_filter_tree(filter_tree, "curated")
+        if _results_filter_tree_has_conditions(normalized_filter_tree):
+            selected_fields = ", ".join(CURATED_ITEM_DB_FIELDS)
+            with connect(self.db_path) as conn:
+                rows = conn.execute(
+                    f"""
+                    SELECT {selected_fields}
+                    FROM x_items_curated
+                    {where_sql}
+                    """,
+                    tuple(params),
+                ).fetchall()
+            items = [_curated_row_to_item(row) for row in rows]
+            items = _filter_items_in_memory(items, "curated", normalized_filter_tree)
+            items = _sort_items_in_memory(items, "curated", sort_by, sort_dir)
+            total = len(items)
+            paged_items = items[offset : offset + page_size]
+            return {
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "items": paged_items,
+            }
         sort_column, sort_direction = self._normalize_item_sort("curated", sort_by, sort_dir)
         selected_fields = ", ".join(CURATED_ITEM_DB_FIELDS)
         with connect(self.db_path) as conn:
@@ -1419,9 +1849,33 @@ class DesktopService:
         keyword: str | None,
         sort_by: str | None,
         sort_dir: str | None,
+        filter_tree: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         offset = max(0, (page - 1) * page_size)
         where_sql, params = self._item_where_clause("raw", keyword=keyword)
+        normalized_filter_tree = _normalize_results_filter_tree(filter_tree, "raw")
+        if _results_filter_tree_has_conditions(normalized_filter_tree):
+            selected_fields = ", ".join(RAW_ITEM_DB_FIELDS)
+            with connect(self.db_path) as conn:
+                rows = conn.execute(
+                    f"""
+                    SELECT {selected_fields}
+                    FROM x_items_raw
+                    {where_sql}
+                    """,
+                    tuple(params),
+                ).fetchall()
+            items = [_raw_row_to_item(row) for row in rows]
+            items = _filter_items_in_memory(items, "raw", normalized_filter_tree)
+            items = _sort_items_in_memory(items, "raw", sort_by, sort_dir)
+            total = len(items)
+            paged_items = items[offset : offset + page_size]
+            return {
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "items": paged_items,
+            }
         sort_column, sort_direction = self._normalize_item_sort("raw", sort_by, sort_dir)
         selected_fields = ", ".join(RAW_ITEM_DB_FIELDS)
         with connect(self.db_path) as conn:
@@ -1470,12 +1924,20 @@ class DesktopService:
         sort_by: str | None = None,
         sort_dir: str | None = None,
         table: str = "curated",
+        filter_tree: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         page = max(1, int(page or 1))
         page_size = max(1, min(MAX_ITEM_PAGE_SIZE, int(page_size or 50)))
         normalized_table = self._normalize_item_table(table)
         if normalized_table == "raw":
-            return self._list_raw_items(page=page, page_size=page_size, keyword=keyword, sort_by=sort_by, sort_dir=sort_dir)
+            return self._list_raw_items(
+                page=page,
+                page_size=page_size,
+                keyword=keyword,
+                sort_by=sort_by,
+                sort_dir=sort_dir,
+                filter_tree=filter_tree,
+            )
         return self._list_curated_items(
             page=page,
             page_size=page_size,
@@ -1483,6 +1945,7 @@ class DesktopService:
             keyword=keyword,
             sort_by=sort_by,
             sort_dir=sort_dir,
+            filter_tree=filter_tree,
         )
 
     def delete_item(self, item_id: int, table: str = "curated") -> dict[str, Any]:
@@ -1519,22 +1982,51 @@ class DesktopService:
                 )
         return {"ids": normalized_ids, "deleted": len(delete_ids)}
 
-    def delete_items_matching(self, keyword: str | None = None, level: str | None = None, table: str = "curated") -> dict[str, Any]:
+    def delete_items_matching(
+        self,
+        keyword: str | None = None,
+        level: str | None = None,
+        table: str = "curated",
+        filter_tree: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         normalized_table = self._normalize_item_table(table)
         table_name = self._item_table_name(normalized_table)
         where_sql, params = self._item_where_clause(normalized_table, level=level, keyword=keyword)
-        with connect(self.db_path) as conn:
-            rows = conn.execute(
-                f"SELECT id FROM {table_name} {where_sql} ORDER BY id ASC",
-                tuple(params),
-            ).fetchall()
-            delete_ids = [int(row["id"]) for row in rows]
-            if delete_ids:
-                placeholders = ", ".join("?" for _ in delete_ids)
-                conn.execute(
-                    f"DELETE FROM {table_name} WHERE id IN ({placeholders})",
-                    tuple(delete_ids),
+        normalized_filter_tree = _normalize_results_filter_tree(filter_tree, normalized_table)
+        delete_ids: list[int]
+        if _results_filter_tree_has_conditions(normalized_filter_tree):
+            selected_fields = ", ".join(RAW_ITEM_DB_FIELDS if normalized_table == "raw" else CURATED_ITEM_DB_FIELDS)
+            with connect(self.db_path) as conn:
+                rows = conn.execute(
+                    f"SELECT {selected_fields} FROM {table_name} {where_sql}",
+                    tuple(params),
+                ).fetchall()
+                items = (
+                    [_raw_row_to_item(row) for row in rows]
+                    if normalized_table == "raw"
+                    else [_curated_row_to_item(row) for row in rows]
                 )
+                filtered_items = _filter_items_in_memory(items, normalized_table, normalized_filter_tree)
+                delete_ids = [int(item["id"]) for item in filtered_items]
+                if delete_ids:
+                    placeholders = ", ".join("?" for _ in delete_ids)
+                    conn.execute(
+                        f"DELETE FROM {table_name} WHERE id IN ({placeholders})",
+                        tuple(delete_ids),
+                    )
+        else:
+            with connect(self.db_path) as conn:
+                rows = conn.execute(
+                    f"SELECT id FROM {table_name} {where_sql} ORDER BY id ASC",
+                    tuple(params),
+                ).fetchall()
+                delete_ids = [int(row["id"]) for row in rows]
+                if delete_ids:
+                    placeholders = ", ".join("?" for _ in delete_ids)
+                    conn.execute(
+                        f"DELETE FROM {table_name} WHERE id IN ({placeholders})",
+                        tuple(delete_ids),
+                    )
         return {"ids": [], "deleted": len(delete_ids)}
 
     def dedupe_items(self, table: str = "curated") -> dict[str, Any]:

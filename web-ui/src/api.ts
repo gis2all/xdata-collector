@@ -354,6 +354,35 @@ export type RuntimeLogFile = {
 
 export type SortDirection = "asc" | "desc";
 export type ItemTable = "curated" | "raw";
+export type ResultsFilterRelation = "AND" | "OR";
+
+export type ResultsFilterConditionOperator =
+  | "contains"
+  | "not_contains"
+  | "equals"
+  | "not_equals"
+  | "starts_with"
+  | "ends_with"
+  | "is_empty"
+  | "is_not_empty"
+  | "length_gt"
+  | "length_gte"
+  | "length_lt"
+  | "length_lte"
+  | "length_between"
+  | "eq"
+  | "neq"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "between"
+  | "on_or_after"
+  | "on_or_before"
+  | "is_true"
+  | "is_false"
+  | "has_any"
+  | "has_all";
 
 export type CuratedItemSortField =
   | "id"
@@ -397,6 +426,25 @@ export type RawItemSortField =
   | "fetched_at";
 
 export type ItemSortField = CuratedItemSortField | RawItemSortField;
+export type ResultsFilterField = ItemSortField;
+
+export type ResultsFilterConditionNode = {
+  type: "condition";
+  field: ResultsFilterField;
+  operator: ResultsFilterConditionOperator;
+  value?: string | number | boolean | null;
+  values?: string[];
+  min?: string | number | null;
+  max?: string | number | null;
+};
+
+export type ResultsFilterGroupNode = {
+  type: "group";
+  relation: ResultsFilterRelation;
+  children: ResultsFilterNode[];
+};
+
+export type ResultsFilterNode = ResultsFilterConditionNode | ResultsFilterGroupNode;
 
 export type CuratedItemRecord = {
   id: number;
@@ -450,7 +498,7 @@ export type DeleteItemResponse = {
 
 export type DeleteItemsRequest =
   | { ids: number[]; table: ItemTable }
-  | { mode: "all_matching"; keyword?: string; level?: string; table: ItemTable };
+  | { mode: "all_matching"; keyword?: string; level?: string; table: ItemTable; filter_tree?: ResultsFilterGroupNode };
 
 export type DeleteItemsResponse = {
   ids: number[];
@@ -615,6 +663,7 @@ export function listItems(params: {
   level?: string;
   sort_by?: ItemSortField;
   sort_dir?: SortDirection;
+  filter_tree?: ResultsFilterGroupNode;
 }) {
   const q = new URLSearchParams();
   q.set("table", params.table ?? "curated");
@@ -624,6 +673,21 @@ export function listItems(params: {
   if (params.level) q.set("level", params.level);
   if (params.sort_by) q.set("sort_by", params.sort_by);
   if (params.sort_dir) q.set("sort_dir", params.sort_dir);
+  if (params.filter_tree) {
+    return req<{ total: number; page: number; page_size: number; items: ResultItemRecord[] }>("/items/query", {
+      method: "POST",
+      body: JSON.stringify({
+        table: params.table ?? "curated",
+        page: params.page ?? 1,
+        page_size: params.page_size ?? 50,
+        keyword: params.keyword,
+        level: params.level,
+        sort_by: params.sort_by,
+        sort_dir: params.sort_dir,
+        filter_tree: params.filter_tree,
+      }),
+    });
+  }
   return req<{ total: number; page: number; page_size: number; items: ResultItemRecord[] }>(`/items?${q.toString()}`);
 }
 

@@ -13,6 +13,7 @@ vi.mock("../api", () => ({
 
 const LEGACY_RESULTS_VISIBLE_COLUMNS_KEY = "results.visibleColumns.v1";
 const RESULTS_COLUMN_WIDTHS_KEY = "results.columnWidths.v1";
+const RESULTS_FILTERS_KEY = "results.filters.v1";
 
 const listItemsMock = vi.mocked(listItems);
 const deleteItemMock = vi.mocked(deleteItem);
@@ -190,6 +191,27 @@ describe("ResultsPage", () => {
       borderColor: tableRawTag.style.borderColor,
       color: tableRawTag.style.color,
     });
+  });
+
+  it("renders refresh loading state as a dedicated block before the table instead of inside the table flow", async () => {
+    listItemsMock
+      .mockResolvedValueOnce(makePage([makeRawItem(1)]))
+      .mockImplementationOnce(() => new Promise(() => {}));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Raw text 1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: TEXT.refresh }));
+
+    const loadingState = await screen.findByTestId("results-table-loading-state");
+    const tableWrap = screen.getByTestId("results-table-wrap");
+
+    expect(loadingState).toHaveTextContent("加载中...");
+    expect(tableWrap).not.toContainElement(loadingState);
+    expect(loadingState.compareDocumentPosition(tableWrap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("merges new default curated fields into legacy stored column preferences", async () => {
@@ -417,6 +439,7 @@ it("keeps table browsing controls and table actions in one compact control layer
     const managerToolbar = within(filterToolbar).getByTestId("results-manager-toolbar");
     const managerViewActions = within(managerToolbar).getByTestId("results-manager-view-actions");
     const managerDataActions = within(managerToolbar).getByTestId("results-manager-data-actions");
+    const tableStatus = screen.getByTestId("results-table-status");
 
     expect(within(filterBrowse).getByRole("tablist", { name: "results-table-switcher" })).toBeInTheDocument();
     expect(within(filterPrimary).getByRole("button", { name: TEXT.refresh })).toBeInTheDocument();
@@ -429,8 +452,10 @@ it("keeps table browsing controls and table actions in one compact control layer
     expect(within(controlSummary).getByText("\u5f53\u524d\u8868\uff1a\u539f\u59cb\u7ed3\u679c")).toBeInTheDocument();
     expect(within(controlSummary).getByText("\u5173\u952e\u8bcd\uff1a\u5168\u90e8")).toBeInTheDocument();
     expect(within(managerToolbar).queryByText("\u5f53\u524d\u8868\uff1a\u539f\u59cb\u7ed3\u679c")).not.toBeInTheDocument();
-    expect(within(managerToolbar).getByText("共 1 条")).toBeInTheDocument();
-    expect(within(managerToolbar).getByText("已选 0 条")).toBeInTheDocument();
+    expect(within(managerToolbar).queryByText("共 1 条")).not.toBeInTheDocument();
+    expect(within(managerToolbar).queryByText("已选 0 条")).not.toBeInTheDocument();
+    expect(within(tableStatus).getByText("共 1 条")).toBeInTheDocument();
+    expect(within(tableStatus).getByText("已选 0 条")).toBeInTheDocument();
   });
 
   it("loads the first raw row into the detail rail after switching tables", async () => {
@@ -939,12 +964,14 @@ it("renders default business columns and utc+8 timestamps", async () => {
     });
 
     const tableStatus = screen.getByTestId("results-table-status");
+    expect(within(tableStatus).getByText("共 132 条")).toBeInTheDocument();
+    expect(within(tableStatus).getByText("已选 0 条")).toBeInTheDocument();
     expect(within(tableStatus).getByText("\u5f53\u524d\u7b2c 1 / 2 \u9875")).toBeInTheDocument();
     expect(within(tableStatus).getByText("\u672c\u9875 100 \u6761")).toBeInTheDocument();
     expect(within(tableStatus).getByText("\u672c\u9875\u5df2\u9009 0 \u6761")).toBeInTheDocument();
     expect(within(tableStatus).getByText("\u6392\u5e8f\uff1aid \u00b7 \u964d\u5e8f")).toBeInTheDocument();
     expect(within(tableStatus).getByText("\u6bcf\u9875 100 \u6761")).toBeInTheDocument();
-    expect(within(screen.getByTestId("results-manager-toolbar")).getByText("共 132 条")).toBeInTheDocument();
+    expect(within(screen.getByTestId("results-manager-toolbar")).queryByText("共 132 条")).not.toBeInTheDocument();
     expect(within(screen.getByTestId("results-filter-summary")).getByText("\u5f53\u524d\u8868\uff1a\u7b5b\u9009\u7ed3\u679c")).toBeInTheDocument();
     expect(screen.getByText("第 1 / 2 页")).toBeInTheDocument();
     expect(screen.getByTestId("results-pagination")).toHaveClass("flat-meta-strip");
@@ -1137,6 +1164,72 @@ it("renders default business columns and utc+8 timestamps", async () => {
     expect(await screen.findByText("已删除 132 条记录")).toBeInTheDocument();
   });
 
+  it("deletes all matching results for the current advanced filter without page selection", async () => {
+    listItemsMock
+      .mockResolvedValueOnce(makePage([makeRawItem(1)], 1))
+      .mockResolvedValueOnce(
+        makePage(
+          [
+            makeRawItem(11, { text: "low view one", views: 48 }),
+            makeRawItem(12, { text: "low view two", views: 7 }),
+          ],
+          2,
+          1,
+        ),
+      )
+      .mockResolvedValueOnce(makePage([], 0, 1));
+    deleteItemsMock.mockResolvedValue({ ids: [], deleted: 2 });
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Raw text 1")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "高级筛选" }));
+    fireEvent.click(screen.getByRole("button", { name: "新增条件" }));
+
+    const advancedPanel = screen.getByTestId("results-advanced-filter-panel");
+    fireEvent.change(within(advancedPanel).getByLabelText("filter-field-0"), { target: { value: "views" } });
+    fireEvent.change(within(advancedPanel).getByLabelText("filter-operator-0"), { target: { value: "lt" } });
+    fireEvent.change(within(advancedPanel).getByLabelText("filter-value-0"), { target: { value: "50" } });
+    fireEvent.click(screen.getByRole("button", { name: "应用筛选" }));
+
+    await waitFor(() => {
+      expect(listItemsMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          table: "raw",
+          page: 1,
+          filter_tree: {
+            type: "group",
+            relation: "AND",
+            children: [{ type: "condition", field: "views", operator: "lt", value: "50" }],
+          },
+        }),
+      );
+      expect(within(screen.getByTestId("results-table-pane")).getByText("low view one")).toBeInTheDocument();
+    });
+
+    const batchDeleteButton = screen.getByRole("button", { name: TEXT.batchDelete });
+    expect(batchDeleteButton).toBeEnabled();
+
+    fireEvent.click(batchDeleteButton);
+
+    await waitFor(() => {
+      expect(deleteItemsMock).toHaveBeenCalledWith({
+        mode: "all_matching",
+        table: "raw",
+        filter_tree: {
+          type: "group",
+          relation: "AND",
+          children: [{ type: "condition", field: "views", operator: "lt", value: "50" }],
+        },
+      });
+    });
+
+    expect(await screen.findByText("已删除 2 条记录")).toBeInTheDocument();
+  });
+
   it("deletes a single row from the detail rail", async () => {
     listItemsMock
       .mockResolvedValueOnce(makePage([makeRawItem(1)], 1))
@@ -1315,5 +1408,118 @@ it("renders default business columns and utc+8 timestamps", async () => {
     await waitFor(() => {
       expect(deleteItemsMock).toHaveBeenCalledWith({ ids: [3, 4], table: "raw" });
     });
+  });
+
+  it("keeps keyword visible, advanced filters collapsed by default, and applies a structured filter tree manually", async () => {
+    listItemsMock
+      .mockResolvedValueOnce(makePage([makeRawItem(1)], 1))
+      .mockResolvedValueOnce(makePage([makeRawItem(1, { text: "alpha wallet launch" })], 1));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("results-table-pane")).getByText("Raw text 1")).toBeInTheDocument();
+    });
+
+    expect(screen.getByLabelText(TEXT.keywordLabel)).toBeInTheDocument();
+    expect(screen.queryByTestId("results-advanced-filter-panel")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "高级筛选" }));
+    fireEvent.click(screen.getByRole("button", { name: "新增条件" }));
+
+    const advancedPanel = screen.getByTestId("results-advanced-filter-panel");
+    fireEvent.change(within(advancedPanel).getByLabelText("filter-field-0"), { target: { value: "text" } });
+    fireEvent.change(within(advancedPanel).getByLabelText("filter-operator-0"), { target: { value: "contains" } });
+    fireEvent.change(within(advancedPanel).getByLabelText("filter-value-0"), { target: { value: "alpha" } });
+    fireEvent.change(screen.getByLabelText(TEXT.keywordLabel), { target: { value: "wallet" } });
+    fireEvent.click(screen.getByRole("button", { name: "应用筛选" }));
+
+    await waitFor(() => {
+      expect(listItemsMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          table: "raw",
+          page: 1,
+          keyword: "wallet",
+          filter_tree: {
+            type: "group",
+            relation: "AND",
+            children: [{ type: "condition", field: "text", operator: "contains", value: "alpha" }],
+          },
+        }),
+      );
+    });
+
+    expect(screen.getByRole("button", { name: TEXT.batchDelete })).toBeEnabled();
+  });
+
+  it("restores per-table filter state from localStorage and keeps raw and curated filters separate", async () => {
+    window.localStorage.setItem(
+      RESULTS_FILTERS_KEY,
+      JSON.stringify({
+        raw: {
+          keywordInput: "rawalpha",
+          appliedKeyword: "rawalpha",
+          advancedOpen: true,
+          filterTree: {
+            type: "group",
+            relation: "AND",
+            children: [{ type: "condition", field: "text", operator: "contains", value: "launch" }],
+          },
+        },
+        curated: {
+          keywordInput: "curatedbeta",
+          appliedKeyword: "curatedbeta",
+          advancedOpen: false,
+          filterTree: {
+            type: "group",
+            relation: "AND",
+            children: [{ type: "condition", field: "title", operator: "contains", value: "beta" }],
+          },
+        },
+      }),
+    );
+    listItemsMock
+      .mockResolvedValueOnce(makePage([makeRawItem(1, { text: "rawalpha launch" })], 1))
+      .mockResolvedValueOnce(makePage([makeItem(2, { title: "beta title" })], 1));
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(listItemsMock).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          table: "raw",
+          keyword: "rawalpha",
+          filter_tree: {
+            type: "group",
+            relation: "AND",
+            children: [{ type: "condition", field: "text", operator: "contains", value: "launch" }],
+          },
+        }),
+      );
+    });
+
+    expect(screen.getByLabelText(TEXT.keywordLabel)).toHaveValue("rawalpha");
+    expect(screen.getByTestId("results-advanced-filter-panel")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "筛选结果" }));
+
+    await waitFor(() => {
+      expect(listItemsMock).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          table: "curated",
+          keyword: "curatedbeta",
+          filter_tree: {
+            type: "group",
+            relation: "AND",
+            children: [{ type: "condition", field: "title", operator: "contains", value: "beta" }],
+          },
+        }),
+      );
+    });
+
+    expect(screen.getByLabelText(TEXT.keywordLabel)).toHaveValue("curatedbeta");
+    expect(screen.queryByTestId("results-advanced-filter-panel")).not.toBeInTheDocument();
   });
 });

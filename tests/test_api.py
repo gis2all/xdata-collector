@@ -179,8 +179,16 @@ class FakeService:
         self.calls.append(("delete_items", {"ids": ids, "table": table}))
         return {"ids": ids, "deleted": len(ids)}
 
-    def delete_items_matching(self, keyword: str | None = None, level: str | None = None, table: str = "curated") -> dict:
-        self.calls.append(("delete_items_matching", {"keyword": keyword, "level": level, "table": table}))
+    def delete_items_matching(
+        self,
+        keyword: str | None = None,
+        level: str | None = None,
+        table: str = "curated",
+        filter_tree: dict | None = None,
+    ) -> dict:
+        self.calls.append(
+            ("delete_items_matching", {"keyword": keyword, "level": level, "table": table, "filter_tree": filter_tree})
+        )
         return {"ids": [], "deleted": 12}
 
     def dedupe_items(self, table: str = "curated") -> dict:
@@ -572,6 +580,53 @@ class ApiHandlerTests(unittest.TestCase):
             ),
         )
 
+    def test_post_items_query_dispatches_structured_filter_payload(self) -> None:
+        service = FakeService()
+        payload = {
+            "table": "raw",
+            "page": 3,
+            "page_size": 25,
+            "keyword": "alpha",
+            "sort_by": "likes",
+            "sort_dir": "desc",
+            "filter_tree": {
+                "type": "group",
+                "relation": "AND",
+                "children": [
+                    {"type": "condition", "field": "text", "operator": "contains", "value": "alpha"},
+                    {"type": "condition", "field": "likes", "operator": "gte", "value": 10},
+                ],
+            },
+        }
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "POST",
+                "/items/query",
+                body=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(status, 200)
+        parsed = json.loads(body.decode("utf-8"))
+        self.assertEqual(parsed["items"][0]["tweet_id"], "1900")
+        self.assertEqual(
+            service.calls[0],
+            (
+                "list_items",
+                {
+                    "page": 3,
+                    "page_size": 25,
+                    "level": None,
+                    "keyword": "alpha",
+                    "sort_by": "likes",
+                    "sort_dir": "desc",
+                    "table": "raw",
+                    "filter_tree": payload["filter_tree"],
+                },
+            ),
+        )
+
     def test_post_item_delete_dispatches_to_service(self) -> None:
         service = FakeService()
         with serve(service) as server:
@@ -634,7 +689,7 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(json.loads(body.decode("utf-8"))["deleted"], 12)
         self.assertEqual(
             service.calls[0],
-            ("delete_items_matching", {"keyword": "airdrop", "level": "A", "table": "curated"}),
+            ("delete_items_matching", {"keyword": "airdrop", "level": "A", "table": "curated", "filter_tree": None}),
         )
 
     def test_post_items_delete_dispatches_raw_table(self) -> None:
@@ -669,7 +724,44 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(json.loads(body.decode("utf-8"))["deleted"], 12)
         self.assertEqual(
             service.calls[0],
-            ("delete_items_matching", {"keyword": "alpha", "level": None, "table": "raw"}),
+            ("delete_items_matching", {"keyword": "alpha", "level": None, "table": "raw", "filter_tree": None}),
+        )
+
+    def test_post_items_delete_dispatches_structured_all_matching_filter(self) -> None:
+        service = FakeService()
+        payload = {
+            "mode": "all_matching",
+            "table": "raw",
+            "filter_tree": {
+                "type": "group",
+                "relation": "AND",
+                "children": [
+                    {"type": "condition", "field": "views", "operator": "lt", "value": 50},
+                ],
+            },
+        }
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "POST",
+                "/items/delete",
+                body=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8"))["deleted"], 12)
+        self.assertEqual(
+            service.calls[0],
+            (
+                "delete_items_matching",
+                {
+                    "keyword": None,
+                    "level": None,
+                    "table": "raw",
+                    "filter_tree": payload["filter_tree"],
+                },
+            ),
         )
 
     def test_post_items_dedupe_dispatches_to_service(self) -> None:
