@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { RunRecord, RuntimeLogFile, getRuntimeLogs, listRuns } from "../api";
+import { RunRecord, RuntimeLogFile, cancelRun, getRuntimeLogs, listRuns } from "../api";
+import { buildRunProgress, executionStatusLabel, executionStatusTone } from "../runProgress";
 import { formatUtcPlus8Time } from "../time";
 
 const SERVICE_GROUPS = [
@@ -43,6 +44,7 @@ const UI_TEXT = {
   readErrors: "读取异常",
   runRecords: "运行记录",
   selectedRun: "当前选中",
+  stopRun: "停止运行",
 } as const;
 
 function statusClass(status: string) {
@@ -55,9 +57,9 @@ function statusClass(status: string) {
 
 function summarizeStats(stats: Record<string, number> | undefined) {
   if (!stats || Object.keys(stats).length === 0) return "--";
-  const parts = ["raw", "matched", "excluded"]
+  const parts = ["raw", "matched", "excluded", "progress_percent"]
     .filter((key) => typeof stats[key] === "number")
-    .map((key) => `${key} ${stats[key]}`);
+    .map((key) => (key === "progress_percent" ? `${stats[key]}%` : `${key} ${stats[key]}`));
   return parts.length ? parts.join(" / ") : JSON.stringify(stats);
 }
 
@@ -119,10 +121,15 @@ export function LogsPage() {
   const [runtimeLogs, setRuntimeLogs] = useState<RuntimeLogFile[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [stoppingRunId, setStoppingRunId] = useState<number | null>(null);
   const [error, setError] = useState("");
 
-  async function load() {
-    setLoading(true);
+  async function load(options?: { silent?: boolean; preserveDataOnError?: boolean }) {
+    const silent = options?.silent ?? false;
+    const preserveDataOnError = options?.preserveDataOnError ?? false;
+    if (!silent) {
+      setLoading(true);
+    }
     setError("");
     try {
       const [runData, logData] = await Promise.all([listRuns({ page: 1, page_size: 50 }), getRuntimeLogs()]);
@@ -136,11 +143,15 @@ export function LogsPage() {
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : UI_TEXT.loadError);
-      setRuns([]);
-      setRuntimeLogs([]);
-      setSelectedRunId(null);
+      if (!preserveDataOnError) {
+        setRuns([]);
+        setRuntimeLogs([]);
+        setSelectedRunId(null);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }
 
@@ -150,9 +161,34 @@ export function LogsPage() {
     });
   }, []);
 
+  useEffect(() => {
+    const hasRunning = runs.some((item) => String(item.status || "").toLowerCase() === "running");
+    if (!hasRunning) return;
+    const timer = window.setTimeout(() => {
+      void load({ silent: true, preserveDataOnError: true });
+    }, 1000);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [runs]);
+
   const selectedRun = useMemo(() => runs.find((item) => item.id === selectedRunId) ?? null, [runs, selectedRunId]);
+  const selectedRunProgress = selectedRun ? buildRunProgress(selectedRun) : null;
   const runtimeErrorCount = runtimeLogs.filter((file) => file.error).length;
   const runtimeGroupsWithContent = SERVICE_GROUPS.filter((group) => serviceGroupFiles(runtimeLogs, group.key).some((file) => file.content)).length;
+
+  async function handleStopRun(run: RunRecord) {
+    setError("");
+    setStoppingRunId(run.id);
+    try {
+      await cancelRun(run.id);
+      await load({ silent: true, preserveDataOnError: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "停止运行失败");
+    } finally {
+      setStoppingRunId(null);
+    }
+  }
 
   return (
     <div className="logs-page" data-testid="logs-page">
@@ -344,7 +380,61 @@ export function LogsPage() {
                     <span className="dashboard-summary-pill workbench-pill neutral">{selectedRun.trigger_type}</span>
                     <span className="dashboard-summary-pill workbench-pill neutral">{summarizeStats(selectedRun.stats_json)}</span>
                   </div>
+                  {selectedRunProgress?.status === "running" ? (
+                    <div className="collector-toolbar" style={{ marginTop: 12 }}>
+                      <button
+                        type="button"
+                        className="workbench-danger-action"
+                        onClick={() => handleStopRun(selectedRun)}
+                        disabled={stoppingRunId === selectedRun.id}
+                      >
+                        {stoppingRunId === selectedRun.id ? "停止中..." : UI_TEXT.stopRun}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
+
+                {selectedRunProgress ? (
+                  <section className="card manual-run-progress-card workbench-layer" data-testid="logs-run-progress">
+                    <div className="manual-run-progress-head">
+                      <div className="manual-run-progress-copy">
+                        <div className="workbench-section-eyebrow">执行进度</div>
+                        <div className="manual-run-progress-title">
+                          {selectedRunProgress.status === "success"
+                            ? "当前运行已完成"
+                            : selectedRunProgress.status === "failed"
+                              ? "当前运行已结束"
+                              : "当前运行正在抓取"}
+                        </div>
+                        <div className="kv">
+                          {selectedRunProgress.totalQueries > 0
+                            ? `已完成 ${selectedRunProgress.completedQueries} / ${selectedRunProgress.totalQueries} 个查询切片`
+                            : "等待返回查询总数"}
+                        </div>
+                      </div>
+                      <div className="manual-run-progress-side">
+                        <span className={`dashboard-summary-pill workbench-pill ${executionStatusTone(selectedRunProgress.status)}`}>
+                          {executionStatusLabel(selectedRunProgress.status)}
+                        </span>
+                        <div className="manual-run-progress-percent">{`${selectedRunProgress.progressPercent}%`}</div>
+                      </div>
+                    </div>
+                    <div
+                      className="manual-run-progress-track"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={selectedRunProgress.progressPercent}
+                    >
+                      <div className="manual-run-progress-fill" style={{ width: `${selectedRunProgress.progressPercent}%` }} />
+                    </div>
+                    <div className="manual-run-progress-meta">
+                      <span>{`查询 ${selectedRunProgress.completedQueries} / ${selectedRunProgress.totalQueries}`}</span>
+                      <span>{`raw ${selectedRunProgress.fetchedRaw}`}</span>
+                      <span>{`errors ${selectedRunProgress.queryErrors}`}</span>
+                    </div>
+                  </section>
+                ) : null}
 
                 <div className="logs-run-section-title">{UI_TEXT.runDetail}</div>
                 <div className="logs-detail-grid">

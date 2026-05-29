@@ -5,6 +5,8 @@ import os
 import re
 import shutil
 import subprocess
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -64,7 +66,47 @@ def _windows_subprocess_run_kwargs() -> dict[str, Any]:
     return {"creationflags": subprocess.CREATE_NO_WINDOW}
 
 
-def run_twitter_search(query: str, max_results: int, timeout_seconds: int = 60) -> dict[str, Any] | list[Any]:
+def _run_cli_command(
+    command: list[str],
+    *,
+    timeout_seconds: int,
+    cancel_event: threading.Event | None = None,
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env.setdefault("NO_COLOR", "1")
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        env=env,
+        **_windows_subprocess_run_kwargs(),
+    )
+    start = time.monotonic()
+    while True:
+        if cancel_event is not None and cancel_event.is_set():
+            process.kill()
+            stdout, stderr = process.communicate()
+            raise RuntimeError("cancelled")
+        try:
+            stdout, stderr = process.communicate(timeout=0.1)
+            break
+        except subprocess.TimeoutExpired:
+            if (time.monotonic() - start) >= timeout_seconds:
+                process.kill()
+                stdout, stderr = process.communicate()
+                raise subprocess.TimeoutExpired(command, timeout_seconds, output=stdout, stderr=stderr)
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+
+
+def run_twitter_search(
+    query: str,
+    max_results: int,
+    timeout_seconds: int = 60,
+    cancel_event: threading.Event | None = None,
+) -> dict[str, Any] | list[Any]:
     command = [
         find_twitter_cli(),
         "search",
@@ -75,19 +117,7 @@ def run_twitter_search(query: str, max_results: int, timeout_seconds: int = 60) 
         str(max_results),
         "--json",
     ]
-    env = os.environ.copy()
-    env.setdefault("PYTHONIOENCODING", "utf-8")
-    env.setdefault("NO_COLOR", "1")
-    completed = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-        env=env,
-        timeout=timeout_seconds,
-        **_windows_subprocess_run_kwargs(),
-    )
+    completed = _run_cli_command(command, timeout_seconds=timeout_seconds, cancel_event=cancel_event)
 
     output = completed.stdout.strip()
     if completed.returncode == 0 and output:
@@ -99,7 +129,7 @@ def run_twitter_search(query: str, max_results: int, timeout_seconds: int = 60) 
 
     fallback_error = ""
     try:
-        return run_xreach_search(query, max_results, timeout_seconds=timeout_seconds)
+        return run_xreach_search(query, max_results, timeout_seconds=timeout_seconds, cancel_event=cancel_event)
     except Exception as exc:  # noqa: BLE001
         fallback_error = str(exc)
 
@@ -112,7 +142,12 @@ def run_twitter_search(query: str, max_results: int, timeout_seconds: int = 60) 
     )
 
 
-def run_xreach_search(query: str, max_results: int, timeout_seconds: int = 60) -> dict[str, Any] | list[Any]:
+def run_xreach_search(
+    query: str,
+    max_results: int,
+    timeout_seconds: int = 60,
+    cancel_event: threading.Event | None = None,
+) -> dict[str, Any] | list[Any]:
     xreach_cli = find_xreach_cli()
     command = [
         xreach_cli,
@@ -128,19 +163,7 @@ def run_xreach_search(query: str, max_results: int, timeout_seconds: int = 60) -
     if auth_token and ct0:
         command.extend(["--auth-token", auth_token, "--ct0", ct0])
 
-    env = os.environ.copy()
-    env.setdefault("PYTHONIOENCODING", "utf-8")
-    env.setdefault("NO_COLOR", "1")
-    completed = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-        env=env,
-        timeout=timeout_seconds,
-        **_windows_subprocess_run_kwargs(),
-    )
+    completed = _run_cli_command(command, timeout_seconds=timeout_seconds, cancel_event=cancel_event)
     if completed.returncode != 0:
         raise RuntimeError(
             f"xreach search failed: {' '.join(command)}\n"
@@ -154,7 +177,12 @@ def run_xreach_search(query: str, max_results: int, timeout_seconds: int = 60) -
     payload = json.loads(output)
     if _is_twitter_error_payload(payload):
         raise RuntimeError(f"xreach returned error payload: {payload}")
-    return _enrich_xreach_search_payload(payload, xreach_cli=xreach_cli, timeout_seconds=timeout_seconds)
+    return _enrich_xreach_search_payload(
+        payload,
+        xreach_cli=xreach_cli,
+        timeout_seconds=timeout_seconds,
+        cancel_event=cancel_event,
+    )
 
 
 def _run_xreach_tweet_detail(
@@ -162,6 +190,7 @@ def _run_xreach_tweet_detail(
     *,
     xreach_cli: str,
     timeout_seconds: int,
+    cancel_event: threading.Event | None = None,
 ) -> dict[str, Any] | None:
     command = [
         xreach_cli,
@@ -175,19 +204,7 @@ def _run_xreach_tweet_detail(
     if auth_token and ct0:
         command.extend(["--auth-token", auth_token, "--ct0", ct0])
 
-    env = os.environ.copy()
-    env.setdefault("PYTHONIOENCODING", "utf-8")
-    env.setdefault("NO_COLOR", "1")
-    completed = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-        env=env,
-        timeout=timeout_seconds,
-        **_windows_subprocess_run_kwargs(),
-    )
+    completed = _run_cli_command(command, timeout_seconds=timeout_seconds, cancel_event=cancel_event)
     if completed.returncode != 0:
         return None
     output = completed.stdout.strip()
@@ -204,6 +221,7 @@ def _enrich_xreach_search_payload(
     *,
     xreach_cli: str,
     timeout_seconds: int,
+    cancel_event: threading.Event | None = None,
 ) -> dict[str, Any] | list[Any]:
     items = _extract_items(payload)
     if not items:
@@ -226,6 +244,7 @@ def _enrich_xreach_search_payload(
                 normalized_id,
                 xreach_cli=xreach_cli,
                 timeout_seconds=timeout_seconds,
+                cancel_event=cancel_event,
             )
         detail = detail_cache[normalized_id]
         if detail is None:

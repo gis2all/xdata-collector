@@ -16,6 +16,7 @@ python -m pytest -c tests/pytest.ini tests
 ## 约束
 
 - 涉及 `backend/twitter_cli.py` 的 CLI runtime 测试必须完整 mock `find_twitter_cli()` / `find_xreach_cli()`，不能依赖本机已安装的 `twitter-cli`、`xreach` 或用户 PATH。
+- 如果运行时实现经过 `_run_cli_command()` / `subprocess.Popen`，测试也必须 mock 对应层级，不能沿用旧的 `subprocess.run` 假设。
 - 默认按 GitHub Actions 这类干净环境来写测试；本机能通过但 CI 缺少 CLI 时失败，视为测试隔离不完整。
 
 ## 当前边界

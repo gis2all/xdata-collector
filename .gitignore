@@ -26,6 +26,7 @@ runtime/tmp/tests/
 config/workspace.json
 config/packs/*.json
 !config/packs/default-rule-set.json
+docs/
 
 # Local artifacts: keep diagrams, ignore the rest
 artifacts/*

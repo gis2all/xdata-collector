@@ -1,7 +1,7 @@
 import subprocess
 import unittest
 from pathlib import PureWindowsPath
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from backend.twitter_cli import (
     find_twitter_cli,
@@ -11,6 +11,23 @@ from backend.twitter_cli import (
     run_twitter_search,
     run_xreach_search,
 )
+
+
+def _completed_process(
+    *,
+    command: list[str] | None = None,
+    returncode: int = 0,
+    stdout: str = "",
+    stderr: str = "",
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(command or [], returncode, stdout, stderr)
+
+
+def _mock_process(*, returncode: int = 0, stdout: str = "", stderr: str = "") -> Mock:
+    process = Mock()
+    process.returncode = returncode
+    process.communicate.return_value = (stdout, stderr)
+    return process
 
 
 class NormalizeSearchPayloadTests(unittest.TestCase):
@@ -166,15 +183,13 @@ class TwitterCliRuntimeTests(unittest.TestCase):
 
     def test_search_runs_with_utf8_environment(self) -> None:
         with patch("backend.twitter_cli.find_twitter_cli", return_value="twitter.exe"), patch(
-            "backend.twitter_cli.subprocess.run"
-        ) as run_mock:
-            run_mock.return_value.returncode = 0
-            run_mock.return_value.stdout = "[]"
-            run_mock.return_value.stderr = ""
+            "backend.twitter_cli.subprocess.Popen"
+        ) as popen_mock:
+            popen_mock.return_value = _mock_process(returncode=0, stdout="[]")
 
             run_twitter_search("Binance Alpha", 5)
 
-        _, kwargs = run_mock.call_args
+        _, kwargs = popen_mock.call_args
         self.assertEqual(kwargs["env"]["PYTHONIOENCODING"], "utf-8")
         self.assertEqual(kwargs["env"]["NO_COLOR"], "1")
 
@@ -199,43 +214,33 @@ class TwitterCliRuntimeTests(unittest.TestCase):
             self.CREATE_NO_WINDOW_FLAG,
             create=True,
         ), patch(
-            "backend.twitter_cli.subprocess.run"
-        ) as run_mock:
-            run_mock.return_value.returncode = 0
-            run_mock.return_value.stdout = "[]"
-            run_mock.return_value.stderr = ""
+            "backend.twitter_cli.subprocess.Popen"
+        ) as popen_mock:
+            popen_mock.return_value = _mock_process(returncode=0, stdout="[]")
 
             run_twitter_search("Binance Alpha", 5)
 
-        _, kwargs = run_mock.call_args
+        _, kwargs = popen_mock.call_args
         self.assertEqual(kwargs["creationflags"], self.CREATE_NO_WINDOW_FLAG)
 
     def test_search_uses_twitter_cli_first_without_calling_xreach(self) -> None:
-        class _Completed:
-            def __init__(self, returncode: int, stdout: str, stderr: str = "") -> None:
-                self.returncode = returncode
-                self.stdout = stdout
-                self.stderr = stderr
-
         with patch("backend.twitter_cli.find_twitter_cli", return_value="twitter.exe"), patch(
             "backend.twitter_cli.find_xreach_cli", side_effect=AssertionError("xreach should not be called")
         ), patch(
-            "backend.twitter_cli.subprocess.run"
+            "backend.twitter_cli._run_cli_command"
         ) as run_mock:
-            run_mock.side_effect = [
-                _Completed(
-                    0,
-                    (
-                        '{"items":[{"id":"999","text":"claim now",'
-                        '"createdAt":"2026-04-12T00:00:00Z",'
-                        '"user":{"screenName":"Alpha","name":"Alpha Ops"},'
-                        '"viewCount":1,"replyCount":0,"retweetCount":0,"likeCount":0,'
-                        '"media":[{"type":"photo","url":"https://pbs.twimg.com/media/a.jpg"}],'
-                        '"urls":[{"expanded_url":"https://example.com"}]}]}'
-                    ),
-                    "",
+            run_mock.return_value = _completed_process(
+                command=["twitter.exe", "search"],
+                returncode=0,
+                stdout=(
+                    '{"items":[{"id":"999","text":"claim now",'
+                    '"createdAt":"2026-04-12T00:00:00Z",'
+                    '"user":{"screenName":"Alpha","name":"Alpha Ops"},'
+                    '"viewCount":1,"replyCount":0,"retweetCount":0,"likeCount":0,'
+                    '"media":[{"type":"photo","url":"https://pbs.twimg.com/media/a.jpg"}],'
+                    '"urls":[{"expanded_url":"https://example.com"}]}]}'
                 ),
-            ]
+            )
 
             payload = run_twitter_search("airdrop", 5)
 
@@ -246,32 +251,26 @@ class TwitterCliRuntimeTests(unittest.TestCase):
         self.assertEqual(run_mock.call_args.args[0][:2], ["twitter.exe", "search"])
 
     def test_search_falls_back_to_xreach_when_twitter_cli_fails(self) -> None:
-        class _Completed:
-            def __init__(self, returncode: int, stdout: str, stderr: str = "") -> None:
-                self.returncode = returncode
-                self.stdout = stdout
-                self.stderr = stderr
-
         with patch("backend.twitter_cli.find_twitter_cli", return_value="twitter.exe"), patch(
             "backend.twitter_cli.find_xreach_cli", return_value="xreach.cmd"
         ), patch(
-            "backend.twitter_cli.subprocess.run"
+            "backend.twitter_cli._run_cli_command"
         ) as run_mock:
             run_mock.side_effect = [
-                _Completed(
-                    1,
-                    '{"ok": false, "error": {"code": "not_found", "message": "404"}}',
-                    "",
+                _completed_process(
+                    command=["twitter.exe", "search"],
+                    returncode=1,
+                    stdout='{"ok": false, "error": {"code": "not_found", "message": "404"}}',
                 ),
-                _Completed(
-                    0,
-                    (
+                _completed_process(
+                    command=["xreach.cmd", "search"],
+                    returncode=0,
+                    stdout=(
                         '{"items":[{"id":"999","text":"claim now",'
                         '"createdAt":"2026-04-12T00:00:00Z",'
                         '"user":{"screenName":"Alpha","name":"Alpha Ops"},'
                         '"viewCount":1,"replyCount":0,"retweetCount":0,"likeCount":0}]}'
                     ),
-                    "",
                 ),
             ]
 
@@ -284,31 +283,26 @@ class TwitterCliRuntimeTests(unittest.TestCase):
         self.assertEqual(run_mock.call_args_list[1].args[0][:2], ["xreach.cmd", "search"])
 
     def test_xreach_fallback_enriches_sparse_search_items_with_tweet_detail(self) -> None:
-        class _Completed:
-            def __init__(self, returncode: int, stdout: str, stderr: str = "") -> None:
-                self.returncode = returncode
-                self.stdout = stdout
-                self.stderr = stderr
-
         with patch("backend.twitter_cli.find_twitter_cli", return_value="twitter.exe"), patch(
             "backend.twitter_cli.find_xreach_cli", return_value="xreach.cmd"
         ), patch(
-            "backend.twitter_cli.subprocess.run"
+            "backend.twitter_cli._run_cli_command"
         ) as run_mock:
             run_mock.side_effect = [
-                _Completed(
-                    0,
-                    (
+                _completed_process(
+                    command=["xreach.cmd", "search"],
+                    returncode=0,
+                    stdout=(
                         '{"items":[{"id":"999","text":"claim now",'
                         '"createdAt":"2026-04-12T00:00:00Z",'
                         '"user":{"restId":"42"},'
                         '"viewCount":10}]}'
                     ),
-                    "",
                 ),
-                _Completed(
-                    0,
-                    (
+                _completed_process(
+                    command=["xreach.cmd", "tweet", "999"],
+                    returncode=0,
+                    stdout=(
                         '{"id":"999","text":"claim now with media",'
                         '"createdAt":"2026-04-12T00:00:00Z",'
                         '"user":{"restId":"42","screenName":"Alpha","name":"Alpha Ops"},'
@@ -316,7 +310,6 @@ class TwitterCliRuntimeTests(unittest.TestCase):
                         '"media":[{"type":"photo","url":"https://pbs.twimg.com/media/a.jpg"}],'
                         '"lang":"en"}'
                     ),
-                    "",
                 ),
             ]
 
@@ -335,30 +328,29 @@ class TwitterCliRuntimeTests(unittest.TestCase):
         self.assertEqual(item["media"][0]["url"], "https://pbs.twimg.com/media/a.jpg")
 
     def test_xreach_fallback_keeps_sparse_item_when_detail_enrichment_fails(self) -> None:
-        class _Completed:
-            def __init__(self, returncode: int, stdout: str, stderr: str = "") -> None:
-                self.returncode = returncode
-                self.stdout = stdout
-                self.stderr = stderr
-
         with patch("backend.twitter_cli.find_twitter_cli", return_value="twitter.exe"), patch(
             "backend.twitter_cli.find_xreach_cli",
             return_value="xreach.cmd",
         ), patch(
-            "backend.twitter_cli.subprocess.run"
+            "backend.twitter_cli._run_cli_command"
         ) as run_mock:
             run_mock.side_effect = [
-                _Completed(
-                    1,
-                    '{"ok": false, "error": {"code": "not_found", "message": "404"}}',
-                    "",
+                _completed_process(
+                    command=["twitter.exe", "search"],
+                    returncode=1,
+                    stdout='{"ok": false, "error": {"code": "not_found", "message": "404"}}',
                 ),
-                _Completed(
-                    0,
-                    '{"items":[{"id":"999","text":"claim now","createdAt":"2026-04-12T00:00:00Z","user":{"restId":"42"}}]}',
-                    "",
+                _completed_process(
+                    command=["xreach.cmd", "search"],
+                    returncode=0,
+                    stdout='{"items":[{"id":"999","text":"claim now","createdAt":"2026-04-12T00:00:00Z","user":{"restId":"42"}}]}',
                 ),
-                _Completed(1, "", "detail failed"),
+                _completed_process(
+                    command=["xreach.cmd", "tweet", "999"],
+                    returncode=1,
+                    stdout="",
+                    stderr="detail failed",
+                ),
             ]
 
             payload = run_twitter_search("airdrop", 5)
@@ -368,26 +360,20 @@ class TwitterCliRuntimeTests(unittest.TestCase):
         self.assertEqual(payload["items"][0]["text"], "claim now")
 
     def test_xreach_does_not_enrich_when_only_media_and_urls_are_missing(self) -> None:
-        class _Completed:
-            def __init__(self, returncode: int, stdout: str, stderr: str = "") -> None:
-                self.returncode = returncode
-                self.stdout = stdout
-                self.stderr = stderr
-
         with patch("backend.twitter_cli.find_twitter_cli", return_value="twitter.exe"), patch(
             "backend.twitter_cli.find_xreach_cli", return_value="xreach.cmd"
         ), patch(
-            "backend.twitter_cli.subprocess.run"
+            "backend.twitter_cli._run_cli_command"
         ) as run_mock:
-            run_mock.return_value = _Completed(
-                0,
-                (
+            run_mock.return_value = _completed_process(
+                command=["twitter.exe", "search"],
+                returncode=0,
+                stdout=(
                     '{"items":[{"id":"999","text":"claim now",'
                     '"createdAt":"2026-04-12T00:00:00Z",'
                     '"user":{"screenName":"Alpha","name":"Alpha Ops"},'
                     '"viewCount":1,"replyCount":0,"retweetCount":0,"likeCount":0}]}'
                 ),
-                "",
             )
 
             payload = run_twitter_search("airdrop", 5)
@@ -396,12 +382,6 @@ class TwitterCliRuntimeTests(unittest.TestCase):
         self.assertEqual(payload["items"][0]["id"], "999")
 
     def test_windows_xreach_fallback_also_uses_create_no_window(self) -> None:
-        class _Completed:
-            def __init__(self, returncode: int, stdout: str, stderr: str = "") -> None:
-                self.returncode = returncode
-                self.stdout = stdout
-                self.stderr = stderr
-
         with patch("backend.twitter_cli.os.name", "nt"), patch(
             "backend.twitter_cli.find_twitter_cli",
             return_value="twitter.exe",
@@ -413,32 +393,30 @@ class TwitterCliRuntimeTests(unittest.TestCase):
             self.CREATE_NO_WINDOW_FLAG,
             create=True,
         ), patch(
-            "backend.twitter_cli.subprocess.run"
-        ) as run_mock:
-            run_mock.side_effect = [
-                _Completed(
-                    1,
-                    '{"ok": false, "error": {"code": "not_found", "message": "404"}}',
-                    "",
+            "backend.twitter_cli.subprocess.Popen"
+        ) as popen_mock:
+            popen_mock.side_effect = [
+                _mock_process(
+                    returncode=1,
+                    stdout='{"ok": false, "error": {"code": "not_found", "message": "404"}}',
                 ),
-                _Completed(
-                    0,
-                    (
+                _mock_process(
+                    returncode=0,
+                    stdout=(
                         '{"items":[{"id":"999","text":"claim now",'
                         '"createdAt":"2026-04-12T00:00:00Z",'
                         '"user":{"screenName":"Alpha","name":"Alpha Ops"},'
                         '"viewCount":1,"replyCount":0,"retweetCount":0,"likeCount":0,'
                         '"media":[{"type":"photo","url":"https://pbs.twimg.com/media/a.jpg"}]}]}'
                     ),
-                    "",
                 ),
             ]
 
             run_twitter_search("airdrop", 5)
 
-        self.assertEqual(run_mock.call_count, 2)
-        first_kwargs = run_mock.call_args_list[0].kwargs
-        second_kwargs = run_mock.call_args_list[1].kwargs
+        self.assertEqual(popen_mock.call_count, 2)
+        first_kwargs = popen_mock.call_args_list[0].kwargs
+        second_kwargs = popen_mock.call_args_list[1].kwargs
         self.assertEqual(first_kwargs["creationflags"], self.CREATE_NO_WINDOW_FLAG)
         self.assertEqual(second_kwargs["creationflags"], self.CREATE_NO_WINDOW_FLAG)
 

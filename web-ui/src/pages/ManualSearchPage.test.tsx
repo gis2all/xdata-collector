@@ -11,13 +11,14 @@ vi.mock("../api", () => ({
   deleteTaskPack: vi.fn(),
   runManualStart: vi.fn(),
   getRun: vi.fn(),
+  cancelRun: vi.fn(),
 }));
 
 vi.mock("../components/RuleSetEditor", () => ({
   RuleSetEditor: () => <div data-testid="rule-set-editor" />,
 }));
 
-import { createTaskPack, deleteTaskPack, getRun, getTaskPack, listTaskPacks, runManualStart } from "../api";
+import { cancelRun, createTaskPack, deleteTaskPack, getRun, getTaskPack, listTaskPacks, runManualStart } from "../api";
 
 const listTaskPacksMock = vi.mocked(listTaskPacks);
 const getTaskPackMock = vi.mocked(getTaskPack);
@@ -25,6 +26,7 @@ const createTaskPackMock = vi.mocked(createTaskPack);
 const deleteTaskPackMock = vi.mocked(deleteTaskPack);
 const runManualStartMock = vi.mocked(runManualStart);
 const getRunMock = vi.mocked(getRun);
+const cancelRunMock = vi.mocked(cancelRun);
 
 const taskPackSummary = {
   pack_name: "alpha-watch",
@@ -105,6 +107,7 @@ describe("ManualSearchPage", () => {
       },
     }) as any);
     deleteTaskPackMock.mockResolvedValue({ pack_name: "alpha-watch", deleted: 1 } as any);
+    cancelRunMock.mockResolvedValue({ id: 1, status: "cancelled", cancel_requested: true } as any);
   });
 
   it("renders the execution-first workbench structure and updates the execution rail after a run", async () => {
@@ -243,6 +246,57 @@ describe("ManualSearchPage", () => {
     expect(within(screen.getByTestId("manual-results-summary-card")).getByText("状态：执行成功")).toBeInTheDocument();
     expect(within(screen.getByTestId("manual-results-summary-card")).getByText("raw_total：1")).toBeInTheDocument();
     expect(within(screen.getByTestId("manual-results-summary-card")).getByText("matched_total：0")).toBeInTheDocument();
+  });
+
+  it("shows a stop action for a running manual run and dispatches cancel", async () => {
+    runManualStartMock.mockResolvedValue({ run_id: 1, status: "running" } as any);
+    getRunMock
+      .mockResolvedValueOnce({
+        id: 1,
+        job_id: null,
+        trigger_type: "manual",
+        status: "running",
+        started_at: "2026-04-14T00:00:00+00:00",
+        ended_at: null,
+        error_text: null,
+        stats_json: { total_queries: 24, completed_queries: 6, progress_percent: 25, fetched_raw: 12 },
+      } as any)
+      .mockResolvedValueOnce({
+        id: 1,
+        job_id: null,
+        trigger_type: "manual",
+        status: "cancelled",
+        started_at: "2026-04-14T00:00:00+00:00",
+        ended_at: "2026-04-14T00:01:00+00:00",
+        error_text: "已手动停止执行",
+        stats_json: { total_queries: 24, completed_queries: 6, progress_percent: 25, fetched_raw: 12, query_errors: 0 },
+        result_json: { run_id: 1, status: "cancelled", errors: ["已手动停止执行"] },
+      } as any);
+
+    render(<ManualSearchPage />);
+
+    await waitFor(() => {
+      expect(listTaskPacksMock).toHaveBeenCalled();
+    });
+
+    fireEvent.click(screen.getByTestId("manual-run-button"));
+
+    await waitFor(() => {
+      expect(getRunMock).toHaveBeenCalledWith(1);
+    });
+
+    expect(await screen.findByTestId("manual-stop-run-button")).toBeInTheDocument();
+    expect(screen.getByTestId("manual-stop-run-progress-button")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("manual-stop-run-button"));
+
+    await waitFor(() => {
+      expect(cancelRunMock).toHaveBeenCalledWith(1);
+    });
+    await waitFor(() => {
+      expect(screen.getByText("已手动停止执行")).toBeInTheDocument();
+    });
+    expect(screen.getByText("最近状态：已停止")).toBeInTheDocument();
   });
 
   it("imports a task pack and exports the current editor state", async () => {

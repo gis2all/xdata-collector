@@ -6,6 +6,8 @@ import { JobsPage } from "./JobsPage";
 vi.mock("../api", () => ({
   listJobs: vi.fn(),
   getJob: vi.fn(),
+  getRun: vi.fn(),
+  cancelRun: vi.fn(),
   createJob: vi.fn(),
   updateJob: vi.fn(),
   deleteJob: vi.fn(),
@@ -21,11 +23,13 @@ vi.mock("../api", () => ({
   deleteTaskPack: vi.fn(),
 }));
 
-import { batchJobs, createJob, createTaskPack, deleteTaskPack, getJob, getTaskPack, listJobs, listTaskPacks, runJobNow, toggleJob, updateJob, updateTaskPack } from "../api";
+import { batchJobs, cancelRun, createJob, createTaskPack, deleteTaskPack, getJob, getRun, getTaskPack, listJobs, listTaskPacks, runJobNow, toggleJob, updateJob, updateTaskPack } from "../api";
 
 const listJobsMock = vi.mocked(listJobs);
 const listTaskPacksMock = vi.mocked(listTaskPacks);
 const getJobMock = vi.mocked(getJob);
+const getRunMock = vi.mocked(getRun);
+const cancelRunMock = vi.mocked(cancelRun);
 const getTaskPackMock = vi.mocked(getTaskPack);
 const createJobMock = vi.mocked(createJob);
 const createTaskPackMock = vi.mocked(createTaskPack);
@@ -35,6 +39,7 @@ const batchJobsMock = vi.mocked(batchJobs);
 const runJobNowMock = vi.mocked(runJobNow);
 const toggleJobMock = vi.mocked(toggleJob);
 const updateJobMock = vi.mocked(updateJob);
+const JOBS_COLUMN_WIDTHS_KEY = "jobs.columnWidths.v1";
 
 const packFile = {
   version: 1,
@@ -89,6 +94,7 @@ function makeJob(id: number, overrides: Record<string, unknown> = {}) {
     rule_set_summary: { id: 1, name: "Default Rule Set", description: "builtin", version: 1, is_builtin: true },
     pack_name: `job-${id}`,
     pack_path: `config/packs/job-${id}.json`,
+    group_name: null,
     tags: [],
     enabled: 1,
     next_run_at: "2026-04-14T00:00:00+00:00",
@@ -163,7 +169,19 @@ describe("JobsPage", () => {
       succeeded_ids: [],
       failed_items: [],
     } as any);
-    runJobNowMock.mockResolvedValue({} as any);
+    runJobNowMock.mockResolvedValue({ run_id: 701, status: "running", job_id: 7 } as any);
+    cancelRunMock.mockResolvedValue({ id: 701, status: "cancelled", cancel_requested: true } as any);
+    getRunMock.mockResolvedValue({
+      id: 701,
+      job_id: 7,
+      trigger_type: "auto",
+      status: "success",
+      started_at: "2026-04-14T00:00:00+00:00",
+      ended_at: "2026-04-14T00:05:00+00:00",
+      error_text: null,
+      stats_json: { total_queries: 24, completed_queries: 24, progress_percent: 100, fetched_raw: 15, query_errors: 0 },
+      result_json: null,
+    } as any);
     toggleJobMock.mockImplementation(async (id: number, enabled: boolean) => makeJob(id, { enabled: enabled ? 1 : 0 }) as any);
     createJobMock.mockResolvedValue({
       id: 10,
@@ -254,6 +272,41 @@ describe("JobsPage", () => {
     expect(within(screen.getByTestId("jobs-table-wrap")).queryByText("本页全选")).not.toBeInTheDocument();
   });
 
+  it("hides the action column and resizes adjacent job columns", async () => {
+    listJobsMock.mockResolvedValue({
+      page: 1,
+      page_size: 10,
+      total: 1,
+      items: [makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" } })],
+    } as any);
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("jobs-table-wrap")).getByText("任务")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole("columnheader", { name: "操作" })).not.toBeInTheDocument();
+
+    const taskHeader = within(screen.getByTestId("jobs-table-wrap")).getByText("任务").closest("th") as HTMLElement;
+    const packHeader = within(screen.getByTestId("jobs-table-wrap")).getByText("任务包").closest("th") as HTMLElement;
+    const taskResizer = screen.getByRole("separator", { name: "resize-job-column-name" });
+
+    expect(taskHeader).toHaveStyle({ width: "220px" });
+    expect(packHeader).toHaveStyle({ width: "220px" });
+
+    fireEvent.mouseDown(taskResizer, { clientX: 220 });
+    fireEvent.mouseMove(window, { clientX: 300 });
+
+    expect(taskHeader).toHaveStyle({ width: "300px" });
+    expect(packHeader).toHaveStyle({ width: "140px" });
+
+    fireEvent.mouseUp(window);
+
+    expect(window.localStorage.getItem(JOBS_COLUMN_WIDTHS_KEY)).toContain("\"name\":300");
+    expect(window.localStorage.getItem(JOBS_COLUMN_WIDTHS_KEY)).toContain("\"pack\":140");
+  });
+
   it("renders task tags as shared colored pills in the jobs table", async () => {
     listJobsMock.mockResolvedValueOnce({
       page: 1,
@@ -268,18 +321,22 @@ describe("JobsPage", () => {
     render(<JobsPage />);
 
     await waitFor(() => {
-      expect(screen.getByRole("columnheader", { name: "任务标签" })).toBeInTheDocument();
+      expect(within(screen.getByTestId("jobs-table-wrap")).getByText("任务标签")).toBeInTheDocument();
     });
 
+    const columnHeaders = screen.getAllByRole("columnheader");
+    const tagsColumnIndex = columnHeaders.findIndex((cell) => cell.textContent?.includes("任务标签"));
+    expect(tagsColumnIndex).toBeGreaterThanOrEqual(0);
+
     const taggedRow = screen.getByText("tagged-job").closest("tr") as HTMLTableRowElement;
-    const taggedCell = taggedRow.querySelectorAll("td")[3] as HTMLElement;
+    const taggedCell = taggedRow.querySelectorAll("td")[tagsColumnIndex] as HTMLElement;
     const taggedPills = taggedCell.querySelectorAll(".tag-pill");
     expect(taggedCell.querySelector(".tag-pills")).toBeInTheDocument();
     expect(Array.from(taggedPills).map((pill) => pill.textContent)).toEqual(["defi", "wallet"]);
     expect(taggedCell).not.toHaveTextContent("defi, wallet");
 
     const emptyRow = screen.getByText("empty-tags-job").closest("tr") as HTMLTableRowElement;
-    const emptyTagsCell = emptyRow.querySelectorAll("td")[3] as HTMLElement;
+    const emptyTagsCell = emptyRow.querySelectorAll("td")[tagsColumnIndex] as HTMLElement;
     expect(emptyTagsCell).toHaveTextContent("--");
     expect(emptyTagsCell.querySelector(".tag-pill")).not.toBeInTheDocument();
   });
@@ -386,10 +443,10 @@ describe("JobsPage", () => {
     });
 
     expect(screen.getByRole("heading", { name: "自动任务" }).closest("section")).toHaveClass("workbench-page-header");
-    expect(screen.getByRole("columnheader", { name: "任务包" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "任务标签" })).toBeInTheDocument();
-    expect(screen.queryByRole("columnheader", { name: "规则集" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("columnheader", { name: "查询摘要" })).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("jobs-table-wrap")).getByText("任务包")).toBeInTheDocument();
+    expect(within(screen.getByTestId("jobs-table-wrap")).getByText("任务标签")).toBeInTheDocument();
+    expect(within(screen.getByTestId("jobs-table-wrap")).queryByText("规则集")).not.toBeInTheDocument();
+    expect(within(screen.getByTestId("jobs-table-wrap")).queryByText("查询摘要")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("create-job-button"));
     expect(screen.getByLabelText("submit-job").closest(".jobs-workspace")).toHaveClass("jobs-workspace-create");
@@ -488,6 +545,68 @@ describe("JobsPage", () => {
 
     const payload = createJobMock.mock.calls[0]?.[0] as any;
     expect(payload.tags).toEqual(["btc", "eth"]);
+  });
+
+  it("saves a trimmed group_name without mixing it into task-pack tags", async () => {
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(listJobsMock).toHaveBeenCalled();
+    });
+
+    fireEvent.click(screen.getByTestId("create-job-button"));
+    fireEvent.change(screen.getByLabelText("job-name"), { target: { value: "scheduled-alpha" } });
+    fireEvent.change(screen.getByLabelText("job-group-name"), { target: { value: "  Alpha Ops  " } });
+    fireEvent.change(screen.getByLabelText("job-pack-select"), { target: { value: "alpha-watch" } });
+    fireEvent.click(screen.getByLabelText("job-load-pack"));
+
+    await waitFor(() => {
+      expect(getTaskPackMock).toHaveBeenCalledWith("alpha-watch");
+    });
+
+    fireEvent.click(screen.getByLabelText("submit-job"));
+
+    await waitFor(() => {
+      expect(createJobMock).toHaveBeenCalled();
+    });
+
+    const payload = createJobMock.mock.calls[0]?.[0] as any;
+    expect(payload.group_name).toBe("Alpha Ops");
+    expect(payload.tags).toEqual(["defi", "wallet"]);
+  });
+
+  it("renders the group column and lets an existing job clear group_name", async () => {
+    listJobsMock.mockResolvedValue({
+      page: 1,
+      page_size: 10,
+      total: 1,
+      items: [makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" }, group_name: "Alpha Ops", tags: ["defi"] })],
+    } as any);
+    getJobMock.mockResolvedValue(makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" }, group_name: "Alpha Ops", tags: ["defi"] }) as any);
+    updateJobMock.mockResolvedValue(makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" }, group_name: null, tags: ["defi"] }) as any);
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("jobs-table-wrap")).getByText("分组")).toBeInTheDocument();
+      expect(within(screen.getByTestId("jobs-table-wrap")).getByText("Alpha Ops")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("alpha-watch-job"));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("job-group-name")).toHaveValue("Alpha Ops");
+    });
+
+    fireEvent.change(screen.getByLabelText("job-group-name"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存任务" }));
+
+    await waitFor(() => {
+      expect(updateJobMock).toHaveBeenCalled();
+    });
+
+    const payload = updateJobMock.mock.calls[0]?.[1] as any;
+    expect(payload.group_name).toBeNull();
   });
 
   it("keeps the list tools focused on filters and bulk actions without a summary banner", async () => {
@@ -656,18 +775,17 @@ describe("JobsPage", () => {
 
     expect(screen.queryByRole("button", { name: "\u67e5\u770b" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "\u7f16\u8f91" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "\u6253\u5f00" })).toBeInTheDocument();
-    expect(screen.getByTestId("job-row-open-7")).toHaveClass("workbench-secondary-action");
+    expect(screen.queryByRole("columnheader", { name: "操作" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "\u5173\u95ed" }));
-    fireEvent.click(screen.getByRole("button", { name: "\u6253\u5f00" }));
+    fireEvent.click(row!);
 
     await waitFor(() => {
       expect(screen.getByTestId("jobs-primary-actions")).toBeInTheDocument();
     });
   });
 
-  it("shows enabled row actions with run-now and stop label", async () => {
+  it("shows workspace actions with run-now and stop label", async () => {
     listJobsMock.mockResolvedValue({
       page: 1,
       page_size: 10,
@@ -683,13 +801,15 @@ describe("JobsPage", () => {
 
     const row = screen.getAllByText("alpha-watch-job")[0]?.closest("tr");
     expect(row).not.toBeNull();
+    fireEvent.click(row!);
 
-    const actionGroup = row?.querySelector(".jobs-row-actions") as HTMLElement | null;
-    expect(actionGroup).not.toBeNull();
-    expect(actionGroup).toHaveClass("table-actions", "jobs-row-actions");
+    await waitFor(() => {
+      expect(screen.getByTestId("jobs-primary-actions")).toBeInTheDocument();
+    });
 
-    const runButton = within(actionGroup as HTMLElement).getByRole("button", { name: "立即运行" });
-    const toggleButton = within(actionGroup as HTMLElement).getByRole("button", { name: "停用任务" });
+    const actionGroup = screen.getByTestId("jobs-primary-actions");
+    const runButton = within(actionGroup).getByRole("button", { name: "立即运行" });
+    const toggleButton = within(actionGroup).getByRole("button", { name: "停用任务" });
 
     expect(runButton).not.toBeDisabled();
 
@@ -699,6 +819,190 @@ describe("JobsPage", () => {
     });
   });
 
+  it("shows live progress for an active auto run in the list and current-task workspace", async () => {
+    listJobsMock.mockResolvedValue({
+      page: 1,
+      page_size: 10,
+      total: 1,
+      items: [makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" } })],
+    } as any);
+    getJobMock.mockResolvedValue(makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" } }) as any);
+    runJobNowMock.mockResolvedValue({ run_id: 701, status: "running", job_id: 7 } as any);
+    getRunMock
+      .mockResolvedValueOnce({
+        id: 701,
+        job_id: 7,
+        trigger_type: "auto",
+        status: "running",
+        started_at: "2026-04-14T00:00:00+00:00",
+        ended_at: null,
+        error_text: null,
+        stats_json: { total_queries: 24, completed_queries: 10, progress_percent: 42, fetched_raw: 13, query_errors: 1 },
+        result_json: null,
+      } as any)
+      .mockResolvedValue({
+        id: 701,
+        job_id: 7,
+        trigger_type: "auto",
+        status: "success",
+        started_at: "2026-04-14T00:00:00+00:00",
+        ended_at: "2026-04-14T00:05:00+00:00",
+        error_text: null,
+        stats_json: { total_queries: 24, completed_queries: 24, progress_percent: 100, fetched_raw: 18, query_errors: 1 },
+        result_json: null,
+      } as any);
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("alpha-watch-job").length).toBeGreaterThan(0);
+    });
+
+    const row = screen.getAllByText("alpha-watch-job")[0]?.closest("tr");
+    expect(row).not.toBeNull();
+    fireEvent.click(row!);
+
+    await waitFor(() => {
+      expect(screen.getByText("当前任务")).toBeInTheDocument();
+    });
+
+    const runButton = screen.getAllByRole("button", { name: "立即运行" })[0];
+    fireEvent.click(runButton);
+
+    await waitFor(() => {
+      expect(runJobNowMock).toHaveBeenCalledWith(7);
+    });
+
+    await waitFor(() => {
+      expect(getRunMock).toHaveBeenCalledWith(701);
+    });
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("job-run-progress")).getByText("42%")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("正在加载任务...")).not.toBeInTheDocument();
+    expect(screen.getAllByText((_, node) => node?.textContent === "running 42%").length).toBeGreaterThan(0);
+    const highlightedPercent = screen.getAllByText("42%").find((node) => node.classList.contains("jobs-running-percent"));
+    expect(highlightedPercent).toBeTruthy();
+    expect(within(screen.getByTestId("job-run-progress")).getByText("已完成 10 / 24 个查询切片")).toBeInTheDocument();
+    expect(within(screen.getByTestId("job-run-progress")).getByText("raw 13")).toBeInTheDocument();
+    expect(within(screen.getByTestId("job-run-progress")).getByText("errors 1")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("job-run-progress")).getByText("100%")).toBeInTheDocument();
+    }, { timeout: 2000 });
+    expect(screen.getByText("最近运行：success")).toBeInTheDocument();
+  });
+
+  it("shows a stop action for a running auto job and dispatches cancel", async () => {
+    listJobsMock.mockResolvedValue({
+      page: 1,
+      page_size: 10,
+      total: 1,
+      items: [makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" } })],
+    } as any);
+    getJobMock.mockResolvedValue(makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" } }) as any);
+    runJobNowMock.mockResolvedValue({ run_id: 701, status: "running", job_id: 7 } as any);
+    getRunMock.mockResolvedValue({
+      id: 701,
+      job_id: 7,
+      trigger_type: "auto",
+      status: "running",
+      started_at: "2026-04-14T00:00:00+00:00",
+      ended_at: null,
+      error_text: null,
+      stats_json: { total_queries: 24, completed_queries: 10, progress_percent: 42, fetched_raw: 13, query_errors: 1 },
+      result_json: null,
+    } as any);
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText("alpha-watch-job").length).toBeGreaterThan(0);
+    });
+
+    const row = screen.getAllByText("alpha-watch-job")[0]?.closest("tr");
+    expect(row).not.toBeNull();
+    fireEvent.click(row!);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("jobs-primary-actions")).toBeInTheDocument();
+    });
+
+    fireEvent.click(within(screen.getByTestId("jobs-primary-actions")).getByRole("button", { name: "立即运行" }));
+
+    await waitFor(() => {
+      expect(getRunMock).toHaveBeenCalledWith(701);
+    });
+
+    fireEvent.click((await screen.findAllByRole("button", { name: "停止运行" }))[0]);
+
+    await waitFor(() => {
+      expect(cancelRunMock).toHaveBeenCalledWith(701);
+    });
+  });
+
+  it("hydrates and polls a running scheduled job from the latest run snapshot", async () => {
+    listJobsMock.mockResolvedValue({
+      page: 1,
+      page_size: 10,
+      total: 1,
+      items: [
+        makeJob(12, {
+          name: "scheduled-running-job",
+          last_run_id: 912,
+          last_run_status: "running",
+          last_run_started_at: "2026-04-14T00:00:00+00:00",
+          last_run_stats: { total_queries: 24, completed_queries: 6, progress_percent: 25, fetched_raw: 8, query_errors: 0 },
+        }),
+      ],
+    } as any);
+    getJobMock.mockResolvedValue(
+      makeJob(12, {
+        name: "scheduled-running-job",
+        last_run_id: 912,
+        last_run_status: "running",
+        last_run_started_at: "2026-04-14T00:00:00+00:00",
+        last_run_stats: { total_queries: 24, completed_queries: 6, progress_percent: 25, fetched_raw: 8, query_errors: 0 },
+      }) as any,
+    );
+    getRunMock.mockResolvedValue({
+      id: 912,
+      job_id: 12,
+      trigger_type: "auto",
+      status: "running",
+      started_at: "2026-04-14T00:00:00+00:00",
+      ended_at: null,
+      error_text: null,
+      stats_json: { total_queries: 24, completed_queries: 9, progress_percent: 38, fetched_raw: 11, query_errors: 0 },
+      result_json: null,
+    } as any);
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("scheduled-running-job")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText((_, node) => node?.textContent === "running 25%")).toBeInTheDocument();
+
+    const row = screen.getByText("scheduled-running-job").closest("tr");
+    expect(row).not.toBeNull();
+    fireEvent.click(row!);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("job-run-progress")).getByText("25%")).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(getRunMock).toHaveBeenCalledWith(912);
+    }, { timeout: 2000 });
+    await waitFor(() => {
+      expect(screen.getAllByText((_, node) => node?.textContent === "running 38%").length).toBeGreaterThan(0);
+    }, { timeout: 2000 });
+    expect(within(screen.getByTestId("job-run-progress")).getByText("已完成 9 / 24 个查询切片")).toBeInTheDocument();
+  });
+
   it("shows disabled run-now and enable control for stopped jobs", async () => {
     listJobsMock.mockResolvedValue({
       page: 1,
@@ -706,6 +1010,7 @@ describe("JobsPage", () => {
       total: 1,
       items: [makeJob(8, { name: "stopped-job", enabled: 0, next_run_at: null })],
     } as any);
+    getJobMock.mockResolvedValue(makeJob(8, { name: "stopped-job", enabled: 0, next_run_at: null }) as any);
 
     render(<JobsPage />);
 
@@ -715,12 +1020,15 @@ describe("JobsPage", () => {
 
     const row = screen.getAllByText("stopped-job")[0]?.closest("tr");
     expect(row).not.toBeNull();
+    fireEvent.click(row!);
 
-    const actionGroup = row?.querySelector(".jobs-row-actions") as HTMLElement | null;
-    expect(actionGroup).not.toBeNull();
+    await waitFor(() => {
+      expect(screen.getByTestId("jobs-primary-actions")).toBeInTheDocument();
+    });
 
-    const runButton = within(actionGroup as HTMLElement).getByRole("button", { name: "立即运行" });
-    const toggleButton = within(actionGroup as HTMLElement).getByRole("button", { name: "启用任务" });
+    const actionGroup = screen.getByTestId("jobs-primary-actions");
+    const runButton = within(actionGroup).getByRole("button", { name: "立即运行" });
+    const toggleButton = within(actionGroup).getByRole("button", { name: "启用任务" });
 
     expect(runButton).toBeDisabled();
 
@@ -733,13 +1041,16 @@ describe("JobsPage", () => {
     });
   });
 
-  it("keeps deleted row actions limited to open and restore", async () => {
+  it("shows restore-only workspace actions for deleted jobs", async () => {
     listJobsMock.mockResolvedValueOnce({
       page: 1,
       page_size: 10,
       total: 1,
       items: [makeJob(9, { name: "deleted-job", enabled: 0, deleted_at: "2026-04-14T00:00:00+00:00" })],
     } as any);
+    getJobMock.mockResolvedValue(
+      makeJob(9, { name: "deleted-job", enabled: 0, deleted_at: "2026-04-14T00:00:00+00:00" }) as any,
+    );
 
     render(<JobsPage />);
 
@@ -749,15 +1060,18 @@ describe("JobsPage", () => {
 
     const row = screen.getAllByText("deleted-job")[0]?.closest("tr");
     expect(row).not.toBeNull();
+    fireEvent.click(row!);
 
-    const actionGroup = row?.querySelector(".jobs-row-actions") as HTMLElement | null;
-    expect(actionGroup).not.toBeNull();
+    await waitFor(() => {
+      expect(screen.getByTestId("jobs-primary-actions")).toBeInTheDocument();
+    });
 
-    expect(within(actionGroup as HTMLElement).getByRole("button", { name: "打开" })).toBeInTheDocument();
-    expect(within(actionGroup as HTMLElement).getByRole("button", { name: "恢复" })).toBeInTheDocument();
-    expect(within(actionGroup as HTMLElement).queryByRole("button", { name: "立即运行" })).not.toBeInTheDocument();
-    expect(within(actionGroup as HTMLElement).queryByRole("button", { name: "启用任务" })).not.toBeInTheDocument();
-    expect(within(actionGroup as HTMLElement).queryByRole("button", { name: "停用任务" })).not.toBeInTheDocument();
+    const actionGroup = screen.getByTestId("jobs-primary-actions");
+    expect(within(actionGroup).getByRole("button", { name: "恢复任务" })).toBeInTheDocument();
+    expect(within(actionGroup).getByRole("button", { name: "彻底删除" })).toBeInTheDocument();
+    expect(within(actionGroup).queryByRole("button", { name: "立即运行" })).not.toBeInTheDocument();
+    expect(within(actionGroup).queryByRole("button", { name: "启用任务" })).not.toBeInTheDocument();
+    expect(within(actionGroup).queryByRole("button", { name: "停用任务" })).not.toBeInTheDocument();
   });
 
 

@@ -301,6 +301,33 @@ class DesktopServiceTests(unittest.TestCase):
         toggled = self.service.toggle_job(int(job["id"]), False)
         self.assertEqual(toggled["enabled"], 0)
 
+    def test_job_group_name_round_trips_and_is_searchable(self) -> None:
+        default_rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        created = self.service.create_job(
+            {
+                "name": "alpha-watch",
+                "group_name": "  Alpha Ops  ",
+                "interval_minutes": 30,
+                "enabled": True,
+                "rule_set_id": default_rule_set_id,
+                "search_spec": {
+                    "all_keywords": ["alpha"],
+                    "language_mode": "en",
+                    "days_filter": {"mode": "lte", "max": 1},
+                },
+            }
+        )
+
+        self.assertEqual(created["group_name"], "Alpha Ops")
+        self.assertEqual(self.service.list_jobs(query="alpha ops")["total"], 1)
+
+        updated = self.service.update_job(int(created["id"]), {"group_name": "Core"})
+        self.assertEqual(updated["group_name"], "Core")
+
+        cleared = self.service.update_job(int(created["id"]), {"group_name": ""})
+        self.assertIsNone(cleared["group_name"])
+        self.assertIsNone(self.service.get_job(int(created["id"]))["group_name"])
+
     def test_list_update_delete_restore_and_purge_job(self) -> None:
         default_rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
         job = self.service.create_job(
@@ -549,7 +576,7 @@ class DesktopServiceTests(unittest.TestCase):
         recent_created_at = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
         old_created_at = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
 
-        def fake_search(query: str, _max_results: int):
+        def fake_search(query: str, _max_results: int, cancel_event=None):
             return [
                 {
                     "id": "1001",
@@ -913,7 +940,7 @@ class DesktopServiceTests(unittest.TestCase):
     @patch("backend.collector_service.evaluate_rule_set")
     @patch("backend.collector_service.normalize_search_payload")
     @patch("backend.collector_service.run_twitter_search")
-    def test_run_job_now_triggers_auto_dedupe_after_successful_store(
+    def test_run_job_now_starts_async_auto_run_and_triggers_auto_dedupe_after_successful_store(
         self,
         mock_search,
         mock_normalize_payload,
@@ -937,12 +964,95 @@ class DesktopServiceTests(unittest.TestCase):
         with patch.object(self.service, "dedupe_items", wraps=self.service.dedupe_items) as mock_dedupe:
             report = self.service.run_job_now(int(job["id"]))
 
-        self.assertEqual(report["status"], "success")
-        self.assertIn("dedupe_groups", report["stats"])
+            self.assertEqual(report["status"], "running")
+            self.assertGreater(int(report["run_id"]), 0)
+
+            deadline = time.time() + 5
+            final_run = None
+            while time.time() < deadline:
+                current = self.service.get_run(int(report["run_id"]))
+                if current.get("status") != "running":
+                    final_run = current
+                    break
+                time.sleep(0.05)
+
+        self.assertIsNotNone(final_run)
+        assert final_run is not None
+        self.assertEqual(final_run["status"], "success")
+        self.assertEqual(final_run["job_id"], int(job["id"]))
+        self.assertEqual(final_run["trigger_type"], "auto")
+        self.assertIn("dedupe_groups", final_run["stats_json"])
         self.assertEqual(
             [call.kwargs.get("table", "curated") for call in mock_dedupe.call_args_list],
             ["curated"],
         )
+
+    @patch("backend.collector_service.run_twitter_search")
+    def test_run_job_now_updates_progress_while_running(self, mock_search) -> None:
+        recent_created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+
+        def fake_search(query: str, _max_results: int):
+            time.sleep(0.05)
+            return [
+                {
+                    "id": f"tweet-{abs(hash(query)) % 100000}",
+                    "text": "Alpha progress https://example.com",
+                    "author": {"screenName": "galxe"},
+                    "createdAtISO": recent_created_at,
+                    "metrics": {"views": 200, "likes": 10, "replies": 1, "retweets": 0},
+                    "lang": "en",
+                    "url": "https://x.com/galxe/status/1001",
+                }
+            ]
+
+        mock_search.side_effect = fake_search
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        job = self.service.create_job(
+            {
+                "name": "alpha-auto-progress",
+                "interval_minutes": 30,
+                "enabled": True,
+                "rule_set_id": rule_set_id,
+                "search_spec": {
+                    "all_keywords": ["alpha"],
+                    "language_mode": "zh_en",
+                    "days_filter": {"mode": "lte", "max": 1},
+                    "metric_filters": {
+                        "views": {"mode": "any"},
+                        "likes": {"mode": "any"},
+                        "replies": {"mode": "any"},
+                        "retweets": {"mode": "any"},
+                    },
+                    "metric_filters_explicit": True,
+                },
+            }
+        )
+
+        started = self.service.run_job_now(int(job["id"]))
+
+        run_id = int(started["run_id"])
+        observed_running_progress = False
+        deadline = time.time() + 5
+        final_run = None
+        while time.time() < deadline:
+            current = self.service.get_run(run_id)
+            stats = current.get("stats_json") or {}
+            if current.get("status") == "running" and int(stats.get("completed_queries", 0) or 0) > 0:
+                observed_running_progress = True
+            if current.get("status") != "running":
+                final_run = current
+                break
+            time.sleep(0.05)
+
+        self.assertTrue(observed_running_progress)
+        self.assertIsNotNone(final_run)
+        assert final_run is not None
+        self.assertEqual(final_run["status"], "success")
+        self.assertEqual(final_run["trigger_type"], "auto")
+        self.assertEqual(final_run["job_id"], int(job["id"]))
+        self.assertEqual(final_run["stats_json"]["total_queries"], 24)
+        self.assertEqual(final_run["stats_json"]["completed_queries"], 24)
+        self.assertEqual(final_run["stats_json"]["progress_percent"], 100)
 
     def test_list_runs_returns_recent_records_with_pagination(self) -> None:
         first = self.service._create_run(job_id=None, trigger_type="manual")
@@ -1020,6 +1130,101 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(final_run["stats_json"]["total_queries"], 24)
         self.assertEqual(final_run["stats_json"]["completed_queries"], 24)
         self.assertEqual(final_run["stats_json"]["progress_percent"], 100)
+
+    @patch("backend.collector_service.run_twitter_search")
+    def test_cancel_run_stops_manual_run_and_marks_it_cancelled(self, mock_search) -> None:
+        recent_created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        started_queries: list[str] = []
+
+        def fake_search(query: str, _max_results: int, timeout_seconds: int = 60, cancel_event=None):
+            started_queries.append(query)
+            deadline = time.time() + 1.0
+            while time.time() < deadline:
+                if cancel_event is not None and cancel_event.is_set():
+                    raise RuntimeError("cancelled")
+                time.sleep(0.01)
+            return [
+                {
+                    "id": f"tweet-{abs(hash(query)) % 100000}",
+                    "text": "Alpha progress https://example.com",
+                    "author": {"screenName": "galxe"},
+                    "createdAtISO": recent_created_at,
+                    "metrics": {"views": 200, "likes": 10, "replies": 1, "retweets": 0},
+                    "lang": "en",
+                    "url": "https://x.com/galxe/status/1001",
+                }
+            ]
+
+        mock_search.side_effect = fake_search
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        started = self.service.start_manual_run(
+            {
+                "search_spec": {
+                    "all_keywords": ["alpha"],
+                    "language_mode": "zh_en",
+                    "days_filter": {"mode": "lte", "max": 1},
+                    "metric_filters": {
+                        "views": {"mode": "any"},
+                        "likes": {"mode": "any"},
+                        "replies": {"mode": "any"},
+                        "retweets": {"mode": "any"},
+                    },
+                    "metric_filters_explicit": True,
+                },
+                "rule_set_id": rule_set_id,
+            }
+        )
+
+        run_id = int(started["run_id"])
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            current = self.service.get_run(run_id)
+            stats = current.get("stats_json") or {}
+            if current.get("status") == "running" and int(stats.get("completed_queries", 0) or 0) >= 1:
+                break
+            time.sleep(0.05)
+
+        cancelled = self.service.cancel_run(run_id)
+        self.assertTrue(cancelled["cancel_requested"])
+
+        final_run = None
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            current = self.service.get_run(run_id)
+            if current.get("status") != "running":
+                final_run = current
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(final_run)
+        assert final_run is not None
+        self.assertEqual(final_run["status"], "cancelled")
+        self.assertGreater(len(started_queries), 0)
+        self.assertLess(int(final_run["stats_json"].get("completed_queries", 0) or 0), int(final_run["stats_json"].get("total_queries", 0) or 0))
+        self.assertIn("cancel", str(final_run.get("error_text") or "").lower())
+
+    def test_get_run_reconciles_orphaned_running_run_to_cancelled(self) -> None:
+        run_id = self.service._create_run(job_id=None, trigger_type="manual")
+        self.service.runtime_store.finish_run(
+            run_id,
+            status="running",
+            stats={},
+            error_text="",
+            result=None,
+            ended_at=None,
+        )
+        runs = self.service.runtime_store._load_runs()
+        for item in runs:
+            if int(item.get("id") or 0) == run_id:
+                item["status"] = "running"
+                item["ended_at"] = None
+                item["owner_pid"] = 999999
+        self.service.runtime_store._save_runs(runs)
+        orphaned = self.service.get_run(run_id)
+
+        self.assertEqual(orphaned["status"], "cancelled")
+        self.assertIsNotNone(orphaned["ended_at"])
+        self.assertIn("owner process", str(orphaned.get("error_text") or "").lower())
 
     def test_get_runtime_logs_reads_current_log_snapshots(self) -> None:
         from backend import collector_service as collector_service_module
@@ -1233,10 +1438,21 @@ class DesktopServiceTests(unittest.TestCase):
             }
         )
 
-        report = self.service.run_job_now(int(job["id"]))
+        started = self.service.run_job_now(int(job["id"]))
+        deadline = time.time() + 5
+        final_run = None
+        while time.time() < deadline:
+            current = self.service.get_run(int(started["run_id"]))
+            if current.get("status") != "running":
+                final_run = current
+                break
+            time.sleep(0.05)
 
         self.assertEqual(job["tags"], ["onchain", "airdrop"])
-        self.assertEqual(report["tags"], ["onchain", "airdrop"])
+        self.assertIsNotNone(final_run)
+        assert final_run is not None
+        result_json = final_run.get("result_json") or {}
+        self.assertEqual(result_json["tags"], ["onchain", "airdrop"])
         self.assertEqual(self.service.list_items(table="raw")["items"][0]["tags"], ["onchain", "airdrop"])
         self.assertEqual(self.service.list_items(table="curated")["items"][0]["tags"], ["onchain", "airdrop"])
 
@@ -1450,6 +1666,121 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(page["items"][0]["likes"], 9)
         self.assertEqual(page["items"][0]["query_name"], "manual:2")
 
+    def test_list_items_raw_supports_structured_filter_tree_groups_and_tag_membership(self) -> None:
+        ids = self._seed_raw_items(
+            [
+                {
+                    "tweet_id": "9401",
+                    "author": "alice",
+                    "text": "alpha wallet launch",
+                    "metrics_json": {"views": 120, "likes": 16, "replies": 2, "retweets": 1},
+                    "tags": ["defi", "wallet"],
+                },
+                {
+                    "tweet_id": "9402",
+                    "author": "bob",
+                    "text": "alpha short",
+                    "metrics_json": {"views": 90, "likes": 3, "replies": 0, "retweets": 0},
+                    "tags": ["defi"],
+                },
+                {
+                    "tweet_id": "9403",
+                    "author": "carol",
+                    "text": "beta wallet",
+                    "metrics_json": {"views": 80, "likes": 22, "replies": 1, "retweets": 0},
+                    "tags": ["wallet"],
+                },
+            ]
+        )
+
+        filter_tree = {
+            "type": "group",
+            "relation": "AND",
+            "children": [
+                {"type": "condition", "field": "text", "operator": "contains", "value": "alpha"},
+                {
+                    "type": "group",
+                    "relation": "OR",
+                    "children": [
+                        {"type": "condition", "field": "likes", "operator": "gte", "value": 10},
+                        {"type": "condition", "field": "tags", "operator": "has_all", "values": ["defi", "wallet"]},
+                    ],
+                },
+            ],
+        }
+
+        page = self.service.list_items(
+            table="raw",
+            page=1,
+            page_size=10,
+            keyword="alpha",
+            sort_by="id",
+            sort_dir="asc",
+            filter_tree=filter_tree,
+        )
+
+        self.assertEqual(page["total"], 1)
+        self.assertEqual([item["id"] for item in page["items"]], [ids[0]])
+
+    def test_list_items_curated_supports_text_length_datetime_and_boolean_filters(self) -> None:
+        ids = self._seed_curated_items(
+            [
+                {
+                    "dedupe_key": "curated:9501",
+                    "title": "Short",
+                    "summary_zh": "alpha summary",
+                    "excerpt": "brief",
+                    "source_url": "https://x.com/demo/status/9501",
+                    "created_at_x": "2026-04-10T00:00:00+00:00",
+                    "tags": ["alpha"],
+                    "is_zero_cost": False,
+                },
+                {
+                    "dedupe_key": "curated:9502",
+                    "title": "Longer Alpha Title",
+                    "summary_zh": "wallet summary",
+                    "excerpt": "long excerpt for filter checks",
+                    "source_url": "https://x.com/demo/status/9502",
+                    "created_at_x": "2026-04-12T08:00:00+00:00",
+                    "tags": ["wallet", "defi"],
+                    "is_zero_cost": True,
+                },
+                {
+                    "dedupe_key": "curated:9503",
+                    "title": "Longer Beta Title",
+                    "summary_zh": "wallet summary",
+                    "excerpt": "long excerpt for beta checks",
+                    "source_url": "https://x.com/demo/status/9503",
+                    "created_at_x": "2026-04-09T08:00:00+00:00",
+                    "tags": ["wallet"],
+                    "is_zero_cost": True,
+                },
+            ]
+        )
+
+        filter_tree = {
+            "type": "group",
+            "relation": "AND",
+            "children": [
+                {"type": "condition", "field": "title", "operator": "length_gte", "value": 10},
+                {"type": "condition", "field": "created_at_x", "operator": "on_or_after", "value": "2026-04-11T00:00:00+00:00"},
+                {"type": "condition", "field": "is_zero_cost", "operator": "is_true"},
+                {"type": "condition", "field": "tags", "operator": "has_any", "values": ["wallet", "quest"]},
+            ],
+        }
+
+        page = self.service.list_items(
+            table="curated",
+            page=1,
+            page_size=10,
+            sort_by="id",
+            sort_dir="asc",
+            filter_tree=filter_tree,
+        )
+
+        self.assertEqual(page["total"], 1)
+        self.assertEqual([item["id"] for item in page["items"]], [ids[1]])
+
     def test_list_items_raw_sorts_created_at_x_by_real_x_timestamp(self) -> None:
         ids = self._seed_raw_items(
             [
@@ -1485,6 +1816,55 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(delete_selected, {"ids": [ids[2]], "deleted": 1})
         self.assertEqual(delete_matching, {"ids": [], "deleted": 2})
         self.assertEqual(page["total"], 0)
+
+    def test_delete_raw_rows_matching_structured_filter_tree(self) -> None:
+        ids = self._seed_raw_items(
+            [
+                {
+                    "tweet_id": "9211",
+                    "text": "low views keep-delete",
+                    "author": "demo-a",
+                    "canonical_url": "https://x.com/i/status/9211",
+                    "metrics_json": {"views": 48, "likes": 1, "replies": 0, "retweets": 0},
+                },
+                {
+                    "tweet_id": "9212",
+                    "text": "very low views delete",
+                    "author": "demo-b",
+                    "canonical_url": "https://x.com/i/status/9212",
+                    "metrics_json": {"views": 7, "likes": 0, "replies": 0, "retweets": 0},
+                },
+                {
+                    "tweet_id": "9213",
+                    "text": "boundary keep",
+                    "author": "demo-c",
+                    "canonical_url": "https://x.com/i/status/9213",
+                    "metrics_json": {"views": 50, "likes": 3, "replies": 1, "retweets": 0},
+                },
+                {
+                    "tweet_id": "9214",
+                    "text": "high views keep",
+                    "author": "demo-d",
+                    "canonical_url": "https://x.com/i/status/9214",
+                    "metrics_json": {"views": 120, "likes": 5, "replies": 1, "retweets": 0},
+                },
+            ]
+        )
+
+        filter_tree = {
+            "type": "group",
+            "relation": "AND",
+            "children": [
+                {"type": "condition", "field": "views", "operator": "lt", "value": 50},
+            ],
+        }
+
+        result = self.service.delete_items_matching(table="raw", filter_tree=filter_tree)
+        page = self.service.list_items(table="raw", page=1, page_size=10, sort_by="id", sort_dir="asc")
+
+        self.assertEqual(result, {"ids": [], "deleted": 2})
+        self.assertEqual(page["total"], 2)
+        self.assertEqual([item["id"] for item in page["items"]], [ids[2], ids[3]])
 
     def test_dedupe_raw_items_reuses_source_identity_and_keeps_earliest_rows(self) -> None:
         ids = self._seed_raw_items(

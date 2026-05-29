@@ -186,6 +186,10 @@ class ApiHandler(BaseHTTPRequestHandler):
                 job_id = int(path.split("/")[2])
                 self._json(HTTPStatus.OK, self.service.run_job_now(job_id))
                 return
+            if path.startswith("/runs/") and path.endswith("/cancel"):
+                run_id = int(path.split("/")[2])
+                self._json(HTTPStatus.OK, self.service.cancel_run(run_id))
+                return
             if path.startswith("/jobs/") and path.endswith("/delete"):
                 job_id = int(path.split("/")[2])
                 self._json(HTTPStatus.OK, self.service.delete_job(job_id))
@@ -207,6 +211,7 @@ class ApiHandler(BaseHTTPRequestHandler):
                             keyword=payload.get("keyword"),
                             level=payload.get("level"),
                             table=table,
+                            filter_tree=payload.get("filter_tree"),
                         ),
                     )
                 else:
@@ -214,6 +219,21 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return
             if path == "/items/dedupe":
                 self._json(HTTPStatus.OK, self.service.dedupe_items(table=payload.get("table", "curated")))
+                return
+            if path == "/items/query":
+                self._json(
+                    HTTPStatus.OK,
+                    self.service.list_items(
+                        page=int(payload.get("page", 1) or 1),
+                        page_size=int(payload.get("page_size", 50) or 50),
+                        level=payload.get("level"),
+                        keyword=payload.get("keyword"),
+                        sort_by=payload.get("sort_by"),
+                        sort_dir=payload.get("sort_dir"),
+                        table=str(payload.get("table", "curated")),
+                        filter_tree=payload.get("filter_tree"),
+                    ),
+                )
                 return
             if path.startswith("/items/") and path.endswith("/delete"):
                 item_id = int(path.split("/")[2])

@@ -2,15 +2,17 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LogsPage } from "./LogsPage";
-import { getRuntimeLogs, listRuns } from "../api";
+import { cancelRun, getRuntimeLogs, listRuns } from "../api";
 
 vi.mock("../api", () => ({
   listRuns: vi.fn(),
   getRuntimeLogs: vi.fn(),
+  cancelRun: vi.fn(),
 }));
 
 const listRunsMock = vi.mocked(listRuns);
 const getRuntimeLogsMock = vi.mocked(getRuntimeLogs);
+const cancelRunMock = vi.mocked(cancelRun);
 
 const TEXT = {
   title: "运行日志",
@@ -22,11 +24,13 @@ const TEXT = {
   refresh: "刷新",
   runtimeSnapshot: "服务快照",
   runWorkbench: "当前运行",
+  stopRun: "停止运行",
 } as const;
 
 describe("LogsPage", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    cancelRunMock.mockResolvedValue({ id: 11, status: "cancelled", cancel_requested: true } as any);
   });
 
   it("renders the logs workbench structure with runtime panels above the run workbench", async () => {
@@ -193,5 +197,140 @@ describe("LogsPage", () => {
 
     expect(screen.getByTestId("logs-page-header")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: TEXT.refresh })).toBeInTheDocument();
+  });
+
+  it("auto-refreshes while a run is still running and shows progress summary", async () => {
+    listRunsMock
+      .mockResolvedValueOnce({
+        page: 1,
+        page_size: 50,
+        total: 1,
+        items: [
+          {
+            id: 11,
+            job_id: 7,
+            trigger_type: "auto",
+            status: "running",
+            started_at: "2026-04-13T00:00:00.123456+00:00",
+            ended_at: null,
+            error_text: null,
+            stats_json: { total_queries: 24, completed_queries: 10, progress_percent: 42, fetched_raw: 13, query_errors: 1 },
+          },
+        ],
+      } as any)
+      .mockResolvedValue({
+        page: 1,
+        page_size: 50,
+        total: 1,
+        items: [
+          {
+            id: 11,
+            job_id: 7,
+            trigger_type: "auto",
+            status: "success",
+            started_at: "2026-04-13T00:00:00.123456+00:00",
+            ended_at: "2026-04-13T00:05:00.654321+00:00",
+            error_text: null,
+            stats_json: { total_queries: 24, completed_queries: 24, progress_percent: 100, fetched_raw: 20, query_errors: 1 },
+          },
+        ],
+      } as any);
+    getRuntimeLogsMock.mockResolvedValue({ items: [] });
+
+    render(<LogsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("logs-run-progress")).getByText("42%")).toBeInTheDocument();
+    });
+    expect(within(screen.getByTestId("logs-run-progress")).getByText("已完成 10 / 24 个查询切片")).toBeInTheDocument();
+    expect(within(screen.getByTestId("logs-run-rail")).getAllByText("running").length).toBeGreaterThan(0);
+
+    await waitFor(() => {
+      expect(listRunsMock).toHaveBeenCalledTimes(2);
+    }, { timeout: 2500 });
+    expect(within(screen.getByTestId("logs-run-rail")).getAllByText("success").length).toBeGreaterThan(0);
+    expect(within(screen.getByTestId("logs-run-progress")).getByText(/100%/)).toBeInTheDocument();
+  });
+
+  it("does not flash the full loading state during background auto refresh", async () => {
+    listRunsMock
+      .mockResolvedValueOnce({
+        page: 1,
+        page_size: 50,
+        total: 1,
+        items: [
+          {
+            id: 11,
+            job_id: 7,
+            trigger_type: "auto",
+            status: "running",
+            started_at: "2026-04-13T00:00:00.123456+00:00",
+            ended_at: null,
+            error_text: null,
+            stats_json: { total_queries: 24, completed_queries: 10, progress_percent: 42, fetched_raw: 13, query_errors: 1 },
+          },
+        ],
+      } as any)
+      .mockResolvedValue({
+        page: 1,
+        page_size: 50,
+        total: 1,
+        items: [
+          {
+            id: 11,
+            job_id: 7,
+            trigger_type: "auto",
+            status: "success",
+            started_at: "2026-04-13T00:00:00.123456+00:00",
+            ended_at: "2026-04-13T00:05:00.654321+00:00",
+            error_text: null,
+            stats_json: { total_queries: 24, completed_queries: 24, progress_percent: 100, fetched_raw: 20, query_errors: 1 },
+          },
+        ],
+      } as any);
+    getRuntimeLogsMock.mockResolvedValue({ items: [] });
+
+    render(<LogsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("logs-run-progress")).getByText("42%")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("姝ｅ湪鍔犺浇鏃ュ織...")).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(listRunsMock).toHaveBeenCalledTimes(2);
+    }, { timeout: 2500 });
+
+    expect(screen.queryByText("姝ｅ湪鍔犺浇鏃ュ織...")).not.toBeInTheDocument();
+  });
+
+  it("shows a stop button for running runs and dispatches cancel", async () => {
+    listRunsMock.mockResolvedValue({
+      page: 1,
+      page_size: 50,
+      total: 1,
+      items: [
+        {
+          id: 11,
+          job_id: null,
+          trigger_type: "manual",
+          status: "running",
+          started_at: "2026-04-13T00:00:00.123456+00:00",
+          ended_at: null,
+          error_text: null,
+          stats_json: { total_queries: 24, completed_queries: 10, progress_percent: 42, fetched_raw: 13, query_errors: 1 },
+        },
+      ],
+    } as any);
+    getRuntimeLogsMock.mockResolvedValue({ items: [] });
+
+    render(<LogsPage />);
+
+    const stopButton = await screen.findByRole("button", { name: TEXT.stopRun });
+    stopButton.click();
+
+    await waitFor(() => {
+      expect(cancelRunMock).toHaveBeenCalledWith(11);
+    });
   });
 });

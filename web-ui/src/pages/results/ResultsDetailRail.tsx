@@ -9,6 +9,8 @@ type ResultsDetailRailProps = {
   table: ItemTable;
   tableLabel: string;
   total: number;
+  onDelete?: () => void;
+  deleteDisabled?: boolean;
 };
 
 function renderFact(label: string, value: ReactNode) {
@@ -31,6 +33,27 @@ function renderSection(title: string, content: ReactNode, testId?: string) {
   );
 }
 
+function renderDeleteSection(item: ResultItemRecord, onDelete?: () => void, deleteDisabled?: boolean) {
+  if (!onDelete) {
+    return null;
+  }
+  return renderSection(
+    "记录操作",
+    <div className="results-detail-actions">
+      <button
+        type="button"
+        className="workbench-danger-action"
+        aria-label={`delete-detail-item-${item.id}`}
+        onClick={onDelete}
+        disabled={deleteDisabled}
+      >
+        删除记录
+      </button>
+    </div>,
+    "results-detail-actions-section",
+  );
+}
+
 function formatAuthorDisplay(authorName?: string | null, author?: string | null) {
   const name = String(authorName || "").trim();
   const handle = String(author || "").trim();
@@ -40,7 +63,7 @@ function formatAuthorDisplay(authorName?: string | null, author?: string | null)
   return "--";
 }
 
-function renderCuratedItem(item: CuratedItemRecord, tableLabel: string) {
+function renderCuratedItem(item: CuratedItemRecord, tableLabel: string, onDelete?: () => void, deleteDisabled?: boolean) {
   const reasons = JSON.stringify(item.reasons_json ?? [], null, 2);
   const summary = item.summary_zh || item.excerpt || "--";
   const title = item.title || summary || "--";
@@ -94,9 +117,10 @@ function renderCuratedItem(item: CuratedItemRecord, tableLabel: string) {
         <div className="results-detail-fact-grid flat-row-list">
           {renderFact("状态", item.state || "--")}
           {renderFact("等级", item.level || "--")}
-          {renderFact("tags", <TagPills tags={item.tags} />)}
+          {renderFact("任务TAGS", <TagPills tags={item.tags} />)}
           {renderFact("作者名称", item.author_name || "--")}
           {renderFact("作者ID", item.author || "--")}
+          {renderFact("发推时间", formatUtcPlus8Time(item.created_at_x))}
           {renderFact("采集时间", formatUtcPlus8Time(item.fetched_at))}
           {renderFact(
             "来源链接",
@@ -112,11 +136,13 @@ function renderCuratedItem(item: CuratedItemRecord, tableLabel: string) {
         </div>,
         "results-detail-info-section",
       )}
+
+      {renderDeleteSection(item, onDelete, deleteDisabled)}
     </div>
   );
 }
 
-function renderRawItem(item: RawItemRecord, tableLabel: string) {
+function renderRawItem(item: RawItemRecord, tableLabel: string, onDelete?: () => void, deleteDisabled?: boolean) {
   const title = formatAuthorDisplay(item.author_name, item.author);
   const body = item.text || "--";
   const heroMeta = `${formatAuthorDisplay(item.author_name, item.author)} · ${formatUtcPlus8Time(item.created_at_x)}`;
@@ -150,7 +176,7 @@ function renderRawItem(item: RawItemRecord, tableLabel: string) {
         <div className="results-detail-fact-grid flat-row-list">
           {renderFact("作者名称", item.author_name || "--")}
           {renderFact("作者ID", item.author || "--")}
-          {renderFact("tags", <TagPills tags={item.tags} />)}
+          {renderFact("任务TAGS", <TagPills tags={item.tags} />)}
           {renderFact("查询名称", item.query_name || "--")}
           {renderFact("运行 ID", String(item.run_id ?? "--"))}
           {renderFact("推文 ID", item.tweet_id || "--")}
@@ -164,6 +190,7 @@ function renderRawItem(item: RawItemRecord, tableLabel: string) {
               "--"
             ),
           )}
+          {renderFact("发推时间", formatUtcPlus8Time(item.created_at_x))}
           {renderFact("采集时间", formatUtcPlus8Time(item.fetched_at))}
         </div>,
         "results-detail-collect-section",
@@ -179,11 +206,13 @@ function renderRawItem(item: RawItemRecord, tableLabel: string) {
         </div>,
         "results-detail-metrics-section",
       )}
+
+      {renderDeleteSection(item, onDelete, deleteDisabled)}
     </div>
   );
 }
 
-export function ResultsDetailRail({ item, table, tableLabel, total }: ResultsDetailRailProps) {
+export function ResultsDetailRail({ item, table, tableLabel, total, onDelete, deleteDisabled }: ResultsDetailRailProps) {
   if (!item) {
     const emptyTitle = total > 0 ? "尚未聚焦记录" : "当前表暂无记录";
     const emptyDescription =
@@ -206,8 +235,8 @@ export function ResultsDetailRail({ item, table, tableLabel, total }: ResultsDet
   }
 
   if (table === "raw") {
-    return renderRawItem(item as RawItemRecord, tableLabel);
+    return renderRawItem(item as RawItemRecord, tableLabel, onDelete, deleteDisabled);
   }
 
-  return renderCuratedItem(item as CuratedItemRecord, tableLabel);
+  return renderCuratedItem(item as CuratedItemRecord, tableLabel, onDelete, deleteDisabled);
 }

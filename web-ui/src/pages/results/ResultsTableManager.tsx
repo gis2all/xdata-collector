@@ -1,7 +1,6 @@
 import { type ReactNode } from "react";
 
 type ResultsTableManagerProps = {
-  total: number;
   selectedCount: number;
   allMatchingSelected: boolean;
   showSelectAllMatching: boolean;
@@ -11,6 +10,8 @@ type ResultsTableManagerProps = {
   dedupeLabel: string;
   clearSelectionLabel: string;
   loading: boolean;
+  batchDeleteDisabled?: boolean;
+  allowBatchDeleteWithoutSelection?: boolean;
   fieldMenuOpen: boolean;
   fieldMenu?: ReactNode;
   onSelectAllMatching: () => void;
@@ -22,7 +23,6 @@ type ResultsTableManagerProps = {
 };
 
 export function ResultsTableManager({
-  total,
   selectedCount,
   allMatchingSelected,
   showSelectAllMatching,
@@ -32,6 +32,8 @@ export function ResultsTableManager({
   dedupeLabel,
   clearSelectionLabel,
   loading,
+  batchDeleteDisabled = false,
+  allowBatchDeleteWithoutSelection = false,
   fieldMenuOpen,
   fieldMenu,
   onSelectAllMatching,
@@ -62,9 +64,6 @@ export function ResultsTableManager({
       </div>
 
       <div className="results-manager-data-actions" data-testid="results-manager-data-actions">
-        <span className="results-summary-pill workbench-pill">{`共 ${total} 条`}</span>
-        <span className="results-summary-pill workbench-pill">{`已选 ${selectedCount} 条`}</span>
-        {allMatchingSelected && <span className="results-summary-pill workbench-pill">已选全部匹配结果</span>}
         {showSelectAllMatching && (
           <button
             type="button"
@@ -89,7 +88,7 @@ export function ResultsTableManager({
           type="button"
           className="workbench-danger-action"
           onClick={onBatchDelete}
-          disabled={loading || !selectedCount}
+          disabled={loading || (!selectedCount && !allowBatchDeleteWithoutSelection) || batchDeleteDisabled}
         >
           {batchDeleteLabel}
         </button>

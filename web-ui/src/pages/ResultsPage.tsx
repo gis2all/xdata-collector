@@ -8,6 +8,12 @@ import {
   type CuratedItemRecord,
   type ItemSortField,
   type ItemTable,
+  type ResultsFilterConditionNode,
+  type ResultsFilterConditionOperator,
+  type ResultsFilterField,
+  type ResultsFilterGroupNode,
+  type ResultsFilterNode,
+  type ResultsFilterRelation,
   type RawItemRecord,
   type ResultItemRecord,
   type SortDirection,
@@ -21,11 +27,11 @@ import { formatUtcPlus8Time } from "../time";
 const RESULTS_COLUMN_WIDTHS_KEY = "results.columnWidths.v1";
 const PAGE_SIZE = 100;
 const RESULTS_SELECT_COLUMN_WIDTH = 48;
-const RESULTS_OPERATION_COLUMN_WIDTH = 88;
 const RESULTS_SPLIT_LAYOUT_BREAKPOINT = 1180;
 const RESULTS_MIN_TABLE_PANE_WIDTH = 720;
 const RESULTS_MIN_DETAIL_PANE_WIDTH = 380;
 const RESULTS_RESIZER_WIDTH = 20;
+const RESULTS_FILTER_STATE_KEY = "results.filters.v1";
 
 const TEXT = {
   title: "\u7ed3\u679c\u67e5\u8be2",
@@ -82,6 +88,128 @@ type ColumnResizeState = {
   rightStartWidth: number;
   leftMinWidth: number;
   rightMinWidth: number;
+};
+
+type ResultsFilterFieldKind = "text" | "number" | "datetime" | "boolean" | "tags";
+
+type ResultsFilterFieldOption = {
+  field: ResultsFilterField;
+  label: string;
+  kind: ResultsFilterFieldKind;
+};
+
+type ResultsFilterState = {
+  keywordInput: string;
+  appliedKeyword: string;
+  draftTree: ResultsFilterGroupNode;
+  appliedTree: ResultsFilterGroupNode;
+  advancedOpen: boolean;
+};
+
+const EMPTY_RESULTS_FILTER_TREE: ResultsFilterGroupNode = {
+  type: "group",
+  relation: "AND",
+  children: [],
+};
+
+const RESULTS_FILTER_FIELD_OPTIONS: Record<ItemTable, ResultsFilterFieldOption[]> = {
+  curated: [
+    { field: "id", label: "id", kind: "number" },
+    { field: "run_id", label: "run_id", kind: "number" },
+    { field: "dedupe_key", label: "dedupe_key", kind: "text" },
+    { field: "level", label: "level", kind: "text" },
+    { field: "score", label: "score", kind: "number" },
+    { field: "title", label: "title", kind: "text" },
+    { field: "summary_zh", label: "summary_zh", kind: "text" },
+    { field: "excerpt", label: "excerpt", kind: "text" },
+    { field: "is_zero_cost", label: "is_zero_cost", kind: "boolean" },
+    { field: "source_url", label: "source_url", kind: "text" },
+    { field: "author_name", label: "author_name", kind: "text" },
+    { field: "author", label: "author", kind: "text" },
+    { field: "created_at_x", label: "created_at_x", kind: "datetime" },
+    { field: "views", label: "views", kind: "number" },
+    { field: "likes", label: "likes", kind: "number" },
+    { field: "replies", label: "replies", kind: "number" },
+    { field: "retweets", label: "retweets", kind: "number" },
+    { field: "fetched_at", label: "fetched_at", kind: "datetime" },
+    { field: "tags", label: "tags", kind: "tags" },
+    { field: "reasons_json", label: "reasons_json", kind: "text" },
+    { field: "rule_set_id", label: "rule_set_id", kind: "number" },
+    { field: "state", label: "state", kind: "text" },
+  ],
+  raw: [
+    { field: "id", label: "id", kind: "number" },
+    { field: "run_id", label: "run_id", kind: "number" },
+    { field: "tweet_id", label: "tweet_id", kind: "text" },
+    { field: "canonical_url", label: "canonical_url", kind: "text" },
+    { field: "author_name", label: "author_name", kind: "text" },
+    { field: "author", label: "author", kind: "text" },
+    { field: "text", label: "text", kind: "text" },
+    { field: "created_at_x", label: "created_at_x", kind: "datetime" },
+    { field: "views", label: "views", kind: "number" },
+    { field: "likes", label: "likes", kind: "number" },
+    { field: "replies", label: "replies", kind: "number" },
+    { field: "retweets", label: "retweets", kind: "number" },
+    { field: "query_name", label: "query_name", kind: "text" },
+    { field: "fetched_at", label: "fetched_at", kind: "datetime" },
+    { field: "tags", label: "tags", kind: "tags" },
+  ],
+};
+
+const TEXT_FILTER_OPERATORS: Array<{ value: ResultsFilterConditionOperator; label: string }> = [
+  { value: "contains", label: "包含" },
+  { value: "not_contains", label: "不包含" },
+  { value: "equals", label: "等于" },
+  { value: "not_equals", label: "不等于" },
+  { value: "starts_with", label: "开头是" },
+  { value: "ends_with", label: "结尾是" },
+  { value: "is_empty", label: "为空" },
+  { value: "is_not_empty", label: "不为空" },
+  { value: "length_gt", label: "长度 >" },
+  { value: "length_gte", label: "长度 >=" },
+  { value: "length_lt", label: "长度 <" },
+  { value: "length_lte", label: "长度 <=" },
+  { value: "length_between", label: "长度区间" },
+];
+
+const NUMBER_FILTER_OPERATORS: Array<{ value: ResultsFilterConditionOperator; label: string }> = [
+  { value: "eq", label: "等于" },
+  { value: "neq", label: "不等于" },
+  { value: "gt", label: "大于" },
+  { value: "gte", label: "大于等于" },
+  { value: "lt", label: "小于" },
+  { value: "lte", label: "小于等于" },
+  { value: "between", label: "区间" },
+  { value: "is_empty", label: "为空" },
+  { value: "is_not_empty", label: "不为空" },
+];
+
+const DATETIME_FILTER_OPERATORS: Array<{ value: ResultsFilterConditionOperator; label: string }> = [
+  { value: "on_or_after", label: "在此之后" },
+  { value: "on_or_before", label: "在此之前" },
+  { value: "between", label: "区间" },
+  { value: "is_empty", label: "为空" },
+  { value: "is_not_empty", label: "不为空" },
+];
+
+const BOOLEAN_FILTER_OPERATORS: Array<{ value: ResultsFilterConditionOperator; label: string }> = [
+  { value: "is_true", label: "是" },
+  { value: "is_false", label: "否" },
+];
+
+const TAG_FILTER_OPERATORS: Array<{ value: ResultsFilterConditionOperator; label: string }> = [
+  { value: "has_any", label: "包含任一标签" },
+  { value: "has_all", label: "包含全部标签" },
+  { value: "is_empty", label: "为空" },
+  { value: "is_not_empty", label: "不为空" },
+];
+
+const DEFAULT_RESULTS_FILTER_STATE: ResultsFilterState = {
+  keywordInput: "",
+  appliedKeyword: "",
+  draftTree: EMPTY_RESULTS_FILTER_TREE,
+  appliedTree: EMPTY_RESULTS_FILTER_TREE,
+  advancedOpen: false,
 };
 
 function truncate(value: unknown, maxLength = 120) {
@@ -341,17 +469,17 @@ const COLUMN_DEFINITIONS_BY_TABLE: Record<ItemTable, ColumnDefinition[]> = {
 };
 
 const DEFAULT_VISIBLE_COLUMNS_BY_TABLE: Record<ItemTable, ItemSortField[]> = {
-  curated: CURATED_COLUMN_DEFINITIONS.filter((column) => column.defaultVisible).map((column) => column.key),
-  raw: RAW_COLUMN_DEFINITIONS.filter((column) => column.defaultVisible).map((column) => column.key),
+  curated: ["level", "score", "title", "source_url", "author_name", "tags", "created_at_x", "views", "likes", "replies", "fetched_at"],
+  raw: ["author_name", "tags", "text", "created_at_x", "views", "likes", "replies", "fetched_at"],
 };
 
 function orderVisibleColumns(table: ItemTable, keys: Iterable<ItemSortField>) {
   const allowed = COLUMN_DEFINITIONS_BY_TABLE[table].map((column) => column.key);
   const keySet = new Set(keys);
-  if (keySet.has("author") && !keySet.has("author_name")) {
+  if (table === "curated" && keySet.has("author") && !keySet.has("author_name")) {
     keySet.add("author_name");
   }
-  if (keySet.has("author_name") && !keySet.has("author")) {
+  if (table === "curated" && keySet.has("author_name") && !keySet.has("author")) {
     keySet.add("author");
   }
   return allowed.filter((key) => keySet.has(key));
@@ -466,12 +594,313 @@ function getCellContentClass(field: ItemSortField) {
   return "results-cell-content results-cell-content-meta";
 }
 
+function createEmptyResultsFilterTree(): ResultsFilterGroupNode {
+  return {
+    type: "group",
+    relation: "AND",
+    children: [],
+  };
+}
+
+function createDefaultResultsFilterState(): ResultsFilterState {
+  return {
+    keywordInput: "",
+    appliedKeyword: "",
+    draftTree: createEmptyResultsFilterTree(),
+    appliedTree: createEmptyResultsFilterTree(),
+    advancedOpen: false,
+  };
+}
+
+function cloneResultsFilterNode(node: ResultsFilterNode): ResultsFilterNode {
+  if (node.type === "group") {
+    return {
+      type: "group",
+      relation: node.relation === "OR" ? "OR" : "AND",
+      children: Array.isArray(node.children) ? node.children.map((child) => cloneResultsFilterNode(child)) : [],
+    };
+  }
+  return {
+    type: "condition",
+    field: node.field,
+    operator: node.operator,
+    ...(node.value !== undefined ? { value: node.value } : {}),
+    ...(node.values ? { values: [...node.values] } : {}),
+    ...(node.min !== undefined ? { min: node.min } : {}),
+    ...(node.max !== undefined ? { max: node.max } : {}),
+  };
+}
+
+function cloneResultsFilterTree(tree?: ResultsFilterGroupNode | null): ResultsFilterGroupNode {
+  if (!tree || tree.type !== "group") {
+    return createEmptyResultsFilterTree();
+  }
+  return cloneResultsFilterNode(tree) as ResultsFilterGroupNode;
+}
+
+function createFilterCondition(field: ResultsFilterField, kind: ResultsFilterFieldKind): ResultsFilterConditionNode {
+  if (kind === "number") {
+    return { type: "condition", field, operator: "gte", value: "" };
+  }
+  if (kind === "datetime") {
+    return { type: "condition", field, operator: "on_or_after", value: "" };
+  }
+  if (kind === "boolean") {
+    return { type: "condition", field, operator: "is_true" };
+  }
+  if (kind === "tags") {
+    return { type: "condition", field, operator: "has_any", values: [] };
+  }
+  return { type: "condition", field, operator: "contains", value: "" };
+}
+
+function getFilterFieldOption(table: ItemTable, field: ResultsFilterField) {
+  return RESULTS_FILTER_FIELD_OPTIONS[table].find((option) => option.field === field) ?? RESULTS_FILTER_FIELD_OPTIONS[table][0];
+}
+
+function getFilterOperatorOptions(kind: ResultsFilterFieldKind) {
+  if (kind === "number") return NUMBER_FILTER_OPERATORS;
+  if (kind === "datetime") return DATETIME_FILTER_OPERATORS;
+  if (kind === "boolean") return BOOLEAN_FILTER_OPERATORS;
+  if (kind === "tags") return TAG_FILTER_OPERATORS;
+  return TEXT_FILTER_OPERATORS;
+}
+
+function getDefaultFilterOperator(kind: ResultsFilterFieldKind): ResultsFilterConditionOperator {
+  return getFilterOperatorOptions(kind)[0]?.value ?? "contains";
+}
+
+function isResultsFilterNode(value: unknown): value is ResultsFilterNode {
+  return Boolean(value) && typeof value === "object" && ("type" in (value as Record<string, unknown>));
+}
+
+function parseFilterTagValues(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => String(item ?? "").trim())
+      .filter(Boolean);
+  }
+  return String(value ?? "")
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function filterOperatorNeedsRange(operator: ResultsFilterConditionOperator) {
+  return operator === "between" || operator === "length_between";
+}
+
+function filterOperatorNeedsArrayValue(operator: ResultsFilterConditionOperator) {
+  return operator === "has_any" || operator === "has_all";
+}
+
+function filterOperatorNeedsSingleValue(operator: ResultsFilterConditionOperator) {
+  return !["is_empty", "is_not_empty", "is_true", "is_false", "between", "length_between", "has_any", "has_all"].includes(operator);
+}
+
+function coerceFilterConditionForUi(table: ItemTable, node: unknown): ResultsFilterConditionNode | null {
+  if (!node || typeof node !== "object") {
+    return null;
+  }
+  const source = node as Partial<ResultsFilterConditionNode>;
+  const field = String(source.field ?? "").trim() as ResultsFilterField;
+  const fieldOption = RESULTS_FILTER_FIELD_OPTIONS[table].find((option) => option.field === field);
+  if (!fieldOption) {
+    return null;
+  }
+  const operatorOptions = getFilterOperatorOptions(fieldOption.kind);
+  const operator = operatorOptions.some((item) => item.value === source.operator)
+    ? (source.operator as ResultsFilterConditionOperator)
+    : getDefaultFilterOperator(fieldOption.kind);
+  const next: ResultsFilterConditionNode = {
+    type: "condition",
+    field: fieldOption.field,
+    operator,
+  };
+  if (filterOperatorNeedsArrayValue(operator)) {
+    next.values = parseFilterTagValues(source.values ?? source.value);
+    return next;
+  }
+  if (filterOperatorNeedsRange(operator)) {
+    next.min = source.min ?? "";
+    next.max = source.max ?? "";
+    return next;
+  }
+  if (filterOperatorNeedsSingleValue(operator)) {
+    next.value = source.value ?? "";
+  }
+  return next;
+}
+
+function coerceFilterNodeForUi(table: ItemTable, node: unknown): ResultsFilterNode | null {
+  if (!node || typeof node !== "object") {
+    return null;
+  }
+  const source = node as Partial<ResultsFilterNode>;
+  if (source.type === "group") {
+    const children = Array.isArray(source.children)
+      ? source.children.map((child) => coerceFilterNodeForUi(table, child)).filter((child): child is ResultsFilterNode => child != null)
+      : [];
+    return {
+      type: "group",
+      relation: source.relation === "OR" ? "OR" : "AND",
+      children,
+    };
+  }
+  return coerceFilterConditionForUi(table, source);
+}
+
+function filterTreeHasConditions(tree: ResultsFilterGroupNode) {
+  return tree.children.some((child) => child.type === "condition" || filterTreeHasConditions(child));
+}
+
+function normalizeFilterTreeForTable(table: ItemTable, tree: ResultsFilterGroupNode): ResultsFilterGroupNode {
+  const next = coerceFilterNodeForUi(table, tree);
+  if (!next || next.type !== "group") {
+    return createEmptyResultsFilterTree();
+  }
+  return next;
+}
+
+function sanitizeFilterTreeForSubmit(table: ItemTable, tree: ResultsFilterGroupNode): ResultsFilterGroupNode {
+  function sanitizeNode(node: ResultsFilterNode): ResultsFilterNode | null {
+    if (node.type === "group") {
+      const children = node.children.map((child) => sanitizeNode(child)).filter((child): child is ResultsFilterNode => child != null);
+      return {
+        type: "group",
+        relation: node.relation === "OR" ? "OR" : "AND",
+        children,
+      };
+    }
+    const fieldOption = RESULTS_FILTER_FIELD_OPTIONS[table].find((option) => option.field === node.field);
+    if (!fieldOption) {
+      return null;
+    }
+    const operatorOptions = getFilterOperatorOptions(fieldOption.kind);
+    const operator = operatorOptions.some((item) => item.value === node.operator)
+      ? node.operator
+      : getDefaultFilterOperator(fieldOption.kind);
+    const next: ResultsFilterConditionNode = {
+      type: "condition",
+      field: fieldOption.field,
+      operator,
+    };
+    if (filterOperatorNeedsArrayValue(operator)) {
+      const values = parseFilterTagValues(node.values ?? node.value);
+      if (!values.length) {
+        return null;
+      }
+      next.values = values;
+      return next;
+    }
+    if (filterOperatorNeedsRange(operator)) {
+      const minimum = String(node.min ?? "").trim();
+      const maximum = String(node.max ?? "").trim();
+      if (!minimum || !maximum) {
+        return null;
+      }
+      next.min = minimum;
+      next.max = maximum;
+      return next;
+    }
+    if (filterOperatorNeedsSingleValue(operator)) {
+      const value = String(node.value ?? "").trim();
+      if (!value) {
+        return null;
+      }
+      next.value = value;
+    }
+    return next;
+  }
+
+  const sanitized = sanitizeNode(tree);
+  if (!sanitized || sanitized.type !== "group") {
+    return createEmptyResultsFilterTree();
+  }
+  return sanitized;
+}
+
+function createResultsFilterTreeTextValue(values?: string[]) {
+  return (values ?? []).join(", ");
+}
+
+function getFilterGroupAtPath(root: ResultsFilterGroupNode, path: number[]) {
+  let current: ResultsFilterGroupNode = root;
+  for (const index of path) {
+    const child = current.children[index];
+    if (!child || child.type !== "group") {
+      return null;
+    }
+    current = child;
+  }
+  return current;
+}
+
+function getFilterParentAtPath(root: ResultsFilterGroupNode, path: number[]) {
+  if (!path.length) {
+    return null;
+  }
+  const parentPath = path.slice(0, -1);
+  const parent = getFilterGroupAtPath(root, parentPath);
+  if (!parent) {
+    return null;
+  }
+  return {
+    parent,
+    index: path[path.length - 1]!,
+  };
+}
+
+function readResultsFilterState(): Record<ItemTable, ResultsFilterState> {
+  const fallback = {
+    curated: createDefaultResultsFilterState(),
+    raw: createDefaultResultsFilterState(),
+  };
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+  const raw = window.localStorage.getItem(RESULTS_FILTER_STATE_KEY);
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw) as Partial<Record<ItemTable, Partial<ResultsFilterState> & { filterTree?: ResultsFilterGroupNode }>>;
+    const hydrate = (table: ItemTable): ResultsFilterState => {
+      const source = parsed?.[table] || {};
+      const sharedTree = isResultsFilterNode(source.filterTree) ? source.filterTree : createEmptyResultsFilterTree();
+      const rawDraftTree = normalizeFilterTreeForTable(
+        table,
+        cloneResultsFilterTree((isResultsFilterNode(source.draftTree) ? source.draftTree : sharedTree) as ResultsFilterGroupNode),
+      );
+      const rawAppliedTree = normalizeFilterTreeForTable(
+        table,
+        cloneResultsFilterTree((isResultsFilterNode(source.appliedTree) ? source.appliedTree : sharedTree) as ResultsFilterGroupNode),
+      );
+      return {
+        keywordInput: String(source.keywordInput ?? ""),
+        appliedKeyword: String(source.appliedKeyword ?? ""),
+        draftTree: rawDraftTree,
+        appliedTree: sanitizeFilterTreeForSubmit(table, rawAppliedTree),
+        advancedOpen: Boolean(source.advancedOpen),
+      };
+    };
+    return {
+      curated: hydrate("curated"),
+      raw: hydrate("raw"),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function writeResultsFilterState(value: Record<ItemTable, ResultsFilterState>) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(RESULTS_FILTER_STATE_KEY, JSON.stringify(value));
+}
+
 export function ResultsPage() {
   const [table, setTable] = useState<ItemTable>("raw");
   const [items, setItems] = useState<ResultItemRecord[]>([]);
   const [activeRowId, setActiveRowId] = useState<number | null>(null);
-  const [keywordInput, setKeywordInput] = useState("");
-  const [appliedKeyword, setAppliedKeyword] = useState("");
+  const [filterStateByTable, setFilterStateByTable] = useState<Record<ItemTable, ResultsFilterState>>(() => readResultsFilterState());
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -496,6 +925,12 @@ export function ResultsPage() {
   const workspaceLayoutRef = useRef<HTMLElement | null>(null);
   const workspaceDragBoundsRef = useRef<{ left: number; width: number } | null>(null);
 
+  const currentFilterState = filterStateByTable[table];
+  const keywordInput = currentFilterState.keywordInput;
+  const appliedKeyword = currentFilterState.appliedKeyword;
+  const draftFilterTree = currentFilterState.draftTree;
+  const appliedFilterTree = currentFilterState.appliedTree;
+  const hasAdvancedFilter = filterTreeHasConditions(appliedFilterTree);
   const visibleColumns = visibleColumnsByTable[table];
   const columnDefinitions = COLUMN_DEFINITIONS_BY_TABLE[table];
   const visibleColumnDefinitions = columnDefinitions.filter((column) => visibleColumns.includes(column.key));
@@ -515,26 +950,30 @@ export function ResultsPage() {
   const selectedCount = allMatchingSelected ? total : selectedIds.length;
   const activeItem = useMemo(() => items.find((item) => item.id === activeRowId) ?? null, [activeRowId, items]);
   const allSelectedOnPage = items.length > 0 && selectedOnPage === items.length;
-  const showSelectAllMatching = !allMatchingSelected && allSelectedOnPage && total > items.length;
+  const showSelectAllMatching = !hasAdvancedFilter && !allMatchingSelected && allSelectedOnPage && total > items.length;
   const sortDirectionLabel = sortDir === "asc" ? "\u5347\u5e8f" : "\u964d\u5e8f";
   const tableMinWidth = Math.max(
     960,
-    RESULTS_SELECT_COLUMN_WIDTH +
-      RESULTS_OPERATION_COLUMN_WIDTH +
-      resolvedVisibleColumnDefinitions.reduce((sum, column) => sum + column.currentWidth, 0),
+    RESULTS_SELECT_COLUMN_WIDTH + resolvedVisibleColumnDefinitions.reduce((sum, column) => sum + column.currentWidth, 0),
   );
   const tableName = TABLE_NAMES[table];
   const tableLabel = TABLE_LABELS[table];
   const activeKeywordLabel = appliedKeyword || "\u5168\u90e8";
   const isSplitLayout = viewportWidth > RESULTS_SPLIT_LAYOUT_BREAKPOINT;
   const dedupeConfirmText = `\u786e\u5b9a\u5bf9\u6574\u4e2a ${tableName} \u8868\u6267\u884c\u53bb\u91cd\u5417\uff1f\u6b64\u64cd\u4f5c\u4f1a\u5220\u9664\u91cd\u590d\u884c\u3002`;
-  const batchDeleteConfirm = allMatchingSelected
-    ? "\u786e\u5b9a\u786c\u5220\u9664\u5f53\u524d\u7b5b\u9009\u7ed3\u679c\u7684\u5168\u90e8\u8bb0\u5f55\u5417\uff1f\u6b64\u64cd\u4f5c\u65e0\u6cd5\u6062\u590d\u3002"
-    : "\u786e\u5b9a\u786c\u5220\u9664\u5df2\u52fe\u9009\u7684\u8bb0\u5f55\u5417\uff1f\u6b64\u64cd\u4f5c\u65e0\u6cd5\u6062\u590d\u3002";
+  const batchDeleteConfirm = hasAdvancedFilter
+    ? `确定硬删除当前筛选命中的 ${total} 条记录吗？此操作无法恢复。`
+    : allMatchingSelected
+      ? "\u786e\u5b9a\u786c\u5220\u9664\u5f53\u524d\u7b5b\u9009\u7ed3\u679c\u7684\u5168\u90e8\u8bb0\u5f55\u5417\uff1f\u6b64\u64cd\u4f5c\u65e0\u6cd5\u6062\u590d\u3002"
+      : "\u786e\u5b9a\u786c\u5220\u9664\u5df2\u52fe\u9009\u7684\u8bb0\u5f55\u5417\uff1f\u6b64\u64cd\u4f5c\u65e0\u6cd5\u6062\u590d\u3002";
 
   useEffect(() => {
     writeColumnWidths(columnWidthsByTable);
   }, [columnWidthsByTable]);
+
+  useEffect(() => {
+    writeResultsFilterState(filterStateByTable);
+  }, [filterStateByTable]);
 
   function applyWorkspacePaneWidth(nextWidth: number | null) {
     setLeftPaneWidth(nextWidth);
@@ -665,10 +1104,104 @@ export function ResultsPage() {
     document.body.style.cursor = "";
   }, [isSplitLayout]);
 
+  function updateFilterState(targetTable: ItemTable, updater: (current: ResultsFilterState) => ResultsFilterState) {
+    setFilterStateByTable((current) => ({
+      ...current,
+      [targetTable]: updater(current[targetTable]),
+    }));
+  }
+
+  function updateDraftTree(updater: (current: ResultsFilterGroupNode) => ResultsFilterGroupNode) {
+    updateFilterState(table, (current) => ({
+      ...current,
+      draftTree: updater(current.draftTree),
+    }));
+  }
+
+  function handleKeywordInputChange(value: string) {
+    updateFilterState(table, (current) => ({
+      ...current,
+      keywordInput: value,
+    }));
+  }
+
+  function handleToggleAdvancedFilters() {
+    updateFilterState(table, (current) => ({
+      ...current,
+      advancedOpen: !current.advancedOpen,
+    }));
+  }
+
+  function addConditionToGroup(path: number[]) {
+    updateDraftTree((current) => {
+      const next = cloneResultsFilterTree(current);
+      const group = getFilterGroupAtPath(next, path);
+      if (!group) {
+        return current;
+      }
+      const defaultField = RESULTS_FILTER_FIELD_OPTIONS[table][0];
+      group.children.push(createFilterCondition(defaultField.field, defaultField.kind));
+      return next;
+    });
+  }
+
+  function addGroupToGroup(path: number[]) {
+    updateDraftTree((current) => {
+      const next = cloneResultsFilterTree(current);
+      const group = getFilterGroupAtPath(next, path);
+      if (!group) {
+        return current;
+      }
+      group.children.push(createEmptyResultsFilterTree());
+      return next;
+    });
+  }
+
+  function removeDraftNode(path: number[]) {
+    updateDraftTree((current) => {
+      const next = cloneResultsFilterTree(current);
+      const parentRef = getFilterParentAtPath(next, path);
+      if (!parentRef) {
+        return current;
+      }
+      parentRef.parent.children.splice(parentRef.index, 1);
+      return next;
+    });
+  }
+
+  function updateGroupRelation(path: number[], relation: ResultsFilterRelation) {
+    updateDraftTree((current) => {
+      const next = cloneResultsFilterTree(current);
+      const group = getFilterGroupAtPath(next, path);
+      if (!group) {
+        return current;
+      }
+      group.relation = relation === "OR" ? "OR" : "AND";
+      return next;
+    });
+  }
+
+  function updateCondition(path: number[], updater: (current: ResultsFilterConditionNode) => ResultsFilterConditionNode) {
+    updateDraftTree((current) => {
+      const next = cloneResultsFilterTree(current);
+      const parentRef = getFilterParentAtPath(next, path);
+      if (!parentRef) {
+        return current;
+      }
+      const target = parentRef.parent.children[parentRef.index];
+      if (!target || target.type !== "condition") {
+        return current;
+      }
+      parentRef.parent.children[parentRef.index] = updater(target);
+      return next;
+    });
+  }
+
   async function load(options?: {
     table?: ItemTable;
     page?: number;
     keyword?: string;
+    filterTree?: ResultsFilterGroupNode | null;
     sortBy?: ItemSortField;
     sortDir?: SortDirection;
     preserveMessage?: boolean;
@@ -677,7 +1210,9 @@ export function ResultsPage() {
   }) {
     const nextTable = options?.table ?? table;
     const nextPage = options?.page ?? page;
-    const nextKeyword = options?.keyword ?? appliedKeyword;
+    const nextKeyword = options?.keyword ?? filterStateByTable[nextTable].appliedKeyword;
+    const nextFilterTree = options?.filterTree ?? filterStateByTable[nextTable].appliedTree;
+    const useStructuredFilter = filterTreeHasConditions(nextFilterTree);
     const nextSortBy = options?.sortBy ?? sortBy;
     const nextSortDir = options?.sortDir ?? sortDir;
     const shouldClearSelection = Boolean(options?.clearSelection);
@@ -694,6 +1229,7 @@ export function ResultsPage() {
         keyword: nextKeyword || undefined,
         sort_by: nextSortBy,
         sort_dir: nextSortDir,
+        filter_tree: useStructuredFilter ? nextFilterTree : undefined,
       });
       let nextItems = data.items || [];
       let totalItems = data.total || 0;
@@ -709,6 +1245,7 @@ export function ResultsPage() {
             keyword: nextKeyword || undefined,
             sort_by: nextSortBy,
             sort_dir: nextSortDir,
+            filter_tree: useStructuredFilter ? nextFilterTree : undefined,
           });
           nextItems = fallback.items || [];
           totalItems = fallback.total || 0;
@@ -747,7 +1284,14 @@ export function ResultsPage() {
   }
 
   useEffect(() => {
-    void load({ table: "raw", page: 1, keyword: appliedKeyword, sortBy, sortDir });
+    void load({
+      table: "raw",
+      page: 1,
+      keyword: filterStateByTable.raw.appliedKeyword,
+      filterTree: filterStateByTable.raw.appliedTree,
+      sortBy,
+      sortDir,
+    });
     // initial page load only; refresh and sorting are explicit actions
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -755,18 +1299,40 @@ export function ResultsPage() {
   async function handleSort(field: ItemSortField, direction: SortDirection) {
     setSortBy(field);
     setSortDir(direction);
-    await load({ table, page, sortBy: field, sortDir: direction });
+    await load({ table, page, sortBy: field, sortDir: direction, filterTree: appliedFilterTree });
   }
 
   async function handleRefresh() {
     const nextKeyword = keywordInput.trim();
+    const nextDraftTree = cloneResultsFilterTree(draftFilterTree);
+    const nextAppliedTree = sanitizeFilterTreeForSubmit(table, nextDraftTree);
     const keywordChanged = nextKeyword !== appliedKeyword;
-    setAppliedKeyword(nextKeyword);
+    const filterChanged = JSON.stringify(nextAppliedTree) !== JSON.stringify(appliedFilterTree);
+    updateFilterState(table, (current) => ({
+      ...current,
+      keywordInput: nextKeyword,
+      appliedKeyword: nextKeyword,
+      draftTree: nextDraftTree,
+      appliedTree: nextAppliedTree,
+    }));
     await load({
       table,
-      page: keywordChanged ? 1 : page,
+      page: keywordChanged || filterChanged ? 1 : page,
       keyword: nextKeyword,
-      clearSelection: keywordChanged,
+      filterTree: nextAppliedTree,
+      clearSelection: keywordChanged || filterChanged,
+    });
+  }
+
+  async function handleResetFilters() {
+    const nextState = createDefaultResultsFilterState();
+    updateFilterState(table, () => nextState);
+    await load({
+      table,
+      page: 1,
+      keyword: "",
+      filterTree: nextState.appliedTree,
+      clearSelection: true,
     });
   }
 
@@ -789,9 +1355,12 @@ export function ResultsPage() {
     setSortDir(nextSortDir);
     setSelectedIds([]);
     setAllMatchingSelected(false);
+    const nextFilterState = filterStateByTable[nextTable];
     await load({
       table: nextTable,
       page,
+      keyword: nextFilterState.appliedKeyword,
+      filterTree: nextFilterState.appliedTree,
       sortBy: nextSortBy,
       sortDir: nextSortDir,
       allowPageFallback: true,
@@ -811,14 +1380,25 @@ export function ResultsPage() {
       if (allMatchingSelected) {
         setAllMatchingSelected(false);
       }
-      await load({ table, preserveMessage: true, allowPageFallback: true, clearSelection: allMatchingSelected });
+      await load({
+        table,
+        keyword: appliedKeyword,
+        filterTree: appliedFilterTree,
+        preserveMessage: true,
+        allowPageFallback: true,
+        clearSelection: allMatchingSelected,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "request failed");
     }
   }
 
   async function handleBatchDelete() {
-    if (!selectedCount) {
+    if (hasAdvancedFilter && total <= 0) {
+      setError("当前高级筛选没有匹配记录");
+      return;
+    }
+    if (!hasAdvancedFilter && !selectedCount) {
       setError(TEXT.chooseFirst);
       return;
     }
@@ -827,11 +1407,25 @@ export function ResultsPage() {
     }
     setError("");
     try {
-      const result = allMatchingSelected
-        ? await deleteItems({ mode: "all_matching", keyword: appliedKeyword || undefined, table })
-        : await deleteItems({ ids: [...selectedIds], table });
+      const result = hasAdvancedFilter
+        ? await deleteItems({
+            mode: "all_matching",
+            keyword: appliedKeyword || undefined,
+            table,
+            filter_tree: appliedFilterTree,
+          })
+        : allMatchingSelected
+          ? await deleteItems({ mode: "all_matching", keyword: appliedKeyword || undefined, table })
+          : await deleteItems({ ids: [...selectedIds], table });
       setMessage(`\u5df2\u5220\u9664 ${result.deleted} \u6761\u8bb0\u5f55`);
-      await load({ table, preserveMessage: true, allowPageFallback: true, clearSelection: true });
+      await load({
+        table,
+        keyword: appliedKeyword,
+        filterTree: appliedFilterTree,
+        preserveMessage: true,
+        allowPageFallback: true,
+        clearSelection: true,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "request failed");
     }
@@ -845,13 +1439,23 @@ export function ResultsPage() {
     try {
       const summary = await dedupeItems({ table });
       setMessage(`\u53bb\u91cd\u5b8c\u6210\uff1a${summary.groups} \u7ec4\u91cd\u590d\uff0c\u5220\u9664 ${summary.deleted} \u6761\uff0c\u4fdd\u7559 ${summary.kept} \u6761`);
-      await load({ table, preserveMessage: true, allowPageFallback: true, clearSelection: true });
+      await load({
+        table,
+        keyword: appliedKeyword,
+        filterTree: appliedFilterTree,
+        preserveMessage: true,
+        allowPageFallback: true,
+        clearSelection: true,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "request failed");
     }
   }
 
   function handleSelectAllMatching() {
+    if (hasAdvancedFilter) {
+      return;
+    }
     setAllMatchingSelected(true);
   }
 
@@ -949,6 +1553,207 @@ export function ResultsPage() {
     event.preventDefault();
   }
 
+  const renderedConditionCounter = { current: 0 };
+
+  function renderFilterCondition(condition: ResultsFilterConditionNode, path: number[]) {
+    const fieldOption = getFilterFieldOption(table, condition.field);
+    const operatorOptions = getFilterOperatorOptions(fieldOption.kind);
+    const conditionIndex = renderedConditionCounter.current++;
+    const operator = operatorOptions.some((item) => item.value === condition.operator)
+      ? condition.operator
+      : getDefaultFilterOperator(fieldOption.kind);
+    const needsRange = filterOperatorNeedsRange(operator);
+    const needsArrayValue = filterOperatorNeedsArrayValue(operator);
+    const needsSingleValue = filterOperatorNeedsSingleValue(operator);
+    return (
+      <div key={`condition-${path.join("-")}`} className="results-advanced-filter-condition">
+        <label className="field">
+          <select
+            aria-label={`filter-field-${conditionIndex}`}
+            value={condition.field}
+            onChange={(event) => {
+              const nextField = event.target.value as ResultsFilterField;
+              const nextFieldOption = getFilterFieldOption(table, nextField);
+              updateCondition(path, () => createFilterCondition(nextFieldOption.field, nextFieldOption.kind));
+            }}
+          >
+            {RESULTS_FILTER_FIELD_OPTIONS[table].map((option) => (
+              <option key={option.field} value={option.field}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <select
+            aria-label={`filter-operator-${conditionIndex}`}
+            value={operator}
+            onChange={(event) => {
+              const nextOperator = event.target.value as ResultsFilterConditionOperator;
+              updateCondition(path, (current) => {
+                const nextCondition = createFilterCondition(current.field, fieldOption.kind);
+                const preservedValue = current.value ?? "";
+                const preservedValues = current.values ?? [];
+                const preservedMin = current.min ?? "";
+                const preservedMax = current.max ?? "";
+                nextCondition.operator = nextOperator;
+                if (filterOperatorNeedsArrayValue(nextOperator)) {
+                  nextCondition.values = preservedValues;
+                } else if (filterOperatorNeedsRange(nextOperator)) {
+                  nextCondition.min = preservedMin;
+                  nextCondition.max = preservedMax;
+                } else if (filterOperatorNeedsSingleValue(nextOperator)) {
+                  nextCondition.value = preservedValue;
+                }
+                return nextCondition;
+              });
+            }}
+          >
+            {operatorOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="results-advanced-filter-value">
+          {needsArrayValue ? (
+            <label className="field">
+              <textarea
+                rows={2}
+                aria-label={`filter-value-${conditionIndex}`}
+                placeholder="逗号或换行分隔"
+                value={createResultsFilterTreeTextValue(condition.values)}
+                onChange={(event) => {
+                  const nextValues = parseFilterTagValues(event.target.value);
+                  updateCondition(path, (current) => ({
+                    ...current,
+                    values: nextValues,
+                  }));
+                }}
+              />
+            </label>
+          ) : null}
+          {needsRange ? (
+            <div className="results-advanced-filter-range">
+              <label className="field">
+                <input
+                  aria-label={`filter-min-${conditionIndex}`}
+                  type={fieldOption.kind === "datetime" ? "datetime-local" : "text"}
+                  inputMode={fieldOption.kind === "number" || operator === "length_between" ? "numeric" : undefined}
+                  placeholder="最小值"
+                  value={String(condition.min ?? "")}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    updateCondition(path, (current) => ({
+                      ...current,
+                      min: nextValue,
+                    }));
+                  }}
+                />
+              </label>
+              <label className="field">
+                <input
+                  aria-label={`filter-max-${conditionIndex}`}
+                  type={fieldOption.kind === "datetime" ? "datetime-local" : "text"}
+                  inputMode={fieldOption.kind === "number" || operator === "length_between" ? "numeric" : undefined}
+                  placeholder="最大值"
+                  value={String(condition.max ?? "")}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    updateCondition(path, (current) => ({
+                      ...current,
+                      max: nextValue,
+                    }));
+                  }}
+                />
+              </label>
+            </div>
+          ) : null}
+          {needsSingleValue ? (
+            <label className="field">
+              <input
+                aria-label={`filter-value-${conditionIndex}`}
+                type={fieldOption.kind === "datetime" ? "datetime-local" : "text"}
+                inputMode={fieldOption.kind === "number" || operator.startsWith("length_") ? "numeric" : undefined}
+                placeholder="筛选值"
+                value={String(condition.value ?? "")}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  updateCondition(path, (current) => ({
+                    ...current,
+                    value: nextValue,
+                  }));
+                }}
+              />
+            </label>
+          ) : null}
+          {!needsArrayValue && !needsRange && !needsSingleValue ? (
+            <div className="kv results-advanced-filter-inline-note">该操作符无需额外输入</div>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="workbench-secondary-action"
+          onClick={() => removeDraftNode(path)}
+        >
+          删除条件
+        </button>
+      </div>
+    );
+  }
+
+  function renderFilterGroup(group: ResultsFilterGroupNode, path: number[] = [], depth = 0): ReactNode {
+    const isRoot = path.length === 0;
+    return (
+      <div
+        key={`group-${path.join("-") || "root"}`}
+        className="results-advanced-filter-group"
+        data-depth={depth}
+      >
+        <div className="results-advanced-filter-group-head">
+          <div className="results-advanced-filter-group-meta">
+            <span className="kv">{isRoot ? "顶层条件组" : "条件组"}</span>
+            <label className="field results-advanced-filter-relation-field">
+              <select
+                aria-label={isRoot ? "filter-relation-root" : `filter-relation-${path.join("-")}`}
+                value={group.relation}
+                onChange={(event) => updateGroupRelation(path, event.target.value as ResultsFilterRelation)}
+              >
+                <option value="AND">AND</option>
+                <option value="OR">OR</option>
+              </select>
+            </label>
+          </div>
+          <div className="results-advanced-filter-group-actions">
+            <button type="button" className="workbench-secondary-action" onClick={() => addConditionToGroup(path)}>
+              新增条件
+            </button>
+            <button type="button" className="workbench-secondary-action" onClick={() => addGroupToGroup(path)}>
+              新增条件组
+            </button>
+            {!isRoot ? (
+              <button type="button" className="workbench-secondary-action" onClick={() => removeDraftNode(path)}>
+                删除条件组
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {group.children.length ? (
+          <div className="results-advanced-filter-children">
+            {group.children.map((child, index) => (
+              child.type === "group"
+                ? renderFilterGroup(child, [...path, index], depth + 1)
+                : renderFilterCondition(child, [...path, index])
+            ))}
+          </div>
+        ) : (
+          <div className="drawer-empty results-advanced-filter-empty">暂无高级条件，点击“新增条件”开始筛选。</div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="results-page" data-testid="results-page">
       <ResultsPageHeader title={TEXT.title} subtitle={TEXT.subtitle} />
@@ -989,23 +1794,48 @@ export function ResultsPage() {
                 <input
                   placeholder={TEXT.keywordPlaceholder}
                   value={keywordInput}
-                  onChange={(event) => setKeywordInput(event.target.value)}
+                  onChange={(event) => handleKeywordInputChange(event.target.value)}
                   aria-label={TEXT.keywordLabel}
                 />
               </label>
             </div>
             <div className="results-filter-primary" data-testid="results-filter-primary">
-              <button
-                type="button"
-                className="workbench-primary-action"
-                onClick={() => void handleRefresh()}
-                disabled={loading}
-              >
-                {TEXT.refresh}
-              </button>
+              <div className="results-filter-primary-actions">
+                <button
+                  type="button"
+                  className={`workbench-secondary-action${currentFilterState.advancedOpen ? " active" : ""}`}
+                  onClick={handleToggleAdvancedFilters}
+                  disabled={loading}
+                >
+                  高级筛选
+                </button>
+                <button
+                  type="button"
+                  className="workbench-secondary-action"
+                  onClick={() => void handleRefresh()}
+                  disabled={loading}
+                >
+                  应用筛选
+                </button>
+                <button
+                  type="button"
+                  className="workbench-secondary-action"
+                  onClick={() => void handleResetFilters()}
+                  disabled={loading}
+                >
+                  重置筛选
+                </button>
+                <button
+                  type="button"
+                  className="workbench-primary-action"
+                  onClick={() => void handleRefresh()}
+                  disabled={loading}
+                >
+                  {TEXT.refresh}
+                </button>
+              </div>
             </div>
             <ResultsTableManager
-              total={total}
               selectedCount={selectedCount}
               allMatchingSelected={allMatchingSelected}
               showSelectAllMatching={showSelectAllMatching}
@@ -1015,6 +1845,7 @@ export function ResultsPage() {
               dedupeLabel={TEXT.dedupe}
               clearSelectionLabel={TEXT.clearSelection}
               loading={loading}
+              allowBatchDeleteWithoutSelection={hasAdvancedFilter && total > 0}
               fieldMenuOpen={fieldMenuOpen}
               fieldMenu={fieldMenuOpen ? (
                 <div className="results-field-menu" data-testid="results-field-menu">
@@ -1048,6 +1879,20 @@ export function ResultsPage() {
               onDedupe={() => void handleDedupe()}
             />
           </div>
+          {currentFilterState.advancedOpen ? (
+            <div
+              className="results-advanced-filter-panel"
+              data-testid="results-advanced-filter-panel"
+            >
+              <div className="results-advanced-filter-panel-head">
+                <div className="results-advanced-filter-panel-copy">
+                  <div className="results-filter-title workbench-section-title">高级筛选</div>
+                  <div className="kv">后端会先按整表筛选，再返回当前分页结果。</div>
+                </div>
+              </div>
+              {renderFilterGroup(draftFilterTree)}
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -1084,12 +1929,27 @@ export function ResultsPage() {
           )}
 
           <div className="results-table-status workbench-pill-row" data-testid="results-table-status">
+            <span className="results-summary-pill workbench-pill">{`共 ${total} 条`}</span>
+            <span className="results-summary-pill workbench-pill">{`已选 ${selectedCount} 条`}</span>
+            {allMatchingSelected && <span className="results-summary-pill workbench-pill">已选全部匹配结果</span>}
             <span className="results-summary-pill workbench-pill">{`\u5f53\u524d\u7b2c ${page} / ${totalPages} \u9875`}</span>
             <span className="results-summary-pill workbench-pill">{`\u672c\u9875 ${items.length} \u6761`}</span>
             <span className="results-summary-pill workbench-pill">{`\u672c\u9875\u5df2\u9009 ${selectedOnPage} \u6761`}</span>
             <span className="results-summary-pill workbench-pill">{`\u6392\u5e8f\uff1a${sortBy} \u00b7 ${sortDirectionLabel}`}</span>
             <span className="results-summary-pill workbench-pill">{`\u6bcf\u9875 ${pageSize} \u6761`}</span>
           </div>
+
+          {loading && (
+            <div
+              className="results-table-feedback results-table-feedback-loading flat-meta-strip"
+              data-testid="results-table-loading-state"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="spinner" />
+              <span>{TEXT.loading}</span>
+            </div>
+          )}
 
           {total > 0 && (
             <div className="results-pagination flat-meta-strip" data-testid="results-pagination">
@@ -1125,7 +1985,6 @@ export function ResultsPage() {
                 {resolvedVisibleColumnDefinitions.map((column) => (
                   <col key={`results-col-${table}-${column.key}`} style={{ width: column.currentWidth }} />
                 ))}
-                <col style={{ width: RESULTS_OPERATION_COLUMN_WIDTH }} />
               </colgroup>
               <thead>
                 <tr>
@@ -1143,39 +2002,36 @@ export function ResultsPage() {
                     const nextColumn = resolvedVisibleColumnDefinitions[index + 1];
                     const canResize = nextColumn != null;
                     return (
-                    <th
-                      key={column.key}
-                      className="results-th-cell"
-                      style={{ width: column.currentWidth, minWidth: column.currentWidth }}
-                    >
-                      <div className="results-th">
-                        <span className="results-th-label">{column.label}</span>
-                        {renderSortButtons(column.key, sortBy, sortDir, (field, direction) => {
-                          void handleSort(field, direction);
-                        })}
-                      </div>
-                      {canResize ? (
-                        <div
-                          className={`results-column-resizer${resizingColumnId === `${table}:${column.key}` ? " dragging" : ""}`}
-                          role="separator"
-                          aria-orientation="vertical"
-                          aria-label={`resize-column-${column.key}`}
-                          onPointerDown={(event) => {
-                            startColumnResize(column, nextColumn, event.clientX);
-                            event.preventDefault();
-                          }}
-                          onMouseDown={(event) => {
-                            startColumnResize(column, nextColumn, event.clientX);
-                            event.preventDefault();
-                          }}
-                        />
-                      ) : null}
-                    </th>
-                  );
+                      <th
+                        key={column.key}
+                        className="results-th-cell"
+                        style={{ width: column.currentWidth, minWidth: column.currentWidth }}
+                      >
+                        <div className="results-th">
+                          <span className="results-th-label">{column.label}</span>
+                          {renderSortButtons(column.key, sortBy, sortDir, (field, direction) => {
+                            void handleSort(field, direction);
+                          })}
+                        </div>
+                        {canResize ? (
+                          <div
+                            className={`results-column-resizer${resizingColumnId === `${table}:${column.key}` ? " dragging" : ""}`}
+                            role="separator"
+                            aria-orientation="vertical"
+                            aria-label={`resize-column-${column.key}`}
+                            onPointerDown={(event) => {
+                              startColumnResize(column, nextColumn, event.clientX);
+                              event.preventDefault();
+                            }}
+                            onMouseDown={(event) => {
+                              startColumnResize(column, nextColumn, event.clientX);
+                              event.preventDefault();
+                            }}
+                          />
+                        ) : null}
+                      </th>
+                    );
                   })}
-                  <th className="results-th-cell" style={{ width: RESULTS_OPERATION_COLUMN_WIDTH, minWidth: RESULTS_OPERATION_COLUMN_WIDTH }}>
-                    {TEXT.operation}
-                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1202,31 +2058,11 @@ export function ResultsPage() {
                         <div className={getCellContentClass(column.key)}>{column.render(item)}</div>
                       </td>
                     ))}
-                    <td onClick={(event) => event.stopPropagation()}>
-                      <div className="table-actions">
-                        <button
-                          type="button"
-                          className="workbench-danger-action"
-                          aria-label={`delete-item-${item.id}`}
-                          onClick={() => void handleDeleteOne(item)}
-                          disabled={loading}
-                        >
-                          {TEXT.delete}
-                        </button>
-                      </div>
-                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-
-          {loading && (
-            <div className="searching">
-              <span className="spinner" />
-              {TEXT.loading}
-            </div>
-          )}
           {!loading && items.length === 0 && <div className="drawer-empty">{TEXT.empty}</div>}
         </div>
 
@@ -1248,6 +2084,8 @@ export function ResultsPage() {
             table={table}
             tableLabel={tableLabel}
             total={total}
+            onDelete={activeItem ? () => void handleDeleteOne(activeItem) : undefined}
+            deleteDisabled={loading}
           />
         </aside>
       </section>

@@ -1,26 +1,35 @@
 # X数据采集器
 
 [![CI](https://github.com/gis2all/xdata-collector/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gis2all/xdata-collector/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/github/license/gis2all/xdata-collector)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-本项目是一个本地运行的 X 数据采集、规则筛选、结果沉淀工作台，负责 X 搜索、本地 API、任务调度、SQLite 存储和 Web UI。
+这是一个本地运行的 `X` 数据采集与规则筛选工作台，用于定义任务、采集 `X` 数据、按规则筛选结果，并将数据沉淀到本地 `SQLite`，再通过 `Web UI` 进行浏览、复盘与调度。
 
 ![Workbench Screenshot](artifacts/diagrams/readme-workbench.png)
 
-![image](artifacts/diagrams/workflow.png)
+## 产品概览
 
-## 核心能力
+该项目覆盖一条完整的本地工作流程：
 
-- 手动执行任务：编辑任务草稿并立即运行
-- 自动任务：按 jobs registry 调度任务包
-- 结果浏览：浏览 `x_items_raw` / `x_items_curated`，支持删除、去重
-- 运行总览与日志：查看服务状态、运行记录和当前日志
+1. 定义任务：维护关键词、时间范围、过滤条件、规则和标签
+2. 采集数据：手动运行，或者按自动任务定时执行
+3. 筛选结果：把原始搜索结果和规则命中结果分别沉淀下来
+4. 浏览复盘：在工作台里查看结果、运行状态和日志
+
+典型使用场景包括：
+
+- 想持续跟踪某一类 `X` 信息流
+- 想把搜索和筛选逻辑固化成可重复执行的任务
+- 想在本地保留一份可查询、可复盘的结果库
+
+该仓库定位为**本地工作台**，不负责下游投递平台或远端服务化部署。
 
 ## 快速开始
 
-> 不要使用自己的X账号，经检验一定会被限制！使用测试账号虽然会被限制，但是还可以正常获取数据。
+> 不要使用个人 `X` 主账号。现有使用经验表明一定会触发限制，专门的测试账号虽然限制但仍可获取数据。
 
-### 获取X Cookie
+### 1. 获取 X Cookie
+
 在已登录 `https://x.com` 的浏览器开发者工具里，从 `Application -> Storage -> Cookies -> https://x.com` 取出 `auth_token` 和 `ct0`，再写入项目根目录 `.env`：
 
 ```env
@@ -28,80 +37,99 @@ TWITTER_AUTH_TOKEN=你的 auth_token
 TWITTER_CT0=你的 ct0
 ```
 
-### 依赖与启动
+### 2. 选择启动方式
+
+#### 本机启动
+
+适用于希望直接在当前机器上运行服务、查看本地日志并进行调试的场景。
+
+准备条件：
+
+- 已安装 `Python`
+- 已安装 `Node.js / npm`
+
+执行：
+
 ```bash
-python install.py #安装项目依赖
-python services.py start #一键启动所有服务
+python install.py
+python services.py start
 ```
 
-默认访问：`http://127.0.0.1:5177`
+该路径会启动以下三个服务：
 
-### Docker 启动
+- `API`
+- `Scheduler`
+- `Dev UI`
 
-如果希望用 Docker 隔离本地运行环境，先确保 `.env` 已写入 `TWITTER_AUTH_TOKEN` / `TWITTER_CT0`，并停止本机端口上的旧服务：
+默认访问：
+
+- 工作台：`http://127.0.0.1:5177`
+- 健康检查：`http://127.0.0.1:8765/health`
+
+#### Docker 启动
+
+适用于希望将运行环境隔离到容器中的场景。执行前请先确认 `.env` 已写入  `TWITTER_AUTH_TOKEN` / `TWITTER_CT0`。
 
 ```bash
-python services.py stop
 docker compose up --build
 ```
 
-默认访问：`http://127.0.0.1:5177`。API 暴露在 `http://127.0.0.1:8765`。
+该路径同样会启动以下三个服务：
 
-Docker Compose 会启动三个服务：
+- `api`
+- `scheduler`
+- `web-ui`
 
-- `api`：本地 HTTP API
-- `scheduler`：固定 tick 调度器
-- `web-ui`：Vite 开发态 Web UI
+默认访问：
 
-容器内的 API 和 scheduler 默认通过 Windows 宿主机上的 Clash Verge 混合代理端口访问外网：
+- 工作台：`http://127.0.0.1:5177`
+- API：`http://127.0.0.1:8765`
 
-```text
-http://host.docker.internal:7897
-```
-
-如果 Clash Verge 的端口不是 `7897`，可以在启动前覆盖：
-
-```bash
-DOCKER_PROXY_URL=http://host.docker.internal:7890 docker compose up --build
-```
-
-如果容器无法连接代理，先确认 Clash Verge 已开启并允许来自 Docker 的连接；Docker Desktop 下容器访问宿主机要使用 `host.docker.internal`，不要写 `127.0.0.1`。
-
-以下目录会挂载到容器中并保留在宿主机：
+当前 `Docker Compose` 默认挂载以下目录：
 
 - `config/`
 - `data/`
 - `runtime/`
 - `.env`
 
-停止 Docker 服务：
+停止容器：
 
 ```bash
 docker compose down
 ```
 
-## 运行入口与端口
+Docker 注意事项：
 
-- `python install.py`：推荐首次安装入口，会调用 `run/bootstrap.py` 并安装前端依赖
-- `python services.py start`：启动 API、Scheduler 和开发态 Web UI
-- `python run/bootstrap.py`：底层依赖准备脚本，通常由 `install.py` 调用
-- 常用命令：`python services.py status`、`python services.py stop`、`python services.py restart`
-- 端口：API `127.0.0.1:8765`，开发态 Web UI `127.0.0.1:5177`，静态预览 `127.0.0.1:5178`
+- 仓库当前默认把容器代理指向 `http://host.docker.internal:7897`
+- 如果代理端口不同，请先将 `DOCKER_PROXY_URL` 设置为目标代理地址，再运行 `docker compose up --build`
+- 如果当前环境不使用这套代理配置，通常需要按实际网络环境调整 `DOCKER_PROXY_URL` 或 `docker-compose.yml`
 
-如果只想看构建后的静态页面，先运行 `cd web-ui && npm run build`，再运行 `python run/static_web_server.py --root web-ui/dist`。Scheduler 没有独立 HTTP 端口。
+## 常用入口
 
-## 关键边界
+常用命令：
 
-- `config/`：`workspace.json` 和 `packs/*.json`
-- `runtime/`：运行记录、健康快照、日志、PID、临时文件
-- `data/app.db`：本地 SQLite 结果库，项目默认直接连接，首次启动会自动创建，当前只保存 `x_items_raw` 和 `x_items_curated`
-- 搜索语言选择 `中文 + 英文` 时会生成单条 `(lang:zh OR lang:en)` query；默认发布时间范围为 1 天，默认按 1 小时窗口切片，可选 15 分钟 / 30 分钟 / 1h / 2h / 4h。
-- 最大结果数是每个时间切片 query 的传参上限，但当前 `twitter-cli search` 实测单 query 通常最多返回约 40 条。
-- 自动时间切片仅在有界发布时间范围下生效；如果 `raw_query` 已显式写 `since:` / `until:` / `since_time:` / `until_time:`，不会再叠加自动切片。时间切片 query 总上限为 10000。
+- `python install.py`：安装前端依赖
+- `python services.py start`：启动 `API`、`Scheduler` 和 `Dev UI`
+- `python services.py stop`：停止服务
+- `python services.py restart`：重启服务
+- `python services.py status`：查看服务状态
 
-## 最小排障顺序
+默认端口：
 
-1. 检查 `.env` 里是否有 `TWITTER_AUTH_TOKEN` / `TWITTER_CT0`
-2. 检查 `python services.py status`
-3. 检查 `http://127.0.0.1:8765/health`
-4. 最后再看前端页面或任务配置
+- API：`127.0.0.1:8765`
+- 开发态 Web UI：`127.0.0.1:5177`
+- 静态预览：`127.0.0.1:5178`
+
+如需要预览前端构建产物，可执行：
+
+```bash
+cd web-ui
+npm run build
+cd ..
+python run/static_web_server.py --root web-ui/dist
+```
+
+## 更多文档
+
+- [`CLAUDE.md`](CLAUDE.md)：项目真相、架构、搜索链路、页面行为、维护手册
+- [`config/README.md`](config/README.md)：`workspace.json`、task pack 和配置边界
