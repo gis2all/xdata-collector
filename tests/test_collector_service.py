@@ -301,6 +301,33 @@ class DesktopServiceTests(unittest.TestCase):
         toggled = self.service.toggle_job(int(job["id"]), False)
         self.assertEqual(toggled["enabled"], 0)
 
+    def test_job_group_name_round_trips_and_is_searchable(self) -> None:
+        default_rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        created = self.service.create_job(
+            {
+                "name": "alpha-watch",
+                "group_name": "  Alpha Ops  ",
+                "interval_minutes": 30,
+                "enabled": True,
+                "rule_set_id": default_rule_set_id,
+                "search_spec": {
+                    "all_keywords": ["alpha"],
+                    "language_mode": "en",
+                    "days_filter": {"mode": "lte", "max": 1},
+                },
+            }
+        )
+
+        self.assertEqual(created["group_name"], "Alpha Ops")
+        self.assertEqual(self.service.list_jobs(query="alpha ops")["total"], 1)
+
+        updated = self.service.update_job(int(created["id"]), {"group_name": "Core"})
+        self.assertEqual(updated["group_name"], "Core")
+
+        cleared = self.service.update_job(int(created["id"]), {"group_name": ""})
+        self.assertIsNone(cleared["group_name"])
+        self.assertIsNone(self.service.get_job(int(created["id"]))["group_name"])
+
     def test_list_update_delete_restore_and_purge_job(self) -> None:
         default_rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
         job = self.service.create_job(

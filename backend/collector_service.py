@@ -31,7 +31,7 @@ from backend.source_identity import (
     canonicalize_source_url,
 )
 from backend.twitter_cli import find_twitter_cli, get_twitter_cli_version, normalize_search_payload, run_twitter_search
-from backend.workspace_store import RuntimeStateStore, WorkspaceStore, default_builtin_rule_set, normalize_tags
+from backend.workspace_store import RuntimeStateStore, WorkspaceStore, default_builtin_rule_set, normalize_group_name, normalize_tags
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SQLITE_DEFAULT = Path("data") / "app.db"
@@ -456,6 +456,7 @@ class DesktopService:
         rule_set = self._job_rule_set(job, allow_missing=True)
         haystacks = [
             str(job.get("name") or "").lower(),
+            str(job.get("group_name") or "").lower(),
             json.dumps(self._job_keywords_preview(search_spec), ensure_ascii=False).lower(),
             json.dumps(normalize_tags(self._load_job_pack(job, allow_missing=True).get("tags")), ensure_ascii=False).lower(),
             str(rule_set.get("name") or "").lower(),
@@ -468,6 +469,7 @@ class DesktopService:
         search_spec = normalize_search_spec(pack.get("search_spec") or default_search_spec())
         rule_set = self._resolve_rule_set(inline_rule_set=pack.get("rule_set"))
         payload = copy.deepcopy(job)
+        payload["group_name"] = normalize_group_name(job.get("group_name"))
         payload["keywords_json"] = self._job_keywords_preview(search_spec)
         payload["days"] = int(search_spec.get("days", search_spec.get("days_filter", {}).get("max") or 1) or 1)
         payload["thresholds_json"] = {**search_spec.get("min_metrics", {}), "mode": search_spec.get("metric_mode", "OR")}
@@ -891,6 +893,7 @@ class DesktopService:
                 "interval_minutes": interval,
                 "pack_name": pack_name,
                 "pack_path": self.task_pack_store.relative_pack_path(pack_name),
+                "group_name": normalize_group_name(payload.get("group_name")),
                 "next_run_at": next_run_at,
                 "created_at": now,
                 "updated_at": now,
@@ -986,6 +989,11 @@ class DesktopService:
                 "name": name,
                 "interval_minutes": interval,
                 "enabled": 1 if enabled else 0,
+                "group_name": (
+                    normalize_group_name(payload.get("group_name"))
+                    if "group_name" in payload
+                    else normalize_group_name(current.get("group_name"))
+                ),
                 "next_run_at": next_run_at,
                 "updated_at": now,
                 "tags": normalize_tags(payload.get("tags", current_pack.get("tags"))),

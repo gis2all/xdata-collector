@@ -119,6 +119,11 @@ def normalize_tags(value: Any) -> list[str]:
     return normalized
 
 
+def normalize_group_name(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
 def _project_root_from_workspace_path(workspace_path: Path) -> Path:
     if workspace_path.parent.name == "config":
         return workspace_path.parent.parent
@@ -274,6 +279,7 @@ def _normalize_legacy_job(payload: dict[str, Any], *, fallback_id: int, default_
         "interval_minutes": max(1, int(payload.get("interval_minutes", 30) or 30)),
         "enabled": 1 if payload.get("enabled", True) else 0,
         "next_run_at": payload.get("next_run_at") or None,
+        "group_name": normalize_group_name(payload.get("group_name")),
         "created_at": str(payload.get("created_at") or now),
         "updated_at": str(payload.get("updated_at") or payload.get("created_at") or now),
         "deleted_at": payload.get("deleted_at") or None,
@@ -292,6 +298,7 @@ def _normalize_job_registry_entry(payload: dict[str, Any], *, fallback_id: int) 
         "interval_minutes": max(1, int(payload.get("interval_minutes", 30) or 30)),
         "pack_name": pack_name,
         "pack_path": str(payload.get("pack_path") or f"config/packs/{pack_name}.json").replace("\\", "/"),
+        "group_name": normalize_group_name(payload.get("group_name")),
         "next_run_at": payload.get("next_run_at") or None,
         "created_at": str(payload.get("created_at") or utc_now_iso()),
         "updated_at": str(payload.get("updated_at") or payload.get("created_at") or utc_now_iso()),
@@ -558,6 +565,7 @@ class WorkspaceStore:
                         "interval_minutes": job.get("interval_minutes", 30),
                         "pack_name": pack_name,
                         "pack_path": self.pack_store.relative_pack_path(pack_name),
+                        "group_name": job.get("group_name"),
                         "next_run_at": job.get("next_run_at"),
                         "created_at": job.get("created_at"),
                         "updated_at": job.get("updated_at"),

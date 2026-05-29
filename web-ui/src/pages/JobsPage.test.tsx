@@ -94,6 +94,7 @@ function makeJob(id: number, overrides: Record<string, unknown> = {}) {
     rule_set_summary: { id: 1, name: "Default Rule Set", description: "builtin", version: 1, is_builtin: true },
     pack_name: `job-${id}`,
     pack_path: `config/packs/job-${id}.json`,
+    group_name: null,
     tags: [],
     enabled: 1,
     next_run_at: "2026-04-14T00:00:00+00:00",
@@ -323,15 +324,19 @@ describe("JobsPage", () => {
       expect(within(screen.getByTestId("jobs-table-wrap")).getByText("任务标签")).toBeInTheDocument();
     });
 
+    const columnHeaders = screen.getAllByRole("columnheader");
+    const tagsColumnIndex = columnHeaders.findIndex((cell) => cell.textContent?.includes("任务标签"));
+    expect(tagsColumnIndex).toBeGreaterThanOrEqual(0);
+
     const taggedRow = screen.getByText("tagged-job").closest("tr") as HTMLTableRowElement;
-    const taggedCell = taggedRow.querySelectorAll("td")[3] as HTMLElement;
+    const taggedCell = taggedRow.querySelectorAll("td")[tagsColumnIndex] as HTMLElement;
     const taggedPills = taggedCell.querySelectorAll(".tag-pill");
     expect(taggedCell.querySelector(".tag-pills")).toBeInTheDocument();
     expect(Array.from(taggedPills).map((pill) => pill.textContent)).toEqual(["defi", "wallet"]);
     expect(taggedCell).not.toHaveTextContent("defi, wallet");
 
     const emptyRow = screen.getByText("empty-tags-job").closest("tr") as HTMLTableRowElement;
-    const emptyTagsCell = emptyRow.querySelectorAll("td")[3] as HTMLElement;
+    const emptyTagsCell = emptyRow.querySelectorAll("td")[tagsColumnIndex] as HTMLElement;
     expect(emptyTagsCell).toHaveTextContent("--");
     expect(emptyTagsCell.querySelector(".tag-pill")).not.toBeInTheDocument();
   });
@@ -540,6 +545,68 @@ describe("JobsPage", () => {
 
     const payload = createJobMock.mock.calls[0]?.[0] as any;
     expect(payload.tags).toEqual(["btc", "eth"]);
+  });
+
+  it("saves a trimmed group_name without mixing it into task-pack tags", async () => {
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(listJobsMock).toHaveBeenCalled();
+    });
+
+    fireEvent.click(screen.getByTestId("create-job-button"));
+    fireEvent.change(screen.getByLabelText("job-name"), { target: { value: "scheduled-alpha" } });
+    fireEvent.change(screen.getByLabelText("job-group-name"), { target: { value: "  Alpha Ops  " } });
+    fireEvent.change(screen.getByLabelText("job-pack-select"), { target: { value: "alpha-watch" } });
+    fireEvent.click(screen.getByLabelText("job-load-pack"));
+
+    await waitFor(() => {
+      expect(getTaskPackMock).toHaveBeenCalledWith("alpha-watch");
+    });
+
+    fireEvent.click(screen.getByLabelText("submit-job"));
+
+    await waitFor(() => {
+      expect(createJobMock).toHaveBeenCalled();
+    });
+
+    const payload = createJobMock.mock.calls[0]?.[0] as any;
+    expect(payload.group_name).toBe("Alpha Ops");
+    expect(payload.tags).toEqual(["defi", "wallet"]);
+  });
+
+  it("renders the group column and lets an existing job clear group_name", async () => {
+    listJobsMock.mockResolvedValue({
+      page: 1,
+      page_size: 10,
+      total: 1,
+      items: [makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" }, group_name: "Alpha Ops", tags: ["defi"] })],
+    } as any);
+    getJobMock.mockResolvedValue(makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" }, group_name: "Alpha Ops", tags: ["defi"] }) as any);
+    updateJobMock.mockResolvedValue(makeJob(7, { name: "alpha-watch-job", pack_name: "alpha-watch", pack_meta: { name: "Alpha Watch" }, group_name: null, tags: ["defi"] }) as any);
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(within(screen.getByTestId("jobs-table-wrap")).getByText("分组")).toBeInTheDocument();
+      expect(within(screen.getByTestId("jobs-table-wrap")).getByText("Alpha Ops")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText("alpha-watch-job"));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("job-group-name")).toHaveValue("Alpha Ops");
+    });
+
+    fireEvent.change(screen.getByLabelText("job-group-name"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存任务" }));
+
+    await waitFor(() => {
+      expect(updateJobMock).toHaveBeenCalled();
+    });
+
+    const payload = updateJobMock.mock.calls[0]?.[1] as any;
+    expect(payload.group_name).toBeNull();
   });
 
   it("keeps the list tools focused on filters and bulk actions without a summary banner", async () => {

@@ -62,6 +62,7 @@ type RefreshOptions = {
 
 type JobFormState = {
   name: string;
+  group_name: string;
   interval_minutes: number;
   enabled: boolean;
   pack_name: string | null;
@@ -88,7 +89,7 @@ type ActiveJobRun = {
   progress: RunProgress;
 };
 
-type JobTableColumnKey = "name" | "pack" | "tags" | "interval" | "status" | "next_run_at" | "last_run";
+type JobTableColumnKey = "name" | "pack" | "group" | "tags" | "interval" | "status" | "next_run_at" | "last_run";
 
 type JobTableColumnDefinition = {
   key: JobTableColumnKey;
@@ -152,6 +153,12 @@ const JOB_TABLE_COLUMNS: JobTableColumnDefinition[] = [
         <div className="kv jobs-row-meta">{job.pack_name || "--"}</div>
       </>
     ),
+  },
+  {
+    key: "group",
+    label: "分组",
+    width: 160,
+    render: (job) => job.group_name || "--",
   },
   {
     key: "tags",
@@ -254,6 +261,7 @@ function resolveJobColumnWidth(column: JobTableColumnDefinition, storedWidth?: n
 
 const DEFAULT_FORM: JobFormState = {
   name: "mining-watch",
+  group_name: "",
   interval_minutes: 60,
   enabled: true,
   pack_name: null,
@@ -767,6 +775,7 @@ export function JobsPage() {
   function resetForm() {
     setForm({
       ...DEFAULT_FORM,
+      group_name: "",
       search_spec: cloneSearchSpec(DEFAULT_SEARCH_SPEC),
       tagsText: "",
       rule_set: { ...DEFAULT_FORM.rule_set, definition: cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION) },
@@ -861,6 +870,7 @@ export function JobsPage() {
       setDraftSource(pack ? "pack" : "blank");
       setForm({
         name: detail.name,
+        group_name: detail.group_name || "",
         interval_minutes: detail.interval_minutes,
         enabled: Boolean(detail.enabled),
         pack_name: detail.pack_name || pack?.pack_name || null,
@@ -1019,6 +1029,7 @@ export function JobsPage() {
       if (!form.search_spec.all_keywords.length && !form.search_spec.raw_query.trim()) throw new Error("请至少填写关键词或原生查询");
       const payload = {
         name: form.name.trim(),
+        group_name: form.group_name.trim() || null,
         interval_minutes: Number(form.interval_minutes),
         enabled: form.enabled,
         tags: splitCommaLines(form.tagsText),
@@ -1714,6 +1725,16 @@ export function JobsPage() {
                   <label className="field">
                     <span>{"任务名称"}</span>
                     <input aria-label="job-name" value={form.name} onChange={(e) => updateForm("name", e.target.value)} disabled={drawerDisabled} />
+                  </label>
+                  <label className="field">
+                    <span>{"分组"}</span>
+                    <input
+                      aria-label="job-group-name"
+                      value={form.group_name}
+                      onChange={(e) => updateForm("group_name", e.target.value)}
+                      disabled={drawerDisabled}
+                      placeholder="如：Alpha / Exchange / Research"
+                    />
                   </label>
                   <label className="field">
                     <span>{"执行间隔（分钟）"}</span>

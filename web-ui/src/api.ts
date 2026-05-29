@@ -286,6 +286,7 @@ export type JobRecord = {
     description?: string;
     updated_at?: string;
   };
+  group_name?: string | null;
   tags: string[];
   enabled: number;
   next_run_at: string | null;
@@ -643,6 +644,7 @@ export function dedupeItems(payload: { table: ItemTable }) {
 
 export function createJob(payload: {
   name: string;
+  group_name?: string | null;
   interval_minutes: number;
   enabled: boolean;
   search_spec: SearchSpec;
@@ -657,6 +659,7 @@ export function updateJob(
   id: number,
   payload: Partial<{
     name: string;
+    group_name: string | null;
     interval_minutes: number;
     enabled: boolean;
     search_spec: SearchSpec;
