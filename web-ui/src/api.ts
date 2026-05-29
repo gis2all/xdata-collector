@@ -256,6 +256,18 @@ export type CollectorRunResult = {
   errors: string[];
 };
 
+export type RunStartResult = {
+  run_id: number;
+  status: string;
+  job_id?: number;
+};
+
+export type RunCancelResult = {
+  id: number;
+  status: string;
+  cancel_requested: boolean;
+};
+
 export type JobRecord = {
   id: number;
   name: string;
@@ -586,6 +598,10 @@ export function getRun(id: number) {
   return req<RunRecord>(`/runs/${id}`);
 }
 
+export function cancelRun(id: number) {
+  return req<RunCancelResult>(`/runs/${id}/cancel`, { method: "POST", body: "{}" });
+}
+
 export function getRuntimeLogs() {
   return req<{ items: RuntimeLogFile[] }>("/logs/runtime");
 }
@@ -657,7 +673,7 @@ export function toggleJob(id: number, enabled: boolean) {
 }
 
 export function runJobNow(id: number) {
-  return req<CollectorRunResult>(`/jobs/${id}/run-now`, { method: "POST", body: "{}" });
+  return req<RunStartResult>(`/jobs/${id}/run-now`, { method: "POST", body: "{}" });
 }
 
 export function deleteJob(id: number) {

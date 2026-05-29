@@ -100,7 +100,11 @@ class FakeService:
 
     def run_job_now(self, job_id: int) -> dict:
         self.calls.append(("run_job_now", job_id))
-        return {"status": "success", "job_id": job_id}
+        return {"status": "running", "job_id": job_id, "run_id": 42}
+
+    def cancel_run(self, run_id: int) -> dict:
+        self.calls.append(("cancel_run", run_id))
+        return {"id": run_id, "status": "cancelled", "cancel_requested": True}
 
     def batch_jobs(self, payload: dict) -> dict:
         self.calls.append(("batch_jobs", payload))
@@ -319,7 +323,10 @@ class ApiHandlerTests(unittest.TestCase):
             )
 
         self.assertEqual(status, 200)
-        self.assertEqual(json.loads(body.decode("utf-8"))["job_id"], 42)
+        parsed = json.loads(body.decode("utf-8"))
+        self.assertEqual(parsed["job_id"], 42)
+        self.assertEqual(parsed["status"], "running")
+        self.assertEqual(parsed["run_id"], 42)
         self.assertEqual(service.calls[0], ("run_job_now", 42))
 
     def test_post_jobs_batch_dispatches_explicit_ids(self) -> None:
@@ -367,6 +374,23 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(payload["page"], 2)
         self.assertEqual(payload["items"][0]["id"], 8)
         self.assertEqual(service.calls[0], ("list_runs", {"page": 2, "page_size": 10}))
+
+    def test_post_run_cancel_dispatches_to_cancel_run(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(
+                server,
+                "POST",
+                "/runs/8/cancel",
+                body=b"{}",
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(status, 200)
+        payload = json.loads(body.decode("utf-8"))
+        self.assertEqual(payload["id"], 8)
+        self.assertEqual(payload["status"], "cancelled")
+        self.assertEqual(service.calls[0], ("cancel_run", 8))
 
     def test_get_runtime_logs_returns_snapshot_payload(self) -> None:
         service = FakeService()

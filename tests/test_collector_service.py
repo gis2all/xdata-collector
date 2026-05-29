@@ -549,7 +549,7 @@ class DesktopServiceTests(unittest.TestCase):
         recent_created_at = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
         old_created_at = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
 
-        def fake_search(query: str, _max_results: int):
+        def fake_search(query: str, _max_results: int, cancel_event=None):
             return [
                 {
                     "id": "1001",
@@ -913,7 +913,7 @@ class DesktopServiceTests(unittest.TestCase):
     @patch("backend.collector_service.evaluate_rule_set")
     @patch("backend.collector_service.normalize_search_payload")
     @patch("backend.collector_service.run_twitter_search")
-    def test_run_job_now_triggers_auto_dedupe_after_successful_store(
+    def test_run_job_now_starts_async_auto_run_and_triggers_auto_dedupe_after_successful_store(
         self,
         mock_search,
         mock_normalize_payload,
@@ -937,12 +937,95 @@ class DesktopServiceTests(unittest.TestCase):
         with patch.object(self.service, "dedupe_items", wraps=self.service.dedupe_items) as mock_dedupe:
             report = self.service.run_job_now(int(job["id"]))
 
-        self.assertEqual(report["status"], "success")
-        self.assertIn("dedupe_groups", report["stats"])
+            self.assertEqual(report["status"], "running")
+            self.assertGreater(int(report["run_id"]), 0)
+
+            deadline = time.time() + 5
+            final_run = None
+            while time.time() < deadline:
+                current = self.service.get_run(int(report["run_id"]))
+                if current.get("status") != "running":
+                    final_run = current
+                    break
+                time.sleep(0.05)
+
+        self.assertIsNotNone(final_run)
+        assert final_run is not None
+        self.assertEqual(final_run["status"], "success")
+        self.assertEqual(final_run["job_id"], int(job["id"]))
+        self.assertEqual(final_run["trigger_type"], "auto")
+        self.assertIn("dedupe_groups", final_run["stats_json"])
         self.assertEqual(
             [call.kwargs.get("table", "curated") for call in mock_dedupe.call_args_list],
             ["curated"],
         )
+
+    @patch("backend.collector_service.run_twitter_search")
+    def test_run_job_now_updates_progress_while_running(self, mock_search) -> None:
+        recent_created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+
+        def fake_search(query: str, _max_results: int):
+            time.sleep(0.05)
+            return [
+                {
+                    "id": f"tweet-{abs(hash(query)) % 100000}",
+                    "text": "Alpha progress https://example.com",
+                    "author": {"screenName": "galxe"},
+                    "createdAtISO": recent_created_at,
+                    "metrics": {"views": 200, "likes": 10, "replies": 1, "retweets": 0},
+                    "lang": "en",
+                    "url": "https://x.com/galxe/status/1001",
+                }
+            ]
+
+        mock_search.side_effect = fake_search
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        job = self.service.create_job(
+            {
+                "name": "alpha-auto-progress",
+                "interval_minutes": 30,
+                "enabled": True,
+                "rule_set_id": rule_set_id,
+                "search_spec": {
+                    "all_keywords": ["alpha"],
+                    "language_mode": "zh_en",
+                    "days_filter": {"mode": "lte", "max": 1},
+                    "metric_filters": {
+                        "views": {"mode": "any"},
+                        "likes": {"mode": "any"},
+                        "replies": {"mode": "any"},
+                        "retweets": {"mode": "any"},
+                    },
+                    "metric_filters_explicit": True,
+                },
+            }
+        )
+
+        started = self.service.run_job_now(int(job["id"]))
+
+        run_id = int(started["run_id"])
+        observed_running_progress = False
+        deadline = time.time() + 5
+        final_run = None
+        while time.time() < deadline:
+            current = self.service.get_run(run_id)
+            stats = current.get("stats_json") or {}
+            if current.get("status") == "running" and int(stats.get("completed_queries", 0) or 0) > 0:
+                observed_running_progress = True
+            if current.get("status") != "running":
+                final_run = current
+                break
+            time.sleep(0.05)
+
+        self.assertTrue(observed_running_progress)
+        self.assertIsNotNone(final_run)
+        assert final_run is not None
+        self.assertEqual(final_run["status"], "success")
+        self.assertEqual(final_run["trigger_type"], "auto")
+        self.assertEqual(final_run["job_id"], int(job["id"]))
+        self.assertEqual(final_run["stats_json"]["total_queries"], 24)
+        self.assertEqual(final_run["stats_json"]["completed_queries"], 24)
+        self.assertEqual(final_run["stats_json"]["progress_percent"], 100)
 
     def test_list_runs_returns_recent_records_with_pagination(self) -> None:
         first = self.service._create_run(job_id=None, trigger_type="manual")
@@ -1020,6 +1103,101 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertEqual(final_run["stats_json"]["total_queries"], 24)
         self.assertEqual(final_run["stats_json"]["completed_queries"], 24)
         self.assertEqual(final_run["stats_json"]["progress_percent"], 100)
+
+    @patch("backend.collector_service.run_twitter_search")
+    def test_cancel_run_stops_manual_run_and_marks_it_cancelled(self, mock_search) -> None:
+        recent_created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        started_queries: list[str] = []
+
+        def fake_search(query: str, _max_results: int, timeout_seconds: int = 60, cancel_event=None):
+            started_queries.append(query)
+            deadline = time.time() + 1.0
+            while time.time() < deadline:
+                if cancel_event is not None and cancel_event.is_set():
+                    raise RuntimeError("cancelled")
+                time.sleep(0.01)
+            return [
+                {
+                    "id": f"tweet-{abs(hash(query)) % 100000}",
+                    "text": "Alpha progress https://example.com",
+                    "author": {"screenName": "galxe"},
+                    "createdAtISO": recent_created_at,
+                    "metrics": {"views": 200, "likes": 10, "replies": 1, "retweets": 0},
+                    "lang": "en",
+                    "url": "https://x.com/galxe/status/1001",
+                }
+            ]
+
+        mock_search.side_effect = fake_search
+        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
+        started = self.service.start_manual_run(
+            {
+                "search_spec": {
+                    "all_keywords": ["alpha"],
+                    "language_mode": "zh_en",
+                    "days_filter": {"mode": "lte", "max": 1},
+                    "metric_filters": {
+                        "views": {"mode": "any"},
+                        "likes": {"mode": "any"},
+                        "replies": {"mode": "any"},
+                        "retweets": {"mode": "any"},
+                    },
+                    "metric_filters_explicit": True,
+                },
+                "rule_set_id": rule_set_id,
+            }
+        )
+
+        run_id = int(started["run_id"])
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            current = self.service.get_run(run_id)
+            stats = current.get("stats_json") or {}
+            if current.get("status") == "running" and int(stats.get("completed_queries", 0) or 0) >= 1:
+                break
+            time.sleep(0.05)
+
+        cancelled = self.service.cancel_run(run_id)
+        self.assertTrue(cancelled["cancel_requested"])
+
+        final_run = None
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            current = self.service.get_run(run_id)
+            if current.get("status") != "running":
+                final_run = current
+                break
+            time.sleep(0.05)
+
+        self.assertIsNotNone(final_run)
+        assert final_run is not None
+        self.assertEqual(final_run["status"], "cancelled")
+        self.assertGreater(len(started_queries), 0)
+        self.assertLess(int(final_run["stats_json"].get("completed_queries", 0) or 0), int(final_run["stats_json"].get("total_queries", 0) or 0))
+        self.assertIn("cancel", str(final_run.get("error_text") or "").lower())
+
+    def test_get_run_reconciles_orphaned_running_run_to_cancelled(self) -> None:
+        run_id = self.service._create_run(job_id=None, trigger_type="manual")
+        self.service.runtime_store.finish_run(
+            run_id,
+            status="running",
+            stats={},
+            error_text="",
+            result=None,
+            ended_at=None,
+        )
+        runs = self.service.runtime_store._load_runs()
+        for item in runs:
+            if int(item.get("id") or 0) == run_id:
+                item["status"] = "running"
+                item["ended_at"] = None
+                item["owner_pid"] = 999999
+        self.service.runtime_store._save_runs(runs)
+        orphaned = self.service.get_run(run_id)
+
+        self.assertEqual(orphaned["status"], "cancelled")
+        self.assertIsNotNone(orphaned["ended_at"])
+        self.assertIn("owner process", str(orphaned.get("error_text") or "").lower())
 
     def test_get_runtime_logs_reads_current_log_snapshots(self) -> None:
         from backend import collector_service as collector_service_module
@@ -1233,10 +1411,21 @@ class DesktopServiceTests(unittest.TestCase):
             }
         )
 
-        report = self.service.run_job_now(int(job["id"]))
+        started = self.service.run_job_now(int(job["id"]))
+        deadline = time.time() + 5
+        final_run = None
+        while time.time() < deadline:
+            current = self.service.get_run(int(started["run_id"]))
+            if current.get("status") != "running":
+                final_run = current
+                break
+            time.sleep(0.05)
 
         self.assertEqual(job["tags"], ["onchain", "airdrop"])
-        self.assertEqual(report["tags"], ["onchain", "airdrop"])
+        self.assertIsNotNone(final_run)
+        assert final_run is not None
+        result_json = final_run.get("result_json") or {}
+        self.assertEqual(result_json["tags"], ["onchain", "airdrop"])
         self.assertEqual(self.service.list_items(table="raw")["items"][0]["tags"], ["onchain", "airdrop"])
         self.assertEqual(self.service.list_items(table="curated")["items"][0]["tags"], ["onchain", "airdrop"])
 

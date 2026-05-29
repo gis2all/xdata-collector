@@ -6,6 +6,7 @@ import {
   RuleSetDefinition,
   TaskPackFile,
   TaskPackSummary,
+  cancelRun,
   createTaskPack,
   deleteTaskPack,
   getRun,
@@ -25,6 +26,13 @@ import {
 } from "../collector";
 import { SearchSpecEditor } from "../components/SearchSpecEditor";
 import { RuleSetEditor } from "../components/RuleSetEditor";
+import {
+  EMPTY_RUN_PROGRESS,
+  buildRunProgress,
+  executionStatusLabel,
+  executionStatusTone,
+  normalizeExecutionStatus,
+} from "../runProgress";
 import { readImportedTaskPack } from "../taskPacks";
 import { formatUtcPlus8Time } from "../time";
 
@@ -88,7 +96,7 @@ function buildPackComparable(pack: TaskPackFile) {
 }
 
 type DraftSourceKind = "blank" | "pack" | "file";
-type ExecutionStatus = "idle" | "running" | "success" | "failed";
+type ExecutionStatus = "idle" | "running" | "success" | "failed" | "cancelled";
 
 const DEFAULT_DRAFT_PACK_NAME = "__default_draft__";
 const DEFAULT_DRAFT_PACK_LABEL = "默认草稿";
@@ -123,88 +131,14 @@ type ManualRunProgress = {
   endedAt: string | null;
 };
 
-const EMPTY_RUN_PROGRESS: ManualRunProgress = {
-  runId: null,
-  status: "idle",
-  totalQueries: 0,
-  completedQueries: 0,
-  progressPercent: 0,
-  fetchedRaw: 0,
-  queryErrors: 0,
-  startedAt: null,
-  endedAt: null,
-};
-
 function draftSourceLabel(kind: DraftSourceKind) {
   if (kind === "pack") return "任务包载入";
   if (kind === "file") return "文件导入";
   return "默认草稿";
 }
 
-function executionStatusLabel(status: ExecutionStatus) {
-  if (status === "running") return "执行中";
-  if (status === "success") return "执行成功";
-  if (status === "failed") return "执行失败";
-  return "未执行";
-}
-
-function executionStatusTone(status: ExecutionStatus) {
-  if (status === "running") return "running";
-  if (status === "success") return "success";
-  if (status === "failed") return "failed";
-  return "neutral";
-}
-
-function normalizeExecutionStatus(status: string | null | undefined): ExecutionStatus {
-  if (status === "running") return "running";
-  if (status === "success") return "success";
-  if (status === "failed") return "failed";
-  return "idle";
-}
-
-function statNumber(stats: Record<string, number> | undefined, key: string) {
-  const value = Number(stats?.[key] ?? 0);
-  return Number.isFinite(value) ? Math.max(0, value) : 0;
-}
-
-function clampPercent(value: number) {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(100, Math.round(value)));
-}
-
-function progressPercentForRun(status: ExecutionStatus, completedQueries: number, totalQueries: number, reportedPercent: number) {
-  if (status === "success") return 100;
-  if (status === "failed" && totalQueries > 0 && completedQueries >= totalQueries) return 100;
-  if (reportedPercent > 0) return clampPercent(reportedPercent);
-  if (totalQueries > 0) return clampPercent((completedQueries / totalQueries) * 100);
-  return 0;
-}
-
-function buildRunProgress(run: RunRecord): ManualRunProgress {
-  const status = normalizeExecutionStatus(run.status);
-  const totalQueries = statNumber(run.stats_json, "total_queries");
-  const completedQueries = statNumber(run.stats_json, "completed_queries");
-  const progressPercent = progressPercentForRun(
-    status,
-    completedQueries,
-    totalQueries,
-    statNumber(run.stats_json, "progress_percent"),
-  );
-  return {
-    runId: Number(run.id || 0) || null,
-    status,
-    totalQueries,
-    completedQueries,
-    progressPercent,
-    fetchedRaw: statNumber(run.stats_json, "fetched_raw"),
-    queryErrors: statNumber(run.stats_json, "query_errors"),
-    startedAt: run.started_at || null,
-    endedAt: run.ended_at || null,
-  };
-}
-
 function buildExecutionSummary(
-  status: Extract<ExecutionStatus, "success" | "failed">,
+  status: Extract<ExecutionStatus, "success" | "failed" | "cancelled">,
   executedAt: string,
   result: CollectorRunResult | null,
   fallbackError: string,
@@ -351,8 +285,15 @@ export function ManualSearchPage() {
     }
 
     const errors = Array.isArray(resultPayload?.errors) ? resultPayload.errors : [];
-    const failureText = current.error_text || errors[0] || "采集失败";
+    const fallbackText = finalStatus === "cancelled" ? "已手动停止执行" : "采集失败";
+    const failureText = current.error_text || errors[0] || fallbackText;
     setResult(null);
+    if (finalStatus === "cancelled") {
+      setMessage(failureText);
+      setError("");
+      setLastExecution(buildExecutionSummary("cancelled", finishedAt, resultPayload, failureText));
+      return;
+    }
     setError(failureText);
     setLastExecution(buildExecutionSummary("failed", finishedAt, resultPayload, failureText));
   }
@@ -648,6 +589,19 @@ export function ManualSearchPage() {
     }
   }
 
+  async function onStopRun() {
+    if (runProgress.runId === null || runProgress.status !== "running") return;
+    setError("");
+    setMessage("");
+    try {
+      await cancelRun(runProgress.runId);
+      const current = await getRun(runProgress.runId);
+      finishManualRun(current, buildRunProgress(current));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "停止执行失败");
+    }
+  }
+
   return (
     <div className="collector-workbench manual-page" data-testid="manual-search-page">
       <header className="card collector-hero manual-page-header workbench-page-header" data-testid="manual-page-header">
@@ -659,6 +613,16 @@ export function ManualSearchPage() {
           <button type="button" className="workbench-primary-action" onClick={onRun} data-testid="manual-run-button" disabled={loading}>
             {loading ? "执行中..." : "立即执行任务"}
           </button>
+          {runProgress.status === "running" ? (
+            <button
+              type="button"
+              className="workbench-danger-action"
+              onClick={onStopRun}
+              data-testid="manual-stop-run-button"
+            >
+              停止执行
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -689,6 +653,18 @@ export function ManualSearchPage() {
               <div className="manual-run-progress-percent">{progressPercentLabel}</div>
             </div>
           </div>
+          {runProgress.status === "running" ? (
+            <div className="collector-toolbar" style={{ marginBottom: 12 }}>
+              <button
+                type="button"
+                className="workbench-danger-action"
+                onClick={onStopRun}
+                data-testid="manual-stop-run-progress-button"
+              >
+                停止执行
+              </button>
+            </div>
+          ) : null}
           <div
             className="manual-run-progress-track"
             role="progressbar"

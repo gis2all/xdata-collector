@@ -1,4 +1,5 @@
 import json
+import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -317,6 +318,129 @@ class RuntimeStateStoreTests(unittest.TestCase):
             self.assertEqual(stored["stats_json"]["total_queries"], 24)
             self.assertEqual(stored["stats_json"]["completed_queries"], 7)
             self.assertEqual(stored["stats_json"]["progress_percent"], 29)
+
+    def test_list_runs_skips_malformed_jsonl_lines(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runs_path = root / "runtime" / "history" / "search_runs.jsonl"
+            runs_path.parent.mkdir(parents=True, exist_ok=True)
+            runs_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "id": 1,
+                                "job_id": 7,
+                                "trigger_type": "auto",
+                                "status": "success",
+                                "stats_json": {"matched": 2},
+                                "result_json": None,
+                                "started_at": "2026-04-14T00:00:00+00:00",
+                                "ended_at": "2026-04-14T00:01:00+00:00",
+                                "error_text": None,
+                            },
+                            ensure_ascii=False,
+                        ),
+                        '{"id": 2, "job_id": 8, "status": "running", "result_json": "unterminated',
+                        "stdout: Assertion failed",
+                        json.dumps(
+                            {
+                                "id": 3,
+                                "job_id": None,
+                                "trigger_type": "manual",
+                                "status": "running",
+                                "stats_json": {"total_queries": 24},
+                                "result_json": None,
+                                "started_at": "2026-04-14T00:02:00+00:00",
+                                "ended_at": None,
+                                "error_text": None,
+                            },
+                            ensure_ascii=False,
+                        ),
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            store = RuntimeStateStore(
+                runs_path=runs_path,
+                health_path=root / "runtime" / "state" / "runtime_health_snapshot.json",
+                sequence_path=root / "runtime" / "state" / "sequences.json",
+            )
+
+            page = store.list_runs(page=1, page_size=10)
+
+            self.assertEqual(page["total"], 2)
+            self.assertEqual([item["id"] for item in page["items"]], [3, 1])
+
+    def test_run_updates_are_atomic_across_store_instances(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runs_path = root / "runtime" / "history" / "search_runs.jsonl"
+            health_path = root / "runtime" / "state" / "runtime_health_snapshot.json"
+            sequence_path = root / "runtime" / "state" / "sequences.json"
+
+            loaded = threading.Event()
+            resume = threading.Event()
+
+            class HookedRuntimeStateStore(RuntimeStateStore):
+                def __init__(self, *args, **kwargs) -> None:
+                    super().__init__(*args, **kwargs)
+                    self._pause_once = True
+
+                def _read_runs_unlocked(self) -> list[dict]:
+                    runs = super()._read_runs_unlocked()
+                    if self._pause_once:
+                        self._pause_once = False
+                        loaded.set()
+                        resume.wait(timeout=5)
+                    return runs
+
+            store_a = HookedRuntimeStateStore(
+                runs_path=runs_path,
+                health_path=health_path,
+                sequence_path=sequence_path,
+            )
+            store_b = RuntimeStateStore(
+                runs_path=runs_path,
+                health_path=health_path,
+                sequence_path=sequence_path,
+            )
+            run_id = store_b.create_run(job_id=12, trigger_type="auto", started_at="2026-04-14T00:00:00+00:00")
+
+            worker = threading.Thread(
+                target=store_a.update_run_progress,
+                args=(run_id,),
+                kwargs={"stats": {"completed_queries": 7, "progress_percent": 29}},
+            )
+            worker.start()
+            self.assertTrue(loaded.wait(timeout=5))
+
+            finisher = threading.Thread(
+                target=store_b.finish_run,
+                args=(run_id,),
+                kwargs={
+                    "status": "success",
+                    "stats": {"matched": 3},
+                    "error_text": "",
+                    "result": {"run_id": run_id, "status": "success"},
+                    "ended_at": "2026-04-14T00:01:00+00:00",
+                },
+            )
+            finisher.start()
+
+            resume.set()
+            worker.join(timeout=5)
+            finisher.join(timeout=5)
+            self.assertFalse(worker.is_alive())
+            self.assertFalse(finisher.is_alive())
+
+            stored = store_b.get_run(run_id)
+
+            self.assertEqual(stored["status"], "success")
+            self.assertEqual(stored["stats_json"]["completed_queries"], 7)
+            self.assertEqual(stored["stats_json"]["progress_percent"], 29)
+            self.assertEqual(stored["stats_json"]["matched"], 3)
 
 
 if __name__ == "__main__":

@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import re
 import sqlite3
 import threading
+import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +29,44 @@ WORKSPACE_VERSION = 2
 TASK_PACK_VERSION = 1
 TASK_PACK_KIND = "task_pack"
 _RUNS_LOCK = threading.RLock()
+_FILE_LOCK_TIMEOUT_SECONDS = 10.0
+_FILE_LOCK_POLL_SECONDS = 0.05
+
+
+@contextmanager
+def _exclusive_lock(path: Path):
+    lock_path = path.with_name(path.name + ".lock")
+    _ensure_parent(lock_path)
+    with lock_path.open("a+b") as handle:
+        deadline = time.time() + _FILE_LOCK_TIMEOUT_SECONDS
+        while True:
+            try:
+                handle.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.time() >= deadline:
+                    raise TimeoutError(f"timed out waiting for lock: {path}")
+                time.sleep(_FILE_LOCK_POLL_SECONDS)
+        try:
+            yield
+        finally:
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _ensure_parent(path: Path) -> None:
@@ -640,51 +681,62 @@ class RuntimeStateStore:
         _atomic_write_text(self.sequence_path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
     def _next_sequence(self, key: str) -> int:
-        payload = self._load_sequences()
-        next_value = int(payload.get(key, 0) or 0) + 1
-        payload[key] = next_value
-        self._save_sequences(payload)
-        return next_value
+        with _RUNS_LOCK, _exclusive_lock(self.sequence_path):
+            payload = self._load_sequences()
+            next_value = int(payload.get(key, 0) or 0) + 1
+            payload[key] = next_value
+            self._save_sequences(payload)
+            return next_value
+
+    def _read_runs_unlocked(self) -> list[dict[str, Any]]:
+        if not self.runs_path.exists():
+            return []
+        items: list[dict[str, Any]] = []
+        for line in self.runs_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                items.append(payload)
+        return items
 
     def _load_runs(self) -> list[dict[str, Any]]:
-        with _RUNS_LOCK:
-            if not self.runs_path.exists():
-                return []
-            items: list[dict[str, Any]] = []
-            for line in self.runs_path.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                items.append(json.loads(line))
-            return items
+        with _RUNS_LOCK, _exclusive_lock(self.runs_path):
+            return self._read_runs_unlocked()
+
+    def _save_runs_unlocked(self, payload: list[dict[str, Any]]) -> None:
+        serialized = "\n".join(json.dumps(item, ensure_ascii=False) for item in payload)
+        if serialized:
+            serialized += "\n"
+        self.runs_path.write_text(serialized, encoding="utf-8")
 
     def _save_runs(self, payload: list[dict[str, Any]]) -> None:
-        with _RUNS_LOCK:
-            serialized = "\n".join(json.dumps(item, ensure_ascii=False) for item in payload)
-            if serialized:
-                serialized += "\n"
-            # Progress updates can be very frequent; on Windows, atomic replace on the same
-            # JSONL file is prone to transient access errors while other readers poll status.
-            _ensure_parent(self.runs_path)
-            self.runs_path.write_text(serialized, encoding="utf-8")
+        with _RUNS_LOCK, _exclusive_lock(self.runs_path):
+            self._save_runs_unlocked(payload)
 
     def create_run(self, *, job_id: int | None, trigger_type: str, started_at: str | None = None) -> int:
         run_id = self._next_sequence("run_id")
-        runs = self._load_runs()
-        runs.append(
-            {
-                "id": run_id,
-                "job_id": job_id,
-                "trigger_type": trigger_type,
-                "status": "running",
-                "stats_json": {},
-                "result_json": None,
-                "started_at": started_at or utc_now_iso(),
-                "ended_at": None,
-                "error_text": None,
-            }
-        )
-        self._save_runs(runs)
+        with _RUNS_LOCK, _exclusive_lock(self.runs_path):
+            runs = self._read_runs_unlocked()
+            runs.append(
+                {
+                    "id": run_id,
+                    "job_id": job_id,
+                    "trigger_type": trigger_type,
+                    "status": "running",
+                    "stats_json": {},
+                    "result_json": None,
+                    "started_at": started_at or utc_now_iso(),
+                    "ended_at": None,
+                    "error_text": None,
+                    "owner_pid": os.getpid(),
+                }
+            )
+            self._save_runs_unlocked(runs)
         return run_id
 
     def finish_run(
@@ -697,36 +749,38 @@ class RuntimeStateStore:
         result: dict[str, Any] | None = None,
         ended_at: str | None = None,
     ) -> None:
-        runs = self._load_runs()
-        found = False
-        for item in runs:
-            if int(item.get("id") or 0) != int(run_id):
-                continue
-            item["status"] = status
-            current_stats = item.get("stats_json") if isinstance(item.get("stats_json"), dict) else {}
-            item["stats_json"] = {**copy.deepcopy(current_stats), **copy.deepcopy(stats)}
-            item["result_json"] = copy.deepcopy(result) if isinstance(result, dict) else None
-            item["ended_at"] = ended_at or utc_now_iso()
-            item["error_text"] = error_text or None
-            found = True
-            break
-        if not found:
-            raise ValueError(f"run {run_id} not found")
-        self._save_runs(runs)
+        with _RUNS_LOCK, _exclusive_lock(self.runs_path):
+            runs = self._read_runs_unlocked()
+            found = False
+            for item in runs:
+                if int(item.get("id") or 0) != int(run_id):
+                    continue
+                item["status"] = status
+                current_stats = item.get("stats_json") if isinstance(item.get("stats_json"), dict) else {}
+                item["stats_json"] = {**copy.deepcopy(current_stats), **copy.deepcopy(stats)}
+                item["result_json"] = copy.deepcopy(result) if isinstance(result, dict) else None
+                item["ended_at"] = ended_at or utc_now_iso()
+                item["error_text"] = error_text or None
+                found = True
+                break
+            if not found:
+                raise ValueError(f"run {run_id} not found")
+            self._save_runs_unlocked(runs)
 
     def update_run_progress(self, run_id: int, *, stats: dict[str, Any]) -> None:
-        runs = self._load_runs()
-        found = False
-        for item in runs:
-            if int(item.get("id") or 0) != int(run_id):
-                continue
-            current_stats = item.get("stats_json") if isinstance(item.get("stats_json"), dict) else {}
-            item["stats_json"] = {**copy.deepcopy(current_stats), **copy.deepcopy(stats)}
-            found = True
-            break
-        if not found:
-            raise ValueError(f"run {run_id} not found")
-        self._save_runs(runs)
+        with _RUNS_LOCK, _exclusive_lock(self.runs_path):
+            runs = self._read_runs_unlocked()
+            found = False
+            for item in runs:
+                if int(item.get("id") or 0) != int(run_id):
+                    continue
+                current_stats = item.get("stats_json") if isinstance(item.get("stats_json"), dict) else {}
+                item["stats_json"] = {**copy.deepcopy(current_stats), **copy.deepcopy(stats)}
+                found = True
+                break
+            if not found:
+                raise ValueError(f"run {run_id} not found")
+            self._save_runs_unlocked(runs)
 
     def get_run(self, run_id: int) -> dict[str, Any]:
         for item in self._load_runs():

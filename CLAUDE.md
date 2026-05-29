@@ -45,19 +45,19 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 
 ### 4. X 认证依赖
 
-- `TWITTER_AUTH_TOKEN`
-- `TWITTER_CT0`
+- `TWITTER_AUTH_TOKEN`：只给 `xreach search` / `xreach tweet` 补全用
+- `TWITTER_CT0`：只给 `xreach search` / `xreach tweet` 补全用
 
 ### 5. X 搜索链路约定
 
 - 默认搜索入口是 `twitter-cli 0.8.6` 的 `twitter search ... --json`；本机和 Docker 安装脚本都应使用 `git+https://github.com/public-clis/twitter-cli.git`。
-- `xreach search` 只作为 `twitter-cli search` 失败后的 fallback，不作为默认搜索入口。
-- 语言模式 `zh_en` 生成单条 `(lang:zh OR lang:en)` 查询，不拆成中文、英文两次搜索；默认 `days_filter` 为最近 1 天，默认时间切片为 1 小时，可选 15 分钟 / 30 分钟 / 1h / 2h / 4h。
+- `xreach search` 只作为 `twitter-cli search` 失败后的 fallback，不作为默认搜索入口；`TWITTER_AUTH_TOKEN` / `TWITTER_CT0` 只影响 `xreach search` 和 `xreach tweet` 补全。
+- 语言模式 `zh_en` 生成单条 `(lang:zh OR lang:en)` 查询，不拆成中文、英文两次搜索；默认 `days_filter` 为最近 1 天，默认时间切片为 1 小时，可选 15 分钟 / 30 分钟 / 1h / 2h / 4h，默认 `max_results` 为 100。
 - `max_results` 是每个时间切片 query 的传参上限；`twitter-cli search` 实测单 query 通常最多返回约 40 条，所以高频词仍可能需要更细切片。
 - 只有有界 `days_filter` 会自动追加 `since_time:<秒> until_time:<秒>` 切片查询；如果 `raw_query` 已显式包含 `since:` / `until:` / `since_time:` / `until_time:`，不要再自动叠加时间切片；时间切片 query 总上限为 10000。
 - 二次补全使用 `xreach tweet <tweet_id> --json`，只在核心字段缺失时触发：`author`、`author_name`、`text`、`created_at_x`、`views`、`likes`、`replies`、`retweets`。
 - 不要因为 `urls` 或 `media` 缺失触发二次补全；搜索结果自带就保留，没有就不强制慢查。这里的 `urls` 是推文正文里的外部链接，不是推文本身的 `canonical_url`。
-- 排查搜索速度时必须带 `.env` 里的 `TWITTER_AUTH_TOKEN` / `TWITTER_CT0` 实测，并先确认 `python -m pipx list` 里 `twitter-cli` 是 0.8.6；旧的 0.8.5 可能出现 search 404，不能拿来判断当前策略。
+- 排查搜索速度时要分别看 `twitter-cli search` 和 `xreach search`，本机实测要带 `.env` 里的 `TWITTER_AUTH_TOKEN` / `TWITTER_CT0`，并先确认 `python -m pipx list` 里 `twitter-cli` 是 0.8.6；旧的 0.8.5 可能出现 search 404，不能拿来判断当前策略。
 
 ## 配置与存储模型
 
@@ -129,6 +129,7 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 
 - `x_items_raw` 和 `x_items_curated` 都保留 `fetched_at`
 - `x_items_raw` 和 `x_items_curated` 都保留 `tags_json`，API 序列化为 `tags: string[]`
+- `author` 表示作者 handle / screenName；`author_name` 表示作者展示名，raw / curated 都保留这两个字段
 - `x_items_raw` 只保存通过搜索条件过滤后的原始结果，不再保存抓取但被搜索条件排除的中间数据
 - raw 只做单次 run 内存去重；不会在成功 run 后自动执行全表去重
 - 每次成功写入 curated 后，会自动对 `x_items_curated` 执行一次全表去重
@@ -157,9 +158,9 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 
 - `DashboardPage`：运行总览
 - `ManualSearchPage`：手动执行任务 + 任务包草稿管理
-- `JobsPage`：调度任务列表 + 绑定任务包
-- `ResultsPage`：`raw/curated` 双表结果浏览
-- `LogsPage`：运行记录 + 服务日志快照
+- `JobsPage`：调度任务列表 + 绑定任务包 + 实时进度 / 停止
+- `ResultsPage`：`raw/curated` 双表结果浏览，表格不保留操作列
+- `LogsPage`：运行记录 + 服务日志快照 + running run 静默轮询 / 停止
 - `SettingsPage`：轻量 workspace 编辑
 
 ## 当前 API 口径
@@ -187,7 +188,11 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 ### 手动执行与自动任务
 
 - `POST /manual/run`
+- `POST /manual/run/start`
 - `/jobs` 系列路由仍然保留，但底层已经改为 workspace + task pack 文件后端
+- `POST /jobs/{id}/run-now`
+- `POST /jobs/{id}/run`
+- `POST /runs/{id}/cancel`
 - `POST /jobs/batch` 已支持批量启用、停用、立即运行、删除、恢复、彻底删除
 - `POST /scheduler/tick` 仍可用于手动触发 scheduler 逻辑
 
@@ -216,7 +221,7 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
    - 逗号、中文逗号、换行才是分隔符
    - 普通空格保留在单个条目内部
    - 支持多词短语，不会再吞空格或逗号
-6. 前端调用 `POST /manual/run`
+6. 前端默认先调用 `POST /manual/run/start` 启动后台 run，再轮询 `GET /runs/{id}`；`POST /manual/run` 仍保留为同步入口
 7. `run_manual()` 组装查询、拉取 X 结果、单次 run 内去重、应用搜索过滤条件、写 raw、评估规则、写 curated
 8. 成功 run 后只会自动对 `x_items_curated` 执行全表去重；raw 表保持“搜索条件通过后的原始结果”语义
 
@@ -225,21 +230,24 @@ run/ + backend/ + web-ui/ + config/ + runtime/ + data/
 1. `JobsPage` 维护 `workspace.json.jobs[]` 的注册信息
 2. 每条 job 通过 `pack_path` 指向一个 task pack
 3. scheduler 按固定 tick 扫描已启用且到期的 job
-4. `run_job_now()` 读取任务包正文后调用 `run_manual(..., trigger_type="auto")`
-5. Jobs 页支持两段式全选和批量操作
+4. `run_job_now()` 会先创建后台 run，再返回 `{run_id, status}`；scheduler tick 复用同一路径
+5. Jobs 页支持两段式全选和批量操作，运行中的任务可在右侧工作区停止当前 run
 
 ### 3. 结果浏览
 
 1. `ResultsPage` 以 `table=curated|raw` 切换数据源，默认选中 `raw`
 2. 排序、删除、批量删除、去重都作用于当前选中的表
-3. 结果页支持列显隐、本地视图记忆和列宽拖拽
+3. 结果页支持列显隐、本地视图记忆和列宽拖拽；表格已隐藏操作列，单条删除由右侧详情栏承接
 4. 当前默认字段口径：
-   - raw 默认首屏包含 `canonical_url`、`author`、`text`、`created_at_x`、`fetched_at`
-   - curated 默认首屏包含 `title`、`summary_zh`、`level`、`score`、`source_url`、`author`、`created_at_x`、`fetched_at`
+   - raw 默认首屏包含 `author_name`、`tags`、`text`、`created_at_x`、`views`、`likes`、`replies`、`fetched_at`
+   - curated 默认首屏包含 `level`、`score`、`title`、`source_url`、`author_name`、`tags`、`created_at_x`、`views`、`likes`、`replies`、`fetched_at`
+   - `canonical_url`、`summary_zh`、`author` 仍可显示，但已不是默认首屏字段
 5. `canonical_url` 和 `source_url` 在表格里都应渲染为可点击超链接
 6. 右侧详情轨当前口径：
-   - raw 详情在 `推文 ID` 和 `采集时间` 之间显示 `推文链接`
-   - curated 详情里的 `来源链接` 也是可点击超链接
+   - raw“采集信息”包含 `作者名称`、`作者ID`、`任务TAGS`、`查询名称`、`运行 ID`、`推文 ID`、`推文链接`、`发推时间`、`采集时间`
+   - curated“记录信息”包含 `状态`、`等级`、`任务TAGS`、`作者名称`、`作者ID`、`发推时间`、`采集时间`、`来源链接`、`去重键`
+   - `任务TAGS` 是当前详情栏文案；`发推时间` 对应 `created_at_x`
+   - raw 的 `推文链接` 和 curated 的 `来源链接` 都应渲染为可点击超链接
 7. 列宽拖拽采用“相邻对冲”模型：
    - 只移动当前分界线
    - 只影响分界线左右两列

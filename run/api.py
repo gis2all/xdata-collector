@@ -186,6 +186,10 @@ class ApiHandler(BaseHTTPRequestHandler):
                 job_id = int(path.split("/")[2])
                 self._json(HTTPStatus.OK, self.service.run_job_now(job_id))
                 return
+            if path.startswith("/runs/") and path.endswith("/cancel"):
+                run_id = int(path.split("/")[2])
+                self._json(HTTPStatus.OK, self.service.cancel_run(run_id))
+                return
             if path.startswith("/jobs/") and path.endswith("/delete"):
                 job_id = int(path.split("/")[2])
                 self._json(HTTPStatus.OK, self.service.delete_job(job_id))

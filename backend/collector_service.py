@@ -4,6 +4,7 @@ import copy
 import json
 import os
 import threading
+import time
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -265,6 +266,8 @@ class DesktopService:
             health_path=self.runtime_dir / "state" / "runtime_health_snapshot.json",
             sequence_path=self.runtime_dir / "state" / "sequences.json",
         )
+        self._run_cancel_events: dict[int, threading.Event] = {}
+        self._run_cancel_lock = threading.RLock()
         load_env_file(self.env_file)
         self._force_reload_x_env()
         with connect(self.db_path):
@@ -397,6 +400,8 @@ class DesktopService:
         for item in runs:
             if item.get("job_id") is None:
                 continue
+            if str(item.get("status") or "").lower() == "running":
+                item = self._reconcile_orphaned_run(item)
             normalized_job_id = int(item["job_id"])
             if normalized_job_id not in runs_by_job:
                 runs_by_job[normalized_job_id] = item
@@ -583,6 +588,101 @@ class DesktopService:
             "succeeded_ids": succeeded_ids,
             "failed_items": failed_items,
         }
+
+    def _build_job_run_payload(self, job: dict[str, Any]) -> dict[str, Any]:
+        pack = self._load_job_pack(job)
+        rule_set = self._resolve_rule_set(inline_rule_set=pack.get("rule_set"))
+        tags = normalize_tags(pack.get("tags"))
+        return {
+            "search_spec": normalize_search_spec(pack.get("search_spec") or default_search_spec()),
+            "tags": tags,
+            "rule_set": {
+                "id": rule_set.get("id"),
+                "name": rule_set.get("name"),
+                "description": rule_set.get("description"),
+                "version": rule_set.get("version"),
+                "definition": rule_set.get("definition_json"),
+            },
+        }
+
+    def _running_run_for_job(self, job_id: int) -> dict[str, Any] | None:
+        for item in sorted(self._list_all_runs(), key=lambda row: int(row.get("id") or 0), reverse=True):
+            if int(item.get("job_id") or 0) != int(job_id):
+                continue
+            if str(item.get("status") or "").lower() == "running":
+                item = self._reconcile_orphaned_run(item)
+            if str(item.get("status") or "").lower() == "running":
+                return item
+        return None
+
+    def _register_run_cancel_event(self, run_id: int) -> threading.Event:
+        with self._run_cancel_lock:
+            event = threading.Event()
+            self._run_cancel_events[int(run_id)] = event
+            return event
+
+    def _pop_run_cancel_event(self, run_id: int) -> threading.Event | None:
+        with self._run_cancel_lock:
+            return self._run_cancel_events.pop(int(run_id), None)
+
+    def _cancel_event_for_run(self, run_id: int) -> threading.Event | None:
+        with self._run_cancel_lock:
+            return self._run_cancel_events.get(int(run_id))
+
+    def _owner_pid_alive(self, owner_pid: Any) -> bool:
+        try:
+            pid = int(owner_pid or 0)
+        except (TypeError, ValueError):
+            return False
+        if pid <= 0:
+            return False
+        if pid == os.getpid():
+            return True
+        try:
+            if os.name == "nt":
+                import ctypes
+
+                kernel32 = ctypes.windll.kernel32
+                handle = kernel32.OpenProcess(0x1000, 0, pid)
+                if not handle:
+                    return False
+                kernel32.CloseHandle(handle)
+                return True
+            os.kill(pid, 0)
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _reconcile_orphaned_run(self, run: dict[str, Any]) -> dict[str, Any]:
+        if str(run.get("status") or "").lower() != "running":
+            return run
+        if self._owner_pid_alive(run.get("owner_pid")):
+            return run
+        self._finish_run(
+            int(run["id"]),
+            "cancelled",
+            copy.deepcopy(run.get("stats_json") or {}),
+            "Cancelled because the owner process is no longer running.",
+            result=copy.deepcopy(run.get("result_json")) if isinstance(run.get("result_json"), dict) else None,
+        )
+        return self.runtime_store.get_run(int(run["id"]))
+
+    def _schedule_job_next_run(self, job_id: int, interval_minutes: int) -> None:
+        workspace = self._ensure_builtin_rule_set()
+        index = self._find_job_index(workspace.get("jobs", []), job_id)
+        if index < 0:
+            return
+        workspace["jobs"][index]["next_run_at"] = (datetime.now(timezone.utc) + timedelta(minutes=int(interval_minutes))).isoformat()
+        workspace["jobs"][index]["updated_at"] = utc_now_iso()
+        self._save_workspace(workspace)
+
+    def _run_auto_job_in_background(self, run_id: int, payload: dict[str, Any], job_id: int, interval_minutes: int) -> None:
+        try:
+            report = self._execute_manual_run(payload, trigger_type="auto", job_id=job_id, run_id=run_id)
+            if report.get("status") == "success":
+                self._schedule_job_next_run(job_id, interval_minutes)
+        except Exception:
+            return
 
     def list_rule_sets(self) -> dict[str, Any]:
         return {"items": self._rule_set_catalog()}
@@ -954,34 +1054,23 @@ class DesktopService:
         job = copy.deepcopy(workspace["jobs"][index])
         if job.get("deleted_at"):
             raise ValueError(f"job {job_id} is deleted")
-        pack = self._load_job_pack(job)
-        rule_set = self._resolve_rule_set(inline_rule_set=pack.get("rule_set"))
-        tags = normalize_tags(pack.get("tags"))
-        report = self.run_manual(
-            {
-                "search_spec": normalize_search_spec(pack.get("search_spec") or default_search_spec()),
-                "tags": tags,
-                "rule_set": {
-                    "id": rule_set.get("id"),
-                    "name": rule_set.get("name"),
-                    "description": rule_set.get("description"),
-                    "version": rule_set.get("version"),
-                    "definition": rule_set.get("definition_json"),
-                },
-            },
-            trigger_type="auto",
-            job_id=job_id,
+        current = self._running_run_for_job(int(job_id))
+        if current is not None:
+            return {"run_id": int(current["id"]), "status": "running", "job_id": int(job_id)}
+        payload = self._build_job_run_payload(job)
+        run_id = self._create_run(job_id=job_id, trigger_type="auto")
+        self._register_run_cancel_event(run_id)
+        thread = threading.Thread(
+            target=self._run_auto_job_in_background,
+            args=(run_id, copy.deepcopy(payload), int(job_id), int(job["interval_minutes"])),
+            daemon=True,
         )
-        workspace = self._ensure_builtin_rule_set()
-        index = self._find_job_index(workspace.get("jobs", []), job_id)
-        if index >= 0:
-            workspace["jobs"][index]["next_run_at"] = (datetime.now(timezone.utc) + timedelta(minutes=int(job["interval_minutes"]))).isoformat()
-            workspace["jobs"][index]["updated_at"] = utc_now_iso()
-            self._save_workspace(workspace)
-        return report
+        thread.start()
+        return {"run_id": run_id, "status": "running", "job_id": int(job_id)}
 
     def start_manual_run(self, payload: dict[str, Any], trigger_type: str = "manual", job_id: int | None = None) -> dict[str, Any]:
         run_id = self._create_run(job_id=job_id, trigger_type=trigger_type)
+        self._register_run_cancel_event(run_id)
         thread = threading.Thread(
             target=self._run_manual_in_background,
             args=(run_id, copy.deepcopy(payload), trigger_type, job_id),
@@ -992,6 +1081,7 @@ class DesktopService:
 
     def run_manual(self, payload: dict[str, Any], trigger_type: str = "manual", job_id: int | None = None) -> dict[str, Any]:
         run_id = self._create_run(job_id=job_id, trigger_type=trigger_type)
+        self._register_run_cancel_event(run_id)
         return self._execute_manual_run(payload, trigger_type=trigger_type, job_id=job_id, run_id=run_id)
 
     def _run_manual_in_background(self, run_id: int, payload: dict[str, Any], trigger_type: str, job_id: int | None) -> None:
@@ -1029,6 +1119,7 @@ class DesktopService:
             inline_rule_set=payload.get("rule_set"),
         )
         days = int(search_spec.get("days", 1))
+        cancel_event = self._cancel_event_for_run(run_id)
 
         try:
             fetched_results: list[SearchResult] = []
@@ -1044,11 +1135,24 @@ class DesktopService:
                 },
             )
             for index, query in enumerate(final_queries, start=1):
+                if cancel_event is not None and cancel_event.is_set():
+                    raise RuntimeError("cancelled")
                 try:
-                    raw_payload = run_twitter_search(query, int(search_spec.get("max_results", 40)))
+                    try:
+                        raw_payload = run_twitter_search(
+                            query,
+                            int(search_spec.get("max_results", 40)),
+                            cancel_event=cancel_event,
+                        )
+                    except TypeError as exc:
+                        if "cancel_event" not in str(exc):
+                            raise
+                        raw_payload = run_twitter_search(query, int(search_spec.get("max_results", 40)))
                     normalized = normalize_search_payload(f"{trigger_type}:{index}", raw_payload, query)
                     fetched_results.extend(normalized)
                 except Exception as exc:  # noqa: BLE001
+                    if "cancel" in str(exc).lower():
+                        raise
                     query_errors.append(f"{query}: {exc}")
                 completed_queries = index
                 progress_percent = int((completed_queries / total_queries) * 100) if total_queries else 100
@@ -1135,16 +1239,58 @@ class DesktopService:
             self._finish_run(run_id, "success", report["stats"], "\n".join(run_errors), result=report)
             return report
         except Exception as exc:  # noqa: BLE001
-            self._finish_run(run_id, "failed", {}, str(exc), result={"run_id": run_id, "status": "failed", "errors": [str(exc)]})
+            current = self.runtime_store.get_run(int(run_id))
+            current_stats = copy.deepcopy(current.get("stats_json") or {})
+            cancelled = "cancel" in str(exc).lower()
+            self._finish_run(
+                run_id,
+                "cancelled" if cancelled else "failed",
+                current_stats,
+                str(exc),
+                result={
+                    "run_id": run_id,
+                    "status": "cancelled" if cancelled else "failed",
+                    "errors": [str(exc)],
+                },
+            )
             raise
+        finally:
+            self._pop_run_cancel_event(run_id)
 
     def get_run(self, run_id: int) -> dict[str, Any]:
-        return self.runtime_store.get_run(int(run_id))
+        run = self.runtime_store.get_run(int(run_id))
+        return self._reconcile_orphaned_run(run)
 
     def list_runs(self, page: int = 1, page_size: int = 50) -> dict[str, Any]:
         page = max(1, int(page or 1))
         page_size = max(1, min(200, int(page_size or 50)))
-        return self.runtime_store.list_runs(page=page, page_size=page_size)
+        payload = self.runtime_store.list_runs(page=page, page_size=page_size)
+        payload["items"] = [self._reconcile_orphaned_run(copy.deepcopy(item)) for item in payload.get("items", [])]
+        return payload
+
+    def cancel_run(self, run_id: int) -> dict[str, Any]:
+        current = self.get_run(int(run_id))
+        if str(current.get("status") or "").lower() != "running":
+            return {"id": int(run_id), "status": current.get("status"), "cancel_requested": False}
+        cancel_event = self._cancel_event_for_run(int(run_id))
+        if cancel_event is None:
+            self._finish_run(
+                int(run_id),
+                "cancelled",
+                copy.deepcopy(current.get("stats_json") or {}),
+                "Cancelled because the execution context is no longer available.",
+                result=copy.deepcopy(current.get("result_json")) if isinstance(current.get("result_json"), dict) else None,
+            )
+            return {"id": int(run_id), "status": "cancelled", "cancel_requested": True}
+        cancel_event.set()
+        deadline = time.time() + 2.0
+        while time.time() < deadline:
+            latest = self.runtime_store.get_run(int(run_id))
+            if str(latest.get("status") or "").lower() != "running":
+                break
+            time.sleep(0.05)
+        latest = self.get_run(int(run_id))
+        return {"id": int(run_id), "status": latest.get("status"), "cancel_requested": True}
 
     def get_runtime_logs(self) -> dict[str, Any]:
         items: list[dict[str, Any]] = []
@@ -1624,6 +1770,8 @@ class DesktopService:
         ]
         jobs.sort(key=lambda item: int(item.get("id") or 0))
         for job in jobs:
+            if self._running_run_for_job(int(job["id"])) is not None:
+                continue
             try:
                 self.run_job_now(int(job["id"]))
                 triggered += 1

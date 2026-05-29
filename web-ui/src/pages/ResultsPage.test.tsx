@@ -175,6 +175,7 @@ describe("ResultsPage", () => {
     expect(within(screen.getByTestId("results-table-pane")).queryByText("author")).not.toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).queryByText("raw-author-1")).not.toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).queryByText("retweets")).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "操作" })).not.toBeInTheDocument();
     const rawTags = within(screen.getByTestId("results-table-pane")).getAllByText("raw");
     const tableRawTag = rawTags.find((tag) => tag.closest(".results-table-pane"))!;
     expect(tableRawTag).toHaveClass("tag-pill");
@@ -1136,7 +1137,7 @@ it("renders default business columns and utc+8 timestamps", async () => {
     expect(await screen.findByText("已删除 132 条记录")).toBeInTheDocument();
   });
 
-  it("deletes a single row from the action column", async () => {
+  it("deletes a single row from the detail rail", async () => {
     listItemsMock
       .mockResolvedValueOnce(makePage([makeRawItem(1)], 1))
       .mockResolvedValueOnce(makePage([makeItem(7)], 1))
@@ -1155,8 +1156,9 @@ it("renders default business columns and utc+8 timestamps", async () => {
       expect(within(screen.getByTestId("results-table-pane")).getByText("Item 7")).toBeInTheDocument();
     });
 
-    expect(screen.getByRole("button", { name: "delete-item-7" })).toHaveClass("workbench-danger-action");
-    fireEvent.click(screen.getByRole("button", { name: "delete-item-7" }));
+    const detailRail = screen.getByTestId("results-detail-rail");
+    expect(within(detailRail).getByRole("button", { name: "delete-detail-item-7" })).toHaveClass("workbench-danger-action");
+    fireEvent.click(within(detailRail).getByRole("button", { name: "delete-detail-item-7" }));
 
     await waitFor(() => {
       expect(deleteItemMock).toHaveBeenCalledWith(7, "curated");

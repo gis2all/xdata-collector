@@ -3,16 +3,19 @@ import {
   JobBatchAction,
   JobBatchResponse,
   JobRecord,
+  RunRecord,
   RuleSet,
   RuleSetDefinition,
   TaskPackFile,
   TaskPackSummary,
   batchJobs,
+  cancelRun,
   createJob,
   createTaskPack,
   deleteTaskPack,
   deleteJob,
   getJob,
+  getRun,
   getTaskPack,
   listJobs,
   listTaskPacks,
@@ -35,6 +38,13 @@ import {
 import { RuleSetEditor } from "../components/RuleSetEditor";
 import { SearchSpecEditor } from "../components/SearchSpecEditor";
 import { TagPills } from "../components/TagPills";
+import {
+  EMPTY_RUN_PROGRESS,
+  buildRunProgress,
+  executionStatusLabel,
+  executionStatusTone,
+  type RunProgress,
+} from "../runProgress";
 import { ImportedTaskPackDraft, readImportedTaskPack } from "../taskPacks";
 import { formatUtcPlus8Time } from "../time";
 
@@ -47,6 +57,7 @@ type RefreshOptions = {
   status?: JobStatusFilter;
   keepDrawer?: boolean;
   reloadSelected?: boolean;
+  silent?: boolean;
 };
 
 type JobFormState = {
@@ -71,6 +82,175 @@ type BatchActionSpec = {
   label: string;
   tone?: "danger" | "ghost";
 };
+
+type ActiveJobRun = {
+  run: RunRecord;
+  progress: RunProgress;
+};
+
+type JobTableColumnKey = "name" | "pack" | "tags" | "interval" | "status" | "next_run_at" | "last_run";
+
+type JobTableColumnDefinition = {
+  key: JobTableColumnKey;
+  label: string;
+  width: number;
+  render: (job: JobRecord, activeRun: ActiveJobRun | undefined) => ReactNode;
+};
+
+type JobColumnWidths = Partial<Record<JobTableColumnKey, number>>;
+
+type JobColumnResizeState = {
+  leftKey: JobTableColumnKey;
+  rightKey: JobTableColumnKey;
+  startX: number;
+  leftStartWidth: number;
+  rightStartWidth: number;
+  leftMinWidth: number;
+  rightMinWidth: number;
+};
+
+function buildActiveJobRunFromJob(job: JobRecord): ActiveJobRun | null {
+  if (!job.last_run_id || String(job.last_run_status || "").toLowerCase() !== "running") {
+    return null;
+  }
+  const run: RunRecord = {
+    id: job.last_run_id,
+    job_id: job.id,
+    trigger_type: "auto",
+    status: job.last_run_status || "running",
+    started_at: job.last_run_started_at || job.updated_at,
+    ended_at: job.last_run_ended_at || null,
+    error_text: job.last_run_error_text || null,
+    stats_json: (job.last_run_stats as Record<string, number> | undefined) || {},
+    result_json: null,
+  };
+  return {
+    run,
+    progress: buildRunProgress(run),
+  };
+}
+
+const JOB_TABLE_COLUMNS: JobTableColumnDefinition[] = [
+  {
+    key: "name",
+    label: "任务",
+    width: 220,
+    render: (job) => (
+      <>
+        <div className="job-name jobs-row-title">{job.name}</div>
+        <div className="kv jobs-row-meta">#{job.id}</div>
+      </>
+    ),
+  },
+  {
+    key: "pack",
+    label: "任务包",
+    width: 220,
+    render: (job) => (
+      <>
+        <div className="job-name jobs-row-title">{job.pack_meta?.name || job.pack_name || "--"}</div>
+        <div className="kv jobs-row-meta">{job.pack_name || "--"}</div>
+      </>
+    ),
+  },
+  {
+    key: "tags",
+    label: "任务标签",
+    width: 180,
+    render: (job) => <TagPills tags={job.tags} />,
+  },
+  {
+    key: "interval",
+    label: "间隔",
+    width: 110,
+    render: (job) => `${job.interval_minutes} 分钟`,
+  },
+  {
+    key: "status",
+    label: "状态",
+    width: 110,
+    render: (job) => <span className={`badge ${job.deleted_at ? "b" : job.enabled ? "a" : ""}`}>{jobState(job)}</span>,
+  },
+  {
+    key: "next_run_at",
+    label: "下次运行",
+    width: 220,
+    render: (job) => formatUtcPlus8Time(job.next_run_at),
+  },
+  {
+    key: "last_run",
+    label: "最近运行",
+    width: 220,
+    render: (job, activeRun) =>
+      activeRun ? (
+        <>
+          <div className="jobs-running-status">
+            <span>{`${activeRun.run.status || "running"} `}</span>
+            <span className="jobs-running-percent">{`${activeRun.progress.progressPercent || 0}%`}</span>
+          </div>
+          <div className="kv">{formatUtcPlus8Time(activeRun.progress.startedAt)}</div>
+        </>
+      ) : (
+        <>
+          <div>{job.last_run_status || "--"}</div>
+          <div className="kv">{formatUtcPlus8Time(job.last_run_ended_at || job.last_run_started_at)}</div>
+        </>
+      ),
+  },
+];
+
+function normalizeJobColumnWidths(value: unknown): JobColumnWidths {
+  if (value == null || typeof value !== "object") {
+    return {};
+  }
+  const allowed = new Set(JOB_TABLE_COLUMNS.map((column) => column.key));
+  const result: JobColumnWidths = {};
+  for (const [key, rawWidth] of Object.entries(value as Record<string, unknown>)) {
+    if (!allowed.has(key as JobTableColumnKey)) {
+      continue;
+    }
+    if (typeof rawWidth !== "number" || !Number.isFinite(rawWidth) || rawWidth <= 0) {
+      continue;
+    }
+    result[key as JobTableColumnKey] = Math.round(rawWidth);
+  }
+  return result;
+}
+
+function readJobColumnWidths(): JobColumnWidths {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  const raw = window.localStorage.getItem(JOBS_COLUMN_WIDTHS_KEY);
+  if (!raw) {
+    return {};
+  }
+  try {
+    return normalizeJobColumnWidths(JSON.parse(raw) as Record<string, unknown>);
+  } catch {
+    return {};
+  }
+}
+
+function writeJobColumnWidths(widths: JobColumnWidths) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(JOBS_COLUMN_WIDTHS_KEY, JSON.stringify(widths));
+}
+
+function getJobColumnMinWidth(column: JobTableColumnDefinition) {
+  if (column.width <= 90) return 72;
+  if (column.width <= 120) return 88;
+  if (column.width <= 160) return 120;
+  return 140;
+}
+
+function resolveJobColumnWidth(column: JobTableColumnDefinition, storedWidth?: number) {
+  const minWidth = getJobColumnMinWidth(column);
+  const width = typeof storedWidth === "number" && Number.isFinite(storedWidth) ? storedWidth : column.width;
+  return Math.max(minWidth, Math.round(width));
+}
 
 const DEFAULT_FORM: JobFormState = {
   name: "mining-watch",
@@ -105,6 +285,8 @@ const MIN_LIST_PANE_WIDTH = 320;
 const MIN_DRAWER_PANE_WIDTH = 320;
 const RESIZER_WIDTH = 20;
 const SPLIT_LAYOUT_BREAKPOINT = 1160;
+const JOBS_SELECT_COLUMN_WIDTH = 48;
+const JOBS_COLUMN_WIDTHS_KEY = "jobs.columnWidths.v1";
 
 function jobState(job: JobRecord) {
   if (job.deleted_at) return "已删除";
@@ -226,14 +408,21 @@ export function JobsPage() {
   const [selectionWarning, setSelectionWarning] = useState("");
   const [selectedDeletedById, setSelectedDeletedById] = useState<Record<number, boolean>>({});
   const [currentTaskPack, setCurrentTaskPack] = useState<TaskPackFile | null>(null);
+  const [activeRunsByJobId, setActiveRunsByJobId] = useState<Record<number, ActiveJobRun>>({});
   const [draftSource, setDraftSource] = useState<DraftSourceKind>("blank");
+  const [columnWidths, setColumnWidths] = useState<JobColumnWidths>(() => readJobColumnWidths());
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? SPLIT_LAYOUT_BREAKPOINT : window.innerWidth));
   const [leftPaneWidth, setLeftPaneWidth] = useState<number | null>(null);
   const [isResizing, setIsResizing] = useState(false);
+  const [isResizingColumn, setIsResizingColumn] = useState(false);
+  const [resizingColumnId, setResizingColumnId] = useState<JobTableColumnKey | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingFileActionRef = useRef<"draft" | "save_new">("draft");
   const layoutRef = useRef<HTMLDivElement | null>(null);
   const dragBoundsRef = useRef<{ left: number; width: number } | null>(null);
+  const columnResizeStateRef = useRef<JobColumnResizeState | null>(null);
+  const runPollTimerRef = useRef<number | null>(null);
+  const activeRunsRef = useRef<Record<number, ActiveJobRun>>({});
 
   const isSplitLayout = viewportWidth > SPLIT_LAYOUT_BREAKPOINT;
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
@@ -275,6 +464,18 @@ export function JobsPage() {
     if (!currentTaskPackComparable) return false;
     return JSON.stringify(currentTaskPackComparable) !== JSON.stringify(currentJobDraftComparable);
   }, [currentTaskPackComparable, currentJobDraftComparable]);
+  const resolvedJobColumns = useMemo(
+    () =>
+      JOB_TABLE_COLUMNS.map((column) => ({
+        ...column,
+        currentWidth: resolveJobColumnWidth(column, columnWidths[column.key]),
+      })),
+    [columnWidths],
+  );
+  const jobsTableMinWidth = useMemo(
+    () => Math.max(900, JOBS_SELECT_COLUMN_WIDTH + resolvedJobColumns.reduce((sum, column) => sum + column.currentWidth, 0)),
+    [resolvedJobColumns],
+  );
   const manageSelectionSummary = selectedCount > 0
     ? `当前已选 ${selectedCount} 项，可继续清空选择或直接执行批量操作。`
     : "先在表格中勾选任务，再执行批量操作。";
@@ -290,6 +491,66 @@ export function JobsPage() {
     }),
     [currentTaskPack?.pack_name, form.rule_set],
   );
+  const selectedJobActiveRun = selectedJob ? activeRunsByJobId[selectedJob.id] ?? null : null;
+
+  function clearRunPollTimer() {
+    if (runPollTimerRef.current !== null) {
+      window.clearTimeout(runPollTimerRef.current);
+      runPollTimerRef.current = null;
+    }
+  }
+
+  function mergeActiveRunsFromJobs(items: JobRecord[]) {
+    setActiveRunsByJobId((prev) => {
+      const next = { ...prev };
+      for (const job of items) {
+        const current = next[job.id];
+        const snapshot = buildActiveJobRunFromJob(job);
+        if (!current && snapshot) {
+          next[job.id] = snapshot;
+          continue;
+        }
+        if (!current) continue;
+        if (current.progress.status === "running") continue;
+        if (job.last_run_id && current.run.id === job.last_run_id) {
+          delete next[job.id];
+          continue;
+        }
+        if (job.last_run_id && current.run.id !== job.last_run_id) {
+          delete next[job.id];
+        }
+      }
+      activeRunsRef.current = next;
+      return next;
+    });
+  }
+
+  async function pollActiveRunsOnce() {
+    const runningEntries = Object.entries(activeRunsRef.current).filter(([, entry]) => entry.progress.status === "running");
+    if (!runningEntries.length) {
+      clearRunPollTimer();
+      return false;
+    }
+
+    const updates = await Promise.all(
+      runningEntries.map(async ([jobId, entry]) => {
+        const run = await getRun(entry.run.id);
+        return { jobId: Number(jobId), run };
+      }),
+    );
+
+    setActiveRunsByJobId((prev) => {
+      const next = { ...prev };
+      for (const update of updates) {
+        const progress = buildRunProgress(update.run);
+        next[update.jobId] = { run: update.run, progress };
+      }
+      activeRunsRef.current = next;
+      return next;
+    });
+    void refreshJobs({ reloadSelected: true, silent: true });
+    return updates.some((update) => buildRunProgress(update.run).status === "running");
+  }
 
   function applyLeftPaneWidth(nextWidth: number | null) {
     setLeftPaneWidth(nextWidth);
@@ -314,8 +575,10 @@ export function JobsPage() {
     setForm((prev) => ({ ...prev, import_pack_name: prev.import_pack_name || items[0]?.pack_name || "" }));
   }
 
-  async function loadJobs(nextPage = page, nextQuery = query, nextStatus = status, allowPageFallback = false) {
-    setLoading(true);
+  async function loadJobs(nextPage = page, nextQuery = query, nextStatus = status, allowPageFallback = false, silent = false) {
+    if (!silent) {
+      setLoading(true);
+    }
     setError("");
     try {
       const data = await listJobs({ page: nextPage, page_size: pageSize, query: nextQuery || undefined, status: nextStatus });
@@ -333,6 +596,7 @@ export function JobsPage() {
       setJobs(items);
       setTotal(totalItems);
       setPage(currentPage);
+      mergeActiveRunsFromJobs(items);
       setSelectedDeletedById((prev) => {
         if (!selectedIds.length) return prev;
         const next = { ...prev };
@@ -348,7 +612,9 @@ export function JobsPage() {
       setJobs([]);
       setTotal(0);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }
 
@@ -356,6 +622,32 @@ export function JobsPage() {
     loadTaskPacks().catch(() => undefined);
     loadJobs(1, query, status).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    activeRunsRef.current = activeRunsByJobId;
+  }, [activeRunsByJobId]);
+
+  useEffect(() => {
+    writeJobColumnWidths(columnWidths);
+  }, [columnWidths]);
+
+  useEffect(() => {
+    if (!Object.values(activeRunsByJobId).some((entry) => entry.progress.status === "running")) {
+      clearRunPollTimer();
+      return;
+    }
+
+    clearRunPollTimer();
+    runPollTimerRef.current = window.setTimeout(() => {
+      void pollActiveRunsOnce().catch((err) => {
+        setError(err instanceof Error ? err.message : "获取自动任务进度失败");
+      });
+    }, 300);
+
+    return () => {
+      clearRunPollTimer();
+    };
+  }, [activeRunsByJobId]);
 
   useEffect(() => {
     function handleWindowResize() {
@@ -405,6 +697,64 @@ export function JobsPage() {
     document.body.style.userSelect = "";
     document.body.style.cursor = "";
   }, [isSplitLayout]);
+
+  useEffect(() => {
+    function updateResizedColumnWidth(clientX: number | undefined) {
+      const resizeState = columnResizeStateRef.current;
+      if (!resizeState || typeof clientX !== "number" || Number.isNaN(clientX)) {
+        return;
+      }
+      const delta = clientX - resizeState.startX;
+      const pairTotal = resizeState.leftStartWidth + resizeState.rightStartWidth;
+      const nextLeftWidth = Math.min(
+        Math.max(Math.round(resizeState.leftStartWidth + delta), resizeState.leftMinWidth),
+        pairTotal - resizeState.rightMinWidth,
+      );
+      const nextRightWidth = pairTotal - nextLeftWidth;
+      setColumnWidths((current) => {
+        if (current[resizeState.leftKey] === nextLeftWidth && current[resizeState.rightKey] === nextRightWidth) {
+          return current;
+        }
+        return {
+          ...current,
+          [resizeState.leftKey]: nextLeftWidth,
+          [resizeState.rightKey]: nextRightWidth,
+        };
+      });
+    }
+
+    function handlePointerMove(event: PointerEvent) {
+      updateResizedColumnWidth(event.clientX);
+    }
+
+    function handleMouseMove(event: MouseEvent) {
+      updateResizedColumnWidth(event.clientX);
+    }
+
+    function stopResizingColumn() {
+      columnResizeStateRef.current = null;
+      setIsResizingColumn(false);
+      setResizingColumnId(null);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    }
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResizingColumn);
+    window.addEventListener("pointercancel", stopResizingColumn);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", stopResizingColumn);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResizingColumn);
+      window.removeEventListener("pointercancel", stopResizingColumn);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", stopResizingColumn);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, []);
 
   useEffect(() => {
     if (selectionState === "mixed") {
@@ -469,6 +819,29 @@ export function JobsPage() {
   function handleResizerMouseDown(event: React.MouseEvent<HTMLDivElement>) {
     startResizing();
     event.preventDefault();
+  }
+
+  function startColumnResize(
+    leftColumn: JobTableColumnDefinition & { currentWidth: number },
+    rightColumn: JobTableColumnDefinition & { currentWidth: number } | undefined,
+    clientX: number | undefined,
+  ) {
+    if (typeof clientX !== "number" || Number.isNaN(clientX) || !rightColumn) {
+      return;
+    }
+    columnResizeStateRef.current = {
+      leftKey: leftColumn.key,
+      rightKey: rightColumn.key,
+      startX: clientX,
+      leftStartWidth: leftColumn.currentWidth,
+      rightStartWidth: rightColumn.currentWidth,
+      leftMinWidth: getJobColumnMinWidth(leftColumn),
+      rightMinWidth: getJobColumnMinWidth(rightColumn),
+    };
+    setIsResizingColumn(true);
+    setResizingColumnId(leftColumn.key);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
   }
 
   function openCreate() {
@@ -572,8 +945,9 @@ export function JobsPage() {
     const nextStatus = options.status ?? status;
     const keepDrawer = options.keepDrawer ?? true;
     const reloadSelected = options.reloadSelected ?? true;
+    const silent = options.silent ?? false;
 
-    await loadJobs(nextPage, nextQuery, nextStatus, true);
+    await loadJobs(nextPage, nextQuery, nextStatus, true, silent);
     if (!keepDrawer) {
       setSelectedJob(null);
       setDrawerMode("create");
@@ -729,11 +1103,70 @@ export function JobsPage() {
   async function handleRunNow(job: JobRecord) {
     setError("");
     try {
-      await runJobNow(job.id);
+      const started = await runJobNow(job.id);
+      setActiveRunsByJobId((prev) => ({
+        ...prev,
+        [job.id]: {
+          run: {
+            id: started.run_id,
+            job_id: job.id,
+            trigger_type: "auto",
+            status: "running",
+            started_at: new Date().toISOString(),
+            ended_at: null,
+            error_text: null,
+            stats_json: {},
+            result_json: null,
+          },
+          progress: {
+            ...EMPTY_RUN_PROGRESS,
+            runId: started.run_id,
+            status: "running",
+            startedAt: new Date().toISOString(),
+          },
+        },
+      }));
+      activeRunsRef.current = {
+        ...activeRunsRef.current,
+        [job.id]: {
+          run: {
+            id: started.run_id,
+            job_id: job.id,
+            trigger_type: "auto",
+            status: "running",
+            started_at: new Date().toISOString(),
+            ended_at: null,
+            error_text: null,
+            stats_json: {},
+            result_json: null,
+          },
+          progress: {
+            ...EMPTY_RUN_PROGRESS,
+            runId: started.run_id,
+            status: "running",
+            startedAt: new Date().toISOString(),
+          },
+        },
+      };
       setActionMessage(`已触发 ${job.name} 立即运行`);
       await refreshJobs({ reloadSelected: false });
+      void pollActiveRunsOnce().catch((err) => {
+        setError(err instanceof Error ? err.message : "获取自动任务进度失败");
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "立即运行失败");
+    }
+  }
+
+  async function handleStopRun(job: JobRecord, runId: number) {
+    setError("");
+    try {
+      await cancelRun(runId);
+      setActionMessage(`已停止 ${job.name} 的当前运行`);
+      await refreshJobs({ reloadSelected: true });
+      void pollActiveRunsOnce().catch(() => undefined);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "停止运行失败");
     }
   }
 
@@ -888,44 +1321,46 @@ export function JobsPage() {
     void openJob(job, job.deleted_at ? "view" : "edit");
   }
 
-  function renderActions(job: JobRecord) {
-    if (job.deleted_at) {
-      return (
-        <div className="table-actions jobs-row-actions">
-          <button
-            type="button"
-            className="workbench-secondary-action"
-            data-testid={`job-row-open-${job.id}`}
-            onClick={() => openJobWorkspace(job)}
-          >
-            {"打开"}
-          </button>
-          <button type="button" className="workbench-secondary-action" onClick={() => handleRestore(job)}>{"恢复"}</button>
-        </div>
-      );
-    }
+  function renderJobRunProgress(progress: RunProgress) {
+    const progressQueryLabel = progress.totalQueries > 0 ? `${progress.completedQueries} / ${progress.totalQueries}` : "-- / --";
     return (
-      <div className="table-actions jobs-row-actions">
-        <button
-          type="button"
-          className="workbench-secondary-action"
-          data-testid={`job-row-open-${job.id}`}
-          onClick={() => openJobWorkspace(job)}
+      <section className="card manual-run-progress-card workbench-layer" data-testid="job-run-progress">
+        <div className="manual-run-progress-head">
+          <div className="manual-run-progress-copy">
+            <div className="workbench-section-eyebrow">执行进度</div>
+            <div className="manual-run-progress-title">
+              {progress.status === "success" ? "本次自动任务已完成" : progress.status === "failed" ? "本次自动任务已结束" : "自动任务正在按查询计划抓取"}
+            </div>
+            <div className="kv">
+              {progress.totalQueries > 0
+                ? `已完成 ${progressQueryLabel} 个查询切片`
+                : progress.runId
+                  ? `执行任务 #${progress.runId} 已启动，等待返回查询总数`
+                  : "正在创建执行任务..."}
+            </div>
+          </div>
+          <div className="manual-run-progress-side">
+            <span className={`jobs-summary-pill workbench-pill ${executionStatusTone(progress.status)}`}>
+              {executionStatusLabel(progress.status)}
+            </span>
+            <div className="manual-run-progress-percent">{`${progress.progressPercent}%`}</div>
+          </div>
+        </div>
+        <div
+          className="manual-run-progress-track"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={progress.progressPercent}
         >
-          {"打开"}
-        </button>
-        <button
-          type="button"
-          className="workbench-secondary-action"
-          onClick={() => handleRunNow(job)}
-          disabled={!job.enabled}
-        >
-          {"立即运行"}
-        </button>
-        <button type="button" className="workbench-secondary-action" onClick={() => handleToggle(job)}>
-          {job.enabled ? "停用任务" : "启用任务"}
-        </button>
-      </div>
+          <div className="manual-run-progress-fill" style={{ width: `${progress.progressPercent}%` }} />
+        </div>
+        <div className="manual-run-progress-meta">
+          <span>{`查询 ${progressQueryLabel}`}</span>
+          <span>{`raw ${progress.fetchedRaw}`}</span>
+          <span>{`errors ${progress.queryErrors}`}</span>
+        </div>
+      </section>
     );
   }
 
@@ -934,9 +1369,13 @@ export function JobsPage() {
   const workspaceMeta = selectedJob ? `任务 #${selectedJob.id}` : "未保存新任务";
   const currentStatusLabel = selectedJob ? jobState(selectedJob) : form.enabled ? "已启用" : "已停用";
   const nextRunLabel = selectedJob?.next_run_at ? formatUtcPlus8Time(selectedJob.next_run_at) : "保存后生成";
-  const lastRunLabel = selectedJob?.last_run_status || "尚未运行";
-  const lastRunTimeLabel = selectedJob?.last_run_ended_at || selectedJob?.last_run_started_at
-    ? formatUtcPlus8Time(selectedJob.last_run_ended_at || selectedJob.last_run_started_at)
+  const lastRunLabel = selectedJobActiveRun
+    ? (selectedJobActiveRun.progress.status === "running"
+      ? `${selectedJobActiveRun.run.status} ${selectedJobActiveRun.progress.progressPercent}%`
+      : selectedJobActiveRun.run.status)
+    : selectedJob?.last_run_status || "尚未运行";
+  const lastRunTimeLabel = selectedJobActiveRun?.progress.startedAt || selectedJob?.last_run_ended_at || selectedJob?.last_run_started_at
+    ? formatUtcPlus8Time(selectedJobActiveRun?.progress.startedAt || selectedJob?.last_run_ended_at || selectedJob?.last_run_started_at)
     : "尚未运行";
   const currentTaskEyebrow = selectedJob ? `调度任务 #${selectedJob.id}` : "调度设置";
   const currentTaskHeroTitle = form.name.trim() || (selectedJob ? selectedJob.name : "未命名任务");
@@ -962,7 +1401,23 @@ export function JobsPage() {
       ) : (
         <>
           <button type="button" className="workbench-primary-action" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
-          <button type="button" className="workbench-secondary-action" onClick={() => handleRunNow(selectedJob)}>{"立即运行"}</button>
+          <button
+            type="button"
+            className="workbench-secondary-action"
+            onClick={() => handleRunNow(selectedJob)}
+            disabled={!selectedJob.enabled || selectedJobActiveRun?.progress.status === "running"}
+          >
+            {"立即运行"}
+          </button>
+          {selectedJobActiveRun?.progress.status === "running" ? (
+            <button
+              type="button"
+              className="workbench-danger-action"
+              onClick={() => handleStopRun(selectedJob, selectedJobActiveRun.run.id)}
+            >
+              {"停止运行"}
+            </button>
+          ) : null}
           <button type="button" className="workbench-secondary-action" onClick={() => handleToggle(selectedJob)}>{selectedJob.enabled ? "停用任务" : "启用任务"}</button>
           <button type="button" className="workbench-danger-action" onClick={() => handleDelete(selectedJob)}>{"删除任务"}</button>
         </>
@@ -1095,66 +1550,87 @@ export function JobsPage() {
               </div>
             </div>
 
-            <div className="jobs-table-wrap" data-testid="jobs-table-wrap">
+            <div className={`jobs-table-wrap${isResizingColumn ? " dragging" : ""}`} data-testid="jobs-table-wrap">
               {loading ? (
-                <div className="searching"><span className="spinner" /> {"正在加载任务..."}</div>
+                <div className="searching"><span className="spinner" /> {"??????..."}</div>
               ) : (
-                <table className="table jobs-table">
+                <table className="table jobs-table" style={{ minWidth: jobsTableMinWidth, tableLayout: "fixed" }}>
+                  <colgroup>
+                    <col style={{ width: JOBS_SELECT_COLUMN_WIDTH }} />
+                    {resolvedJobColumns.map((column) => (
+                      <col key={`jobs-col-${column.key}`} style={{ width: column.currentWidth }} />
+                    ))}
+                  </colgroup>
                   <thead>
                     <tr>
-                      <th className="table-select-cell">
+                      <th className="jobs-th-cell table-select-cell" style={{ width: JOBS_SELECT_COLUMN_WIDTH, minWidth: JOBS_SELECT_COLUMN_WIDTH }}>
                         <label className="field checkbox-row jobs-select-page-label">
                           <input aria-label="jobs-select-page" type="checkbox" checked={allPageSelected} onChange={togglePageSelection} />
                         </label>
                       </th>
-                      <th>{"任务"}</th>
-                      <th>{"任务包"}</th>
-                      <th>{"任务标签"}</th>
-                      <th>{"间隔"}</th>
-                      <th>{"状态"}</th>
-                      <th>{"下次运行"}</th>
-                      <th>{"最近运行"}</th>
-                      <th>{"操作"}</th>
+                      {resolvedJobColumns.map((column, index) => {
+                        const nextColumn = resolvedJobColumns[index + 1];
+                        const canResize = nextColumn != null;
+                        return (
+                          <th
+                            key={column.key}
+                            className="jobs-th-cell"
+                            style={{ width: column.currentWidth, minWidth: column.currentWidth }}
+                          >
+                            <div className="jobs-th">
+                              <span className="jobs-th-label">{column.label}</span>
+                            </div>
+                            {canResize ? (
+                              <div
+                                className={`jobs-column-resizer${resizingColumnId === column.key ? " dragging" : ""}`}
+                                role="separator"
+                                aria-orientation="vertical"
+                                aria-label={`resize-job-column-${column.key}`}
+                                onPointerDown={(event) => {
+                                  startColumnResize(column, nextColumn, event.clientX);
+                                  event.preventDefault();
+                                }}
+                                onMouseDown={(event) => {
+                                  startColumnResize(column, nextColumn, event.clientX);
+                                  event.preventDefault();
+                                }}
+                              />
+                            ) : null}
+                          </th>
+                        );
+                      })}
                     </tr>
                   </thead>
                   <tbody>
-                    {jobs.map((job) => (
-                      <tr
-                        key={job.id}
-                        className={`${job.deleted_at ? "row-deleted" : ""}${selectedJob?.id === job.id ? " active" : ""}`}
-                        data-job-active={selectedJob?.id === job.id ? "true" : "false"}
-                        onClick={() => openJobWorkspace(job)}
-                      >
-                        <td className="table-select-cell" onClick={(event) => event.stopPropagation()}>
-                          <input
-                            aria-label={`select-job-${job.id}`}
-                            type="checkbox"
-                            checked={allMatchingSelected || selectedIds.includes(job.id)}
-                            onChange={(event) => toggleRowSelection(job, event.target.checked)}
-                          />
-                        </td>
-                        <td>
-                          <div className="job-name jobs-row-title">{job.name}</div>
-                          <div className="kv jobs-row-meta">#{job.id}</div>
-                        </td>
-                        <td>
-                          <div className="job-name jobs-row-title">{job.pack_meta?.name || job.pack_name || "--"}</div>
-                          <div className="kv jobs-row-meta">{job.pack_name || "--"}</div>
-                        </td>
-                        <td><TagPills tags={job.tags} /></td>
-                        <td>{job.interval_minutes} {"分钟"}</td>
-                        <td><span className={`badge ${job.deleted_at ? "b" : job.enabled ? "a" : ""}`}>{jobState(job)}</span></td>
-                        <td>{formatUtcPlus8Time(job.next_run_at)}</td>
-                        <td>
-                          <div>{job.last_run_status || "--"}</div>
-                          <div className="kv">{formatUtcPlus8Time(job.last_run_ended_at || job.last_run_started_at)}</div>
-                        </td>
-                        <td onClick={(event) => event.stopPropagation()}>{renderActions(job)}</td>
-                      </tr>
-                    ))}
+                    {jobs.map((job) => {
+                      const activeRun = activeRunsByJobId[job.id];
+
+                      return (
+                        <tr
+                          key={job.id}
+                          className={`${job.deleted_at ? "row-deleted" : ""}${selectedJob?.id === job.id ? " active" : ""}`}
+                          data-job-active={selectedJob?.id === job.id ? "true" : "false"}
+                          onClick={() => openJobWorkspace(job)}
+                        >
+                          <td className="table-select-cell" onClick={(event) => event.stopPropagation()}>
+                            <input
+                              aria-label={`select-job-${job.id}`}
+                              type="checkbox"
+                              checked={allMatchingSelected || selectedIds.includes(job.id)}
+                              onChange={(event) => toggleRowSelection(job, event.target.checked)}
+                            />
+                          </td>
+                          {resolvedJobColumns.map((column) => (
+                            <td key={`${job.id}-${column.key}`}>
+                              {column.render(job, activeRun)}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
                     {!jobs.length && (
                       <tr>
-                        <td colSpan={9} style={{ textAlign: "center", color: "#64748b" }}>{status === "deleted" ? "暂无已删除任务" : "暂无任务"}</td>
+                        <td colSpan={8} style={{ textAlign: "center", color: "#64748b" }}>{status === "deleted" ? "???????" : "????"}</td>
                       </tr>
                     )}
                   </tbody>
@@ -1203,6 +1679,7 @@ export function JobsPage() {
                   title="当前任务"
                   description="先确认调度状态和基础设置，再继续调整任务正文。"
                 />
+                {selectedJobActiveRun ? renderJobRunProgress(selectedJobActiveRun.progress) : null}
                 <div className="jobs-current-task-hero flat-section">
                   <div className="jobs-current-task-copy">
                     <div className="jobs-current-task-eyebrow">{currentTaskEyebrow}</div>

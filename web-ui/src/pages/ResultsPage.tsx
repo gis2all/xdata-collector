@@ -21,7 +21,6 @@ import { formatUtcPlus8Time } from "../time";
 const RESULTS_COLUMN_WIDTHS_KEY = "results.columnWidths.v1";
 const PAGE_SIZE = 100;
 const RESULTS_SELECT_COLUMN_WIDTH = 48;
-const RESULTS_OPERATION_COLUMN_WIDTH = 88;
 const RESULTS_SPLIT_LAYOUT_BREAKPOINT = 1180;
 const RESULTS_MIN_TABLE_PANE_WIDTH = 720;
 const RESULTS_MIN_DETAIL_PANE_WIDTH = 380;
@@ -519,9 +518,7 @@ export function ResultsPage() {
   const sortDirectionLabel = sortDir === "asc" ? "\u5347\u5e8f" : "\u964d\u5e8f";
   const tableMinWidth = Math.max(
     960,
-    RESULTS_SELECT_COLUMN_WIDTH +
-      RESULTS_OPERATION_COLUMN_WIDTH +
-      resolvedVisibleColumnDefinitions.reduce((sum, column) => sum + column.currentWidth, 0),
+    RESULTS_SELECT_COLUMN_WIDTH + resolvedVisibleColumnDefinitions.reduce((sum, column) => sum + column.currentWidth, 0),
   );
   const tableName = TABLE_NAMES[table];
   const tableLabel = TABLE_LABELS[table];
@@ -1125,7 +1122,6 @@ export function ResultsPage() {
                 {resolvedVisibleColumnDefinitions.map((column) => (
                   <col key={`results-col-${table}-${column.key}`} style={{ width: column.currentWidth }} />
                 ))}
-                <col style={{ width: RESULTS_OPERATION_COLUMN_WIDTH }} />
               </colgroup>
               <thead>
                 <tr>
@@ -1143,39 +1139,36 @@ export function ResultsPage() {
                     const nextColumn = resolvedVisibleColumnDefinitions[index + 1];
                     const canResize = nextColumn != null;
                     return (
-                    <th
-                      key={column.key}
-                      className="results-th-cell"
-                      style={{ width: column.currentWidth, minWidth: column.currentWidth }}
-                    >
-                      <div className="results-th">
-                        <span className="results-th-label">{column.label}</span>
-                        {renderSortButtons(column.key, sortBy, sortDir, (field, direction) => {
-                          void handleSort(field, direction);
-                        })}
-                      </div>
-                      {canResize ? (
-                        <div
-                          className={`results-column-resizer${resizingColumnId === `${table}:${column.key}` ? " dragging" : ""}`}
-                          role="separator"
-                          aria-orientation="vertical"
-                          aria-label={`resize-column-${column.key}`}
-                          onPointerDown={(event) => {
-                            startColumnResize(column, nextColumn, event.clientX);
-                            event.preventDefault();
-                          }}
-                          onMouseDown={(event) => {
-                            startColumnResize(column, nextColumn, event.clientX);
-                            event.preventDefault();
-                          }}
-                        />
-                      ) : null}
-                    </th>
-                  );
+                      <th
+                        key={column.key}
+                        className="results-th-cell"
+                        style={{ width: column.currentWidth, minWidth: column.currentWidth }}
+                      >
+                        <div className="results-th">
+                          <span className="results-th-label">{column.label}</span>
+                          {renderSortButtons(column.key, sortBy, sortDir, (field, direction) => {
+                            void handleSort(field, direction);
+                          })}
+                        </div>
+                        {canResize ? (
+                          <div
+                            className={`results-column-resizer${resizingColumnId === `${table}:${column.key}` ? " dragging" : ""}`}
+                            role="separator"
+                            aria-orientation="vertical"
+                            aria-label={`resize-column-${column.key}`}
+                            onPointerDown={(event) => {
+                              startColumnResize(column, nextColumn, event.clientX);
+                              event.preventDefault();
+                            }}
+                            onMouseDown={(event) => {
+                              startColumnResize(column, nextColumn, event.clientX);
+                              event.preventDefault();
+                            }}
+                          />
+                        ) : null}
+                      </th>
+                    );
                   })}
-                  <th className="results-th-cell" style={{ width: RESULTS_OPERATION_COLUMN_WIDTH, minWidth: RESULTS_OPERATION_COLUMN_WIDTH }}>
-                    {TEXT.operation}
-                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1202,19 +1195,6 @@ export function ResultsPage() {
                         <div className={getCellContentClass(column.key)}>{column.render(item)}</div>
                       </td>
                     ))}
-                    <td onClick={(event) => event.stopPropagation()}>
-                      <div className="table-actions">
-                        <button
-                          type="button"
-                          className="workbench-danger-action"
-                          aria-label={`delete-item-${item.id}`}
-                          onClick={() => void handleDeleteOne(item)}
-                          disabled={loading}
-                        >
-                          {TEXT.delete}
-                        </button>
-                      </div>
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1248,6 +1228,8 @@ export function ResultsPage() {
             table={table}
             tableLabel={tableLabel}
             total={total}
+            onDelete={activeItem ? () => void handleDeleteOne(activeItem) : undefined}
+            deleteDisabled={loading}
           />
         </aside>
       </section>
