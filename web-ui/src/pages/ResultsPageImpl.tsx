@@ -1,28 +1,50 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   dedupeItems,
   deleteItem,
   deleteItems,
   listItems,
-  type CuratedItemRecord,
   type ItemSortField,
   type ItemTable,
   type ResultsFilterConditionNode,
-  type ResultsFilterConditionOperator,
-  type ResultsFilterField,
   type ResultsFilterGroupNode,
   type ResultsFilterNode,
   type ResultsFilterRelation,
-  type RawItemRecord,
   type ResultItemRecord,
   type SortDirection,
 } from "../api";
 import { ResultsDetailRail } from "./results/ResultsDetailRail";
+import { ResultsFilterBuilder } from "./results/ResultsFilterBuilder";
+import { ResultsDataTable } from "./results/ResultsDataTable";
 import { ResultsPageHeader } from "./results/ResultsPageHeader";
 import { ResultsTableManager } from "./results/ResultsTableManager";
-import { TagPills } from "../components/TagPills";
-import { formatUtcPlus8Time } from "../time";
+import {
+  COLUMN_DEFINITIONS_BY_TABLE,
+  DEFAULT_VISIBLE_COLUMNS_BY_TABLE,
+  getColumnMinWidth,
+  orderVisibleColumns,
+  readColumnWidths,
+  resolveColumnWidth,
+  writeColumnWidths,
+  type ColumnDefinition,
+  type ColumnResizeState,
+  type ColumnWidthsByTable,
+} from "./results/resultsTableConfig";
+import {
+  RESULTS_FILTER_FIELD_OPTIONS,
+  cloneResultsFilterTree,
+  createDefaultResultsFilterState,
+  createEmptyResultsFilterTree,
+  createFilterCondition,
+  filterTreeHasConditions,
+  getFilterGroupAtPath,
+  getFilterParentAtPath,
+  readResultsFilterState,
+  sanitizeFilterTreeForSubmit,
+  writeResultsFilterState,
+  type ResultsFilterState,
+} from "./results/resultsFilterState";
 
 const RESULTS_COLUMN_WIDTHS_KEY = "results.columnWidths.v1";
 const PAGE_SIZE = 100;
@@ -31,7 +53,6 @@ const RESULTS_SPLIT_LAYOUT_BREAKPOINT = 1180;
 const RESULTS_MIN_TABLE_PANE_WIDTH = 720;
 const RESULTS_MIN_DETAIL_PANE_WIDTH = 380;
 const RESULTS_RESIZER_WIDTH = 20;
-const RESULTS_FILTER_STATE_KEY = "results.filters.v1";
 
 const TEXT = {
   title: "\u7ed3\u679c\u67e5\u8be2",
@@ -68,833 +89,6 @@ const TABLE_LABELS: Record<ItemTable, string> = {
   curated: "筛选结果",
   raw: "原始结果",
 };
-
-type ColumnDefinition = {
-  key: ItemSortField;
-  label: string;
-  defaultVisible: boolean;
-  width?: number;
-  render: (item: ResultItemRecord) => ReactNode;
-};
-
-type ColumnWidthsByTable = Record<ItemTable, Partial<Record<ItemSortField, number>>>;
-
-type ColumnResizeState = {
-  table: ItemTable;
-  leftKey: ItemSortField;
-  rightKey: ItemSortField;
-  startX: number;
-  leftStartWidth: number;
-  rightStartWidth: number;
-  leftMinWidth: number;
-  rightMinWidth: number;
-};
-
-type ResultsFilterFieldKind = "text" | "number" | "datetime" | "boolean" | "tags";
-
-type ResultsFilterFieldOption = {
-  field: ResultsFilterField;
-  label: string;
-  kind: ResultsFilterFieldKind;
-};
-
-type ResultsFilterState = {
-  keywordInput: string;
-  appliedKeyword: string;
-  draftTree: ResultsFilterGroupNode;
-  appliedTree: ResultsFilterGroupNode;
-  advancedOpen: boolean;
-};
-
-const EMPTY_RESULTS_FILTER_TREE: ResultsFilterGroupNode = {
-  type: "group",
-  relation: "AND",
-  children: [],
-};
-
-const RESULTS_FILTER_FIELD_OPTIONS: Record<ItemTable, ResultsFilterFieldOption[]> = {
-  curated: [
-    { field: "id", label: "id", kind: "number" },
-    { field: "run_id", label: "run_id", kind: "number" },
-    { field: "dedupe_key", label: "dedupe_key", kind: "text" },
-    { field: "level", label: "level", kind: "text" },
-    { field: "score", label: "score", kind: "number" },
-    { field: "title", label: "title", kind: "text" },
-    { field: "summary_zh", label: "summary_zh", kind: "text" },
-    { field: "excerpt", label: "excerpt", kind: "text" },
-    { field: "is_zero_cost", label: "is_zero_cost", kind: "boolean" },
-    { field: "source_url", label: "source_url", kind: "text" },
-    { field: "author_name", label: "author_name", kind: "text" },
-    { field: "author", label: "author", kind: "text" },
-    { field: "created_at_x", label: "created_at_x", kind: "datetime" },
-    { field: "views", label: "views", kind: "number" },
-    { field: "likes", label: "likes", kind: "number" },
-    { field: "replies", label: "replies", kind: "number" },
-    { field: "retweets", label: "retweets", kind: "number" },
-    { field: "fetched_at", label: "fetched_at", kind: "datetime" },
-    { field: "tags", label: "tags", kind: "tags" },
-    { field: "reasons_json", label: "reasons_json", kind: "text" },
-    { field: "rule_set_id", label: "rule_set_id", kind: "number" },
-    { field: "state", label: "state", kind: "text" },
-  ],
-  raw: [
-    { field: "id", label: "id", kind: "number" },
-    { field: "run_id", label: "run_id", kind: "number" },
-    { field: "tweet_id", label: "tweet_id", kind: "text" },
-    { field: "canonical_url", label: "canonical_url", kind: "text" },
-    { field: "author_name", label: "author_name", kind: "text" },
-    { field: "author", label: "author", kind: "text" },
-    { field: "text", label: "text", kind: "text" },
-    { field: "created_at_x", label: "created_at_x", kind: "datetime" },
-    { field: "views", label: "views", kind: "number" },
-    { field: "likes", label: "likes", kind: "number" },
-    { field: "replies", label: "replies", kind: "number" },
-    { field: "retweets", label: "retweets", kind: "number" },
-    { field: "query_name", label: "query_name", kind: "text" },
-    { field: "fetched_at", label: "fetched_at", kind: "datetime" },
-    { field: "tags", label: "tags", kind: "tags" },
-  ],
-};
-
-const TEXT_FILTER_OPERATORS: Array<{ value: ResultsFilterConditionOperator; label: string }> = [
-  { value: "contains", label: "包含" },
-  { value: "not_contains", label: "不包含" },
-  { value: "equals", label: "等于" },
-  { value: "not_equals", label: "不等于" },
-  { value: "starts_with", label: "开头是" },
-  { value: "ends_with", label: "结尾是" },
-  { value: "is_empty", label: "为空" },
-  { value: "is_not_empty", label: "不为空" },
-  { value: "length_gt", label: "长度 >" },
-  { value: "length_gte", label: "长度 >=" },
-  { value: "length_lt", label: "长度 <" },
-  { value: "length_lte", label: "长度 <=" },
-  { value: "length_between", label: "长度区间" },
-];
-
-const NUMBER_FILTER_OPERATORS: Array<{ value: ResultsFilterConditionOperator; label: string }> = [
-  { value: "eq", label: "等于" },
-  { value: "neq", label: "不等于" },
-  { value: "gt", label: "大于" },
-  { value: "gte", label: "大于等于" },
-  { value: "lt", label: "小于" },
-  { value: "lte", label: "小于等于" },
-  { value: "between", label: "区间" },
-  { value: "is_empty", label: "为空" },
-  { value: "is_not_empty", label: "不为空" },
-];
-
-const DATETIME_FILTER_OPERATORS: Array<{ value: ResultsFilterConditionOperator; label: string }> = [
-  { value: "on_or_after", label: "在此之后" },
-  { value: "on_or_before", label: "在此之前" },
-  { value: "between", label: "区间" },
-  { value: "is_empty", label: "为空" },
-  { value: "is_not_empty", label: "不为空" },
-];
-
-const BOOLEAN_FILTER_OPERATORS: Array<{ value: ResultsFilterConditionOperator; label: string }> = [
-  { value: "is_true", label: "是" },
-  { value: "is_false", label: "否" },
-];
-
-const TAG_FILTER_OPERATORS: Array<{ value: ResultsFilterConditionOperator; label: string }> = [
-  { value: "has_any", label: "包含任一标签" },
-  { value: "has_all", label: "包含全部标签" },
-  { value: "is_empty", label: "为空" },
-  { value: "is_not_empty", label: "不为空" },
-];
-
-const DEFAULT_RESULTS_FILTER_STATE: ResultsFilterState = {
-  keywordInput: "",
-  appliedKeyword: "",
-  draftTree: EMPTY_RESULTS_FILTER_TREE,
-  appliedTree: EMPTY_RESULTS_FILTER_TREE,
-  advancedOpen: false,
-};
-
-function truncate(value: unknown, maxLength = 120) {
-  const text = typeof value === "string" ? value : JSON.stringify(value ?? "");
-  if (!text) return "--";
-  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
-}
-
-function stringifyValue(value: unknown) {
-  if (value == null) return "[]";
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
-}
-
-function formatAuthorDisplay(authorName?: string | null, author?: string | null) {
-  const name = String(authorName || "").trim();
-  const handle = String(author || "").trim();
-  if (name && handle) return `${name} @${handle.replace(/^@+/, "")}`;
-  if (name) return name;
-  if (handle) return `@${handle.replace(/^@+/, "")}`;
-  return "--";
-}
-
-const CURATED_COLUMN_DEFINITIONS: ColumnDefinition[] = [
-  { key: "id", label: "id", defaultVisible: false, width: 88, render: (item) => (item as CuratedItemRecord).id },
-  { key: "run_id", label: "run_id", defaultVisible: false, width: 88, render: (item) => (item as CuratedItemRecord).run_id },
-  {
-    key: "dedupe_key",
-    label: "dedupe_key",
-    defaultVisible: false,
-    width: 180,
-    render: (item) => {
-      const value = (item as CuratedItemRecord).dedupe_key;
-      return <span title={value}>{truncate(value, 40)}</span>;
-    },
-  },
-  {
-    key: "level",
-    label: "level",
-    defaultVisible: true,
-    width: 90,
-    render: (item) => {
-      const value = (item as CuratedItemRecord).level;
-      return <span className={`badge ${String(value || "").toLowerCase()}`}>{value || "--"}</span>;
-    },
-  },
-  { key: "score", label: "score", defaultVisible: true, width: 90, render: (item) => (item as CuratedItemRecord).score },
-  {
-    key: "title",
-    label: "title",
-    defaultVisible: true,
-    width: 220,
-    render: (item) => {
-      const value = (item as CuratedItemRecord).title;
-      return <span title={value}>{truncate(value, 72)}</span>;
-    },
-  },
-  {
-    key: "summary_zh",
-    label: "summary_zh",
-    defaultVisible: true,
-    width: 260,
-    render: (item) => {
-      const value = (item as CuratedItemRecord).summary_zh;
-      return <span title={value}>{truncate(value, 120)}</span>;
-    },
-  },
-  {
-    key: "excerpt",
-    label: "excerpt",
-    defaultVisible: false,
-    width: 260,
-    render: (item) => {
-      const value = (item as CuratedItemRecord).excerpt;
-      return <span title={value}>{truncate(value, 120)}</span>;
-    },
-  },
-  {
-    key: "is_zero_cost",
-    label: "is_zero_cost",
-    defaultVisible: false,
-    width: 110,
-    render: (item) => (((item as CuratedItemRecord).is_zero_cost ? 1 : 0).toString()),
-  },
-  {
-    key: "source_url",
-    label: "source_url",
-    defaultVisible: true,
-    width: 240,
-    render: (item) => {
-      const value = (item as CuratedItemRecord).source_url;
-      return value ? (
-        <a href={value} target="_blank" rel="noreferrer" title={value}>
-          {truncate(value, 56)}
-        </a>
-      ) : (
-        "--"
-      );
-    },
-  },
-  {
-    key: "author_name",
-    label: "author_name",
-    defaultVisible: true,
-    width: 140,
-    render: (item) => (item as CuratedItemRecord).author_name || "--",
-  },
-  {
-    key: "author",
-    label: "author",
-    defaultVisible: true,
-    width: 140,
-    render: (item) => (item as CuratedItemRecord).author || "--",
-  },
-  {
-    key: "tags",
-    label: "tags",
-    defaultVisible: true,
-    width: 180,
-    render: (item) => <TagPills tags={(item as CuratedItemRecord).tags} />,
-  },
-  {
-    key: "created_at_x",
-    label: "created_at_x",
-    defaultVisible: true,
-    width: 220,
-    render: (item) => formatUtcPlus8Time((item as CuratedItemRecord).created_at_x),
-  },
-  { key: "views", label: "views", defaultVisible: true, width: 90, render: (item) => (item as CuratedItemRecord).views },
-  { key: "likes", label: "likes", defaultVisible: true, width: 90, render: (item) => (item as CuratedItemRecord).likes },
-  { key: "replies", label: "replies", defaultVisible: true, width: 90, render: (item) => (item as CuratedItemRecord).replies },
-  { key: "retweets", label: "retweets", defaultVisible: true, width: 90, render: (item) => (item as CuratedItemRecord).retweets },
-  {
-    key: "fetched_at",
-    label: "fetched_at",
-    defaultVisible: true,
-    width: 220,
-    render: (item) => formatUtcPlus8Time((item as CuratedItemRecord).fetched_at),
-  },
-  {
-    key: "reasons_json",
-    label: "reasons_json",
-    defaultVisible: false,
-    width: 280,
-    render: (item) => {
-      const value = stringifyValue((item as CuratedItemRecord).reasons_json);
-      return <span title={value}>{truncate(value, 140)}</span>;
-    },
-  },
-  {
-    key: "rule_set_id",
-    label: "rule_set_id",
-    defaultVisible: false,
-    width: 110,
-    render: (item) => (item as CuratedItemRecord).rule_set_id ?? "--",
-  },
-  {
-    key: "state",
-    label: "state",
-    defaultVisible: false,
-    width: 120,
-    render: (item) => (item as CuratedItemRecord).state || "--",
-  },
-];
-
-const RAW_COLUMN_DEFINITIONS: ColumnDefinition[] = [
-  { key: "id", label: "id", defaultVisible: false, width: 88, render: (item) => (item as RawItemRecord).id },
-  { key: "run_id", label: "run_id", defaultVisible: false, width: 88, render: (item) => (item as RawItemRecord).run_id },
-  {
-    key: "tweet_id",
-    label: "tweet_id",
-    defaultVisible: false,
-    width: 140,
-    render: (item) => (item as RawItemRecord).tweet_id || "--",
-  },
-  {
-    key: "canonical_url",
-    label: "canonical_url",
-    defaultVisible: true,
-    width: 240,
-    render: (item) => {
-      const value = (item as RawItemRecord).canonical_url;
-      return value ? (
-        <a href={value} target="_blank" rel="noreferrer" title={value}>
-          {truncate(value, 56)}
-        </a>
-      ) : (
-        "--"
-      );
-    },
-  },
-  {
-    key: "author_name",
-    label: "author_name",
-    defaultVisible: true,
-    width: 140,
-    render: (item) => (item as RawItemRecord).author_name || "--",
-  },
-  {
-    key: "author",
-    label: "author",
-    defaultVisible: true,
-    width: 140,
-    render: (item) => (item as RawItemRecord).author || "--",
-  },
-  {
-    key: "tags",
-    label: "tags",
-    defaultVisible: true,
-    width: 180,
-    render: (item) => <TagPills tags={(item as RawItemRecord).tags} />,
-  },
-  {
-    key: "text",
-    label: "text",
-    defaultVisible: true,
-    width: 280,
-    render: (item) => {
-      const value = (item as RawItemRecord).text;
-      return <span title={value}>{truncate(value, 140)}</span>;
-    },
-  },
-  {
-    key: "created_at_x",
-    label: "created_at_x",
-    defaultVisible: true,
-    width: 220,
-    render: (item) => formatUtcPlus8Time((item as RawItemRecord).created_at_x),
-  },
-  { key: "views", label: "views", defaultVisible: true, width: 90, render: (item) => (item as RawItemRecord).views },
-  { key: "likes", label: "likes", defaultVisible: true, width: 90, render: (item) => (item as RawItemRecord).likes },
-  { key: "replies", label: "replies", defaultVisible: true, width: 90, render: (item) => (item as RawItemRecord).replies },
-  { key: "retweets", label: "retweets", defaultVisible: true, width: 90, render: (item) => (item as RawItemRecord).retweets },
-  {
-    key: "query_name",
-    label: "query_name",
-    defaultVisible: false,
-    width: 140,
-    render: (item) => (item as RawItemRecord).query_name || "--",
-  },
-  {
-    key: "fetched_at",
-    label: "fetched_at",
-    defaultVisible: true,
-    width: 220,
-    render: (item) => formatUtcPlus8Time((item as RawItemRecord).fetched_at),
-  },
-];
-
-const COLUMN_DEFINITIONS_BY_TABLE: Record<ItemTable, ColumnDefinition[]> = {
-  curated: CURATED_COLUMN_DEFINITIONS,
-  raw: RAW_COLUMN_DEFINITIONS,
-};
-
-const DEFAULT_VISIBLE_COLUMNS_BY_TABLE: Record<ItemTable, ItemSortField[]> = {
-  curated: ["level", "score", "title", "source_url", "author_name", "tags", "created_at_x", "views", "likes", "replies", "fetched_at"],
-  raw: ["author_name", "tags", "text", "created_at_x", "views", "likes", "replies", "fetched_at"],
-};
-
-function orderVisibleColumns(table: ItemTable, keys: Iterable<ItemSortField>) {
-  const allowed = COLUMN_DEFINITIONS_BY_TABLE[table].map((column) => column.key);
-  const keySet = new Set(keys);
-  if (table === "curated" && keySet.has("author") && !keySet.has("author_name")) {
-    keySet.add("author_name");
-  }
-  if (table === "curated" && keySet.has("author_name") && !keySet.has("author")) {
-    keySet.add("author");
-  }
-  return allowed.filter((key) => keySet.has(key));
-}
-
-function emptyColumnWidths(): ColumnWidthsByTable {
-  return {
-    curated: {},
-    raw: {},
-  };
-}
-
-function normalizeColumnWidthsForTable(table: ItemTable, value: unknown): Partial<Record<ItemSortField, number>> {
-  if (value == null || typeof value !== "object") {
-    return {};
-  }
-  const allowed = new Set(COLUMN_DEFINITIONS_BY_TABLE[table].map((column) => column.key));
-  const result: Partial<Record<ItemSortField, number>> = {};
-  for (const [key, rawWidth] of Object.entries(value as Record<string, unknown>)) {
-    if (!allowed.has(key as ItemSortField)) {
-      continue;
-    }
-    if (typeof rawWidth !== "number" || !Number.isFinite(rawWidth) || rawWidth <= 0) {
-      continue;
-    }
-    result[key as ItemSortField] = Math.round(rawWidth);
-  }
-  return result;
-}
-
-function readColumnWidths(): ColumnWidthsByTable {
-  if (typeof window === "undefined") {
-    return emptyColumnWidths();
-  }
-  const raw = window.localStorage.getItem(RESULTS_COLUMN_WIDTHS_KEY);
-  if (!raw) {
-    return emptyColumnWidths();
-  }
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    return {
-      curated: normalizeColumnWidthsForTable("curated", parsed?.curated),
-      raw: normalizeColumnWidthsForTable("raw", parsed?.raw),
-    };
-  } catch {
-    return emptyColumnWidths();
-  }
-}
-
-function writeColumnWidths(widths: ColumnWidthsByTable) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.setItem(RESULTS_COLUMN_WIDTHS_KEY, JSON.stringify(widths));
-}
-
-function getColumnMinWidth(column: ColumnDefinition) {
-  const width = column.width ?? 160;
-  if (width <= 90) return 72;
-  if (width <= 120) return 88;
-  if (width <= 160) return 120;
-  return 140;
-}
-
-function resolveColumnWidth(column: ColumnDefinition, storedWidth?: number) {
-  const minWidth = getColumnMinWidth(column);
-  const width = typeof storedWidth === "number" && Number.isFinite(storedWidth) ? storedWidth : column.width ?? minWidth;
-  return Math.max(minWidth, Math.round(width));
-}
-
-function renderSortButtons(
-  field: ItemSortField,
-  activeField: ItemSortField,
-  activeDir: SortDirection,
-  onSort: (field: ItemSortField, dir: SortDirection) => void,
-) {
-  return (
-    <span className="results-sort-controls results-sort-controls-inline">
-      <button
-        type="button"
-        className={`ghost results-sort-button${activeField === field && activeDir === "asc" ? " active" : ""}`}
-        aria-label={`${field} asc`}
-        onClick={() => onSort(field, "asc")}
-      >
-        {"\u2191"}
-      </button>
-      <button
-        type="button"
-        className={`ghost results-sort-button${activeField === field && activeDir === "desc" ? " active" : ""}`}
-        aria-label={`${field} desc`}
-        onClick={() => onSort(field, "desc")}
-      >
-        {"\u2193"}
-      </button>
-    </span>
-  );
-}
-
-function getCellContentClass(field: ItemSortField) {
-  if (["title", "summary_zh", "excerpt", "text"].includes(field)) {
-    return "results-cell-content results-cell-content-text";
-  }
-  if (["source_url", "canonical_url"].includes(field)) {
-    return "results-cell-content results-cell-content-link";
-  }
-  if (["id", "run_id", "score", "views", "likes", "replies", "retweets", "rule_set_id"].includes(field)) {
-    return "results-cell-content results-cell-content-compact";
-  }
-  if (field === "level") {
-    return "results-cell-content results-cell-content-badge";
-  }
-  return "results-cell-content results-cell-content-meta";
-}
-
-function createEmptyResultsFilterTree(): ResultsFilterGroupNode {
-  return {
-    type: "group",
-    relation: "AND",
-    children: [],
-  };
-}
-
-function createDefaultResultsFilterState(): ResultsFilterState {
-  return {
-    keywordInput: "",
-    appliedKeyword: "",
-    draftTree: createEmptyResultsFilterTree(),
-    appliedTree: createEmptyResultsFilterTree(),
-    advancedOpen: false,
-  };
-}
-
-function cloneResultsFilterNode(node: ResultsFilterNode): ResultsFilterNode {
-  if (node.type === "group") {
-    return {
-      type: "group",
-      relation: node.relation === "OR" ? "OR" : "AND",
-      children: Array.isArray(node.children) ? node.children.map((child) => cloneResultsFilterNode(child)) : [],
-    };
-  }
-  return {
-    type: "condition",
-    field: node.field,
-    operator: node.operator,
-    ...(node.value !== undefined ? { value: node.value } : {}),
-    ...(node.values ? { values: [...node.values] } : {}),
-    ...(node.min !== undefined ? { min: node.min } : {}),
-    ...(node.max !== undefined ? { max: node.max } : {}),
-  };
-}
-
-function cloneResultsFilterTree(tree?: ResultsFilterGroupNode | null): ResultsFilterGroupNode {
-  if (!tree || tree.type !== "group") {
-    return createEmptyResultsFilterTree();
-  }
-  return cloneResultsFilterNode(tree) as ResultsFilterGroupNode;
-}
-
-function createFilterCondition(field: ResultsFilterField, kind: ResultsFilterFieldKind): ResultsFilterConditionNode {
-  if (kind === "number") {
-    return { type: "condition", field, operator: "gte", value: "" };
-  }
-  if (kind === "datetime") {
-    return { type: "condition", field, operator: "on_or_after", value: "" };
-  }
-  if (kind === "boolean") {
-    return { type: "condition", field, operator: "is_true" };
-  }
-  if (kind === "tags") {
-    return { type: "condition", field, operator: "has_any", values: [] };
-  }
-  return { type: "condition", field, operator: "contains", value: "" };
-}
-
-function getFilterFieldOption(table: ItemTable, field: ResultsFilterField) {
-  return RESULTS_FILTER_FIELD_OPTIONS[table].find((option) => option.field === field) ?? RESULTS_FILTER_FIELD_OPTIONS[table][0];
-}
-
-function getFilterOperatorOptions(kind: ResultsFilterFieldKind) {
-  if (kind === "number") return NUMBER_FILTER_OPERATORS;
-  if (kind === "datetime") return DATETIME_FILTER_OPERATORS;
-  if (kind === "boolean") return BOOLEAN_FILTER_OPERATORS;
-  if (kind === "tags") return TAG_FILTER_OPERATORS;
-  return TEXT_FILTER_OPERATORS;
-}
-
-function getDefaultFilterOperator(kind: ResultsFilterFieldKind): ResultsFilterConditionOperator {
-  return getFilterOperatorOptions(kind)[0]?.value ?? "contains";
-}
-
-function isResultsFilterNode(value: unknown): value is ResultsFilterNode {
-  return Boolean(value) && typeof value === "object" && ("type" in (value as Record<string, unknown>));
-}
-
-function parseFilterTagValues(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => String(item ?? "").trim())
-      .filter(Boolean);
-  }
-  return String(value ?? "")
-    .split(/[\n,]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function filterOperatorNeedsRange(operator: ResultsFilterConditionOperator) {
-  return operator === "between" || operator === "length_between";
-}
-
-function filterOperatorNeedsArrayValue(operator: ResultsFilterConditionOperator) {
-  return operator === "has_any" || operator === "has_all";
-}
-
-function filterOperatorNeedsSingleValue(operator: ResultsFilterConditionOperator) {
-  return !["is_empty", "is_not_empty", "is_true", "is_false", "between", "length_between", "has_any", "has_all"].includes(operator);
-}
-
-function coerceFilterConditionForUi(table: ItemTable, node: unknown): ResultsFilterConditionNode | null {
-  if (!node || typeof node !== "object") {
-    return null;
-  }
-  const source = node as Partial<ResultsFilterConditionNode>;
-  const field = String(source.field ?? "").trim() as ResultsFilterField;
-  const fieldOption = RESULTS_FILTER_FIELD_OPTIONS[table].find((option) => option.field === field);
-  if (!fieldOption) {
-    return null;
-  }
-  const operatorOptions = getFilterOperatorOptions(fieldOption.kind);
-  const operator = operatorOptions.some((item) => item.value === source.operator)
-    ? (source.operator as ResultsFilterConditionOperator)
-    : getDefaultFilterOperator(fieldOption.kind);
-  const next: ResultsFilterConditionNode = {
-    type: "condition",
-    field: fieldOption.field,
-    operator,
-  };
-  if (filterOperatorNeedsArrayValue(operator)) {
-    next.values = parseFilterTagValues(source.values ?? source.value);
-    return next;
-  }
-  if (filterOperatorNeedsRange(operator)) {
-    next.min = source.min ?? "";
-    next.max = source.max ?? "";
-    return next;
-  }
-  if (filterOperatorNeedsSingleValue(operator)) {
-    next.value = source.value ?? "";
-  }
-  return next;
-}
-
-function coerceFilterNodeForUi(table: ItemTable, node: unknown): ResultsFilterNode | null {
-  if (!node || typeof node !== "object") {
-    return null;
-  }
-  const source = node as Partial<ResultsFilterNode>;
-  if (source.type === "group") {
-    const children = Array.isArray(source.children)
-      ? source.children.map((child) => coerceFilterNodeForUi(table, child)).filter((child): child is ResultsFilterNode => child != null)
-      : [];
-    return {
-      type: "group",
-      relation: source.relation === "OR" ? "OR" : "AND",
-      children,
-    };
-  }
-  return coerceFilterConditionForUi(table, source);
-}
-
-function filterTreeHasConditions(tree: ResultsFilterGroupNode) {
-  return tree.children.some((child) => child.type === "condition" || filterTreeHasConditions(child));
-}
-
-function normalizeFilterTreeForTable(table: ItemTable, tree: ResultsFilterGroupNode): ResultsFilterGroupNode {
-  const next = coerceFilterNodeForUi(table, tree);
-  if (!next || next.type !== "group") {
-    return createEmptyResultsFilterTree();
-  }
-  return next;
-}
-
-function sanitizeFilterTreeForSubmit(table: ItemTable, tree: ResultsFilterGroupNode): ResultsFilterGroupNode {
-  function sanitizeNode(node: ResultsFilterNode): ResultsFilterNode | null {
-    if (node.type === "group") {
-      const children = node.children.map((child) => sanitizeNode(child)).filter((child): child is ResultsFilterNode => child != null);
-      return {
-        type: "group",
-        relation: node.relation === "OR" ? "OR" : "AND",
-        children,
-      };
-    }
-    const fieldOption = RESULTS_FILTER_FIELD_OPTIONS[table].find((option) => option.field === node.field);
-    if (!fieldOption) {
-      return null;
-    }
-    const operatorOptions = getFilterOperatorOptions(fieldOption.kind);
-    const operator = operatorOptions.some((item) => item.value === node.operator)
-      ? node.operator
-      : getDefaultFilterOperator(fieldOption.kind);
-    const next: ResultsFilterConditionNode = {
-      type: "condition",
-      field: fieldOption.field,
-      operator,
-    };
-    if (filterOperatorNeedsArrayValue(operator)) {
-      const values = parseFilterTagValues(node.values ?? node.value);
-      if (!values.length) {
-        return null;
-      }
-      next.values = values;
-      return next;
-    }
-    if (filterOperatorNeedsRange(operator)) {
-      const minimum = String(node.min ?? "").trim();
-      const maximum = String(node.max ?? "").trim();
-      if (!minimum || !maximum) {
-        return null;
-      }
-      next.min = minimum;
-      next.max = maximum;
-      return next;
-    }
-    if (filterOperatorNeedsSingleValue(operator)) {
-      const value = String(node.value ?? "").trim();
-      if (!value) {
-        return null;
-      }
-      next.value = value;
-    }
-    return next;
-  }
-
-  const sanitized = sanitizeNode(tree);
-  if (!sanitized || sanitized.type !== "group") {
-    return createEmptyResultsFilterTree();
-  }
-  return sanitized;
-}
-
-function createResultsFilterTreeTextValue(values?: string[]) {
-  return (values ?? []).join(", ");
-}
-
-function getFilterGroupAtPath(root: ResultsFilterGroupNode, path: number[]) {
-  let current: ResultsFilterGroupNode = root;
-  for (const index of path) {
-    const child = current.children[index];
-    if (!child || child.type !== "group") {
-      return null;
-    }
-    current = child;
-  }
-  return current;
-}
-
-function getFilterParentAtPath(root: ResultsFilterGroupNode, path: number[]) {
-  if (!path.length) {
-    return null;
-  }
-  const parentPath = path.slice(0, -1);
-  const parent = getFilterGroupAtPath(root, parentPath);
-  if (!parent) {
-    return null;
-  }
-  return {
-    parent,
-    index: path[path.length - 1]!,
-  };
-}
-
-function readResultsFilterState(): Record<ItemTable, ResultsFilterState> {
-  const fallback = {
-    curated: createDefaultResultsFilterState(),
-    raw: createDefaultResultsFilterState(),
-  };
-  if (typeof window === "undefined") {
-    return fallback;
-  }
-  const raw = window.localStorage.getItem(RESULTS_FILTER_STATE_KEY);
-  if (!raw) return fallback;
-  try {
-    const parsed = JSON.parse(raw) as Partial<Record<ItemTable, Partial<ResultsFilterState> & { filterTree?: ResultsFilterGroupNode }>>;
-    const hydrate = (table: ItemTable): ResultsFilterState => {
-      const source = parsed?.[table] || {};
-      const sharedTree = isResultsFilterNode(source.filterTree) ? source.filterTree : createEmptyResultsFilterTree();
-      const rawDraftTree = normalizeFilterTreeForTable(
-        table,
-        cloneResultsFilterTree((isResultsFilterNode(source.draftTree) ? source.draftTree : sharedTree) as ResultsFilterGroupNode),
-      );
-      const rawAppliedTree = normalizeFilterTreeForTable(
-        table,
-        cloneResultsFilterTree((isResultsFilterNode(source.appliedTree) ? source.appliedTree : sharedTree) as ResultsFilterGroupNode),
-      );
-      return {
-        keywordInput: String(source.keywordInput ?? ""),
-        appliedKeyword: String(source.appliedKeyword ?? ""),
-        draftTree: rawDraftTree,
-        appliedTree: sanitizeFilterTreeForSubmit(table, rawAppliedTree),
-        advancedOpen: Boolean(source.advancedOpen),
-      };
-    };
-    return {
-      curated: hydrate("curated"),
-      raw: hydrate("raw"),
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-function writeResultsFilterState(value: Record<ItemTable, ResultsFilterState>) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(RESULTS_FILTER_STATE_KEY, JSON.stringify(value));
-}
 
 export function ResultsPage() {
   const [table, setTable] = useState<ItemTable>("raw");
@@ -1553,206 +747,6 @@ export function ResultsPage() {
     event.preventDefault();
   }
 
-  const renderedConditionCounter = { current: 0 };
-
-  function renderFilterCondition(condition: ResultsFilterConditionNode, path: number[]) {
-    const fieldOption = getFilterFieldOption(table, condition.field);
-    const operatorOptions = getFilterOperatorOptions(fieldOption.kind);
-    const conditionIndex = renderedConditionCounter.current++;
-    const operator = operatorOptions.some((item) => item.value === condition.operator)
-      ? condition.operator
-      : getDefaultFilterOperator(fieldOption.kind);
-    const needsRange = filterOperatorNeedsRange(operator);
-    const needsArrayValue = filterOperatorNeedsArrayValue(operator);
-    const needsSingleValue = filterOperatorNeedsSingleValue(operator);
-    return (
-      <div key={`condition-${path.join("-")}`} className="results-advanced-filter-condition">
-        <label className="field">
-          <select
-            aria-label={`filter-field-${conditionIndex}`}
-            value={condition.field}
-            onChange={(event) => {
-              const nextField = event.target.value as ResultsFilterField;
-              const nextFieldOption = getFilterFieldOption(table, nextField);
-              updateCondition(path, () => createFilterCondition(nextFieldOption.field, nextFieldOption.kind));
-            }}
-          >
-            {RESULTS_FILTER_FIELD_OPTIONS[table].map((option) => (
-              <option key={option.field} value={option.field}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <select
-            aria-label={`filter-operator-${conditionIndex}`}
-            value={operator}
-            onChange={(event) => {
-              const nextOperator = event.target.value as ResultsFilterConditionOperator;
-              updateCondition(path, (current) => {
-                const nextCondition = createFilterCondition(current.field, fieldOption.kind);
-                const preservedValue = current.value ?? "";
-                const preservedValues = current.values ?? [];
-                const preservedMin = current.min ?? "";
-                const preservedMax = current.max ?? "";
-                nextCondition.operator = nextOperator;
-                if (filterOperatorNeedsArrayValue(nextOperator)) {
-                  nextCondition.values = preservedValues;
-                } else if (filterOperatorNeedsRange(nextOperator)) {
-                  nextCondition.min = preservedMin;
-                  nextCondition.max = preservedMax;
-                } else if (filterOperatorNeedsSingleValue(nextOperator)) {
-                  nextCondition.value = preservedValue;
-                }
-                return nextCondition;
-              });
-            }}
-          >
-            {operatorOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="results-advanced-filter-value">
-          {needsArrayValue ? (
-            <label className="field">
-              <textarea
-                rows={2}
-                aria-label={`filter-value-${conditionIndex}`}
-                placeholder="逗号或换行分隔"
-                value={createResultsFilterTreeTextValue(condition.values)}
-                onChange={(event) => {
-                  const nextValues = parseFilterTagValues(event.target.value);
-                  updateCondition(path, (current) => ({
-                    ...current,
-                    values: nextValues,
-                  }));
-                }}
-              />
-            </label>
-          ) : null}
-          {needsRange ? (
-            <div className="results-advanced-filter-range">
-              <label className="field">
-                <input
-                  aria-label={`filter-min-${conditionIndex}`}
-                  type={fieldOption.kind === "datetime" ? "datetime-local" : "text"}
-                  inputMode={fieldOption.kind === "number" || operator === "length_between" ? "numeric" : undefined}
-                  placeholder="最小值"
-                  value={String(condition.min ?? "")}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    updateCondition(path, (current) => ({
-                      ...current,
-                      min: nextValue,
-                    }));
-                  }}
-                />
-              </label>
-              <label className="field">
-                <input
-                  aria-label={`filter-max-${conditionIndex}`}
-                  type={fieldOption.kind === "datetime" ? "datetime-local" : "text"}
-                  inputMode={fieldOption.kind === "number" || operator === "length_between" ? "numeric" : undefined}
-                  placeholder="最大值"
-                  value={String(condition.max ?? "")}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    updateCondition(path, (current) => ({
-                      ...current,
-                      max: nextValue,
-                    }));
-                  }}
-                />
-              </label>
-            </div>
-          ) : null}
-          {needsSingleValue ? (
-            <label className="field">
-              <input
-                aria-label={`filter-value-${conditionIndex}`}
-                type={fieldOption.kind === "datetime" ? "datetime-local" : "text"}
-                inputMode={fieldOption.kind === "number" || operator.startsWith("length_") ? "numeric" : undefined}
-                placeholder="筛选值"
-                value={String(condition.value ?? "")}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  updateCondition(path, (current) => ({
-                    ...current,
-                    value: nextValue,
-                  }));
-                }}
-              />
-            </label>
-          ) : null}
-          {!needsArrayValue && !needsRange && !needsSingleValue ? (
-            <div className="kv results-advanced-filter-inline-note">该操作符无需额外输入</div>
-          ) : null}
-        </div>
-        <button
-          type="button"
-          className="workbench-secondary-action"
-          onClick={() => removeDraftNode(path)}
-        >
-          删除条件
-        </button>
-      </div>
-    );
-  }
-
-  function renderFilterGroup(group: ResultsFilterGroupNode, path: number[] = [], depth = 0): ReactNode {
-    const isRoot = path.length === 0;
-    return (
-      <div
-        key={`group-${path.join("-") || "root"}`}
-        className="results-advanced-filter-group"
-        data-depth={depth}
-      >
-        <div className="results-advanced-filter-group-head">
-          <div className="results-advanced-filter-group-meta">
-            <span className="kv">{isRoot ? "顶层条件组" : "条件组"}</span>
-            <label className="field results-advanced-filter-relation-field">
-              <select
-                aria-label={isRoot ? "filter-relation-root" : `filter-relation-${path.join("-")}`}
-                value={group.relation}
-                onChange={(event) => updateGroupRelation(path, event.target.value as ResultsFilterRelation)}
-              >
-                <option value="AND">AND</option>
-                <option value="OR">OR</option>
-              </select>
-            </label>
-          </div>
-          <div className="results-advanced-filter-group-actions">
-            <button type="button" className="workbench-secondary-action" onClick={() => addConditionToGroup(path)}>
-              新增条件
-            </button>
-            <button type="button" className="workbench-secondary-action" onClick={() => addGroupToGroup(path)}>
-              新增条件组
-            </button>
-            {!isRoot ? (
-              <button type="button" className="workbench-secondary-action" onClick={() => removeDraftNode(path)}>
-                删除条件组
-              </button>
-            ) : null}
-          </div>
-        </div>
-        {group.children.length ? (
-          <div className="results-advanced-filter-children">
-            {group.children.map((child, index) => (
-              child.type === "group"
-                ? renderFilterGroup(child, [...path, index], depth + 1)
-                : renderFilterCondition(child, [...path, index])
-            ))}
-          </div>
-        ) : (
-          <div className="drawer-empty results-advanced-filter-empty">暂无高级条件，点击“新增条件”开始筛选。</div>
-        )}
-      </div>
-    );
-  }
 
   return (
     <div className="results-page" data-testid="results-page">
@@ -1890,7 +884,15 @@ export function ResultsPage() {
                   <div className="kv">后端会先按整表筛选，再返回当前分页结果。</div>
                 </div>
               </div>
-              {renderFilterGroup(draftFilterTree)}
+              <ResultsFilterBuilder
+                table={table}
+                draftFilterTree={draftFilterTree}
+                updateCondition={updateCondition}
+                updateGroupRelation={updateGroupRelation}
+                addConditionToGroup={addConditionToGroup}
+                addGroupToGroup={addGroupToGroup}
+                removeDraftNode={removeDraftNode}
+              />
             </div>
           ) : null}
         </div>
@@ -1901,170 +903,47 @@ export function ResultsPage() {
         className={`results-main-workspace results-main-workspace-aligned${isResizingWorkspace ? " dragging" : ""}`}
         data-testid="results-main-workspace"
       >
-        <div className="results-table-pane" data-testid="results-table-pane">
-          <div className="results-table-strip flat-meta-strip" data-testid="results-table-headband">
-            <div className="results-table-strip-copy">
-              <div className="results-table-strip-title">{"当前结果表"}</div>
-            </div>
-            <div className="results-table-strip-meta workbench-pill-row">
-              <span className="results-summary-pill workbench-pill">{`可见列 ${visibleColumnDefinitions.length} 个`}</span>
-              <span className="results-summary-pill workbench-pill">{`当前表：${tableLabel}`}</span>
-              <span className="results-summary-pill workbench-pill">{`列宽：可拖动调整`}</span>
-            </div>
-          </div>
-
-          {error && <div className="alert error">{error}</div>}
-          {message && <div className="alert success">{message}</div>}
-
-          {showSelectAllMatching && (
-            <div className="results-selection-banner row">
-              <span className="kv">{`${TEXT.selectAllMatchingPrefix} ${items.length} \u6761\u3002`}</span>
-            </div>
-          )}
-
-          {allMatchingSelected && total > 0 && (
-            <div className="results-selection-banner row">
-              <span className="kv">{`${TEXT.allMatchingSelected} ${total} \u6761\u3002`}</span>
-            </div>
-          )}
-
-          <div className="results-table-status workbench-pill-row" data-testid="results-table-status">
-            <span className="results-summary-pill workbench-pill">{`共 ${total} 条`}</span>
-            <span className="results-summary-pill workbench-pill">{`已选 ${selectedCount} 条`}</span>
-            {allMatchingSelected && <span className="results-summary-pill workbench-pill">已选全部匹配结果</span>}
-            <span className="results-summary-pill workbench-pill">{`\u5f53\u524d\u7b2c ${page} / ${totalPages} \u9875`}</span>
-            <span className="results-summary-pill workbench-pill">{`\u672c\u9875 ${items.length} \u6761`}</span>
-            <span className="results-summary-pill workbench-pill">{`\u672c\u9875\u5df2\u9009 ${selectedOnPage} \u6761`}</span>
-            <span className="results-summary-pill workbench-pill">{`\u6392\u5e8f\uff1a${sortBy} \u00b7 ${sortDirectionLabel}`}</span>
-            <span className="results-summary-pill workbench-pill">{`\u6bcf\u9875 ${pageSize} \u6761`}</span>
-          </div>
-
-          {loading && (
-            <div
-              className="results-table-feedback results-table-feedback-loading flat-meta-strip"
-              data-testid="results-table-loading-state"
-              role="status"
-              aria-live="polite"
-            >
-              <span className="spinner" />
-              <span>{TEXT.loading}</span>
-            </div>
-          )}
-
-          {total > 0 && (
-            <div className="results-pagination flat-meta-strip" data-testid="results-pagination">
-              <span className="kv">{`\u5171 ${total} \u6761`}</span>
-              <div className="row">
-                <button
-                  type="button"
-                  className="workbench-secondary-action"
-                  aria-label="results-prev-page"
-                  disabled={loading || page <= 1}
-                  onClick={() => void load({ table, page: page - 1 })}
-                >
-                  {TEXT.prevPage}
-                </button>
-                <span className="kv">{`\u7b2c ${page} / ${totalPages} \u9875`}</span>
-                <button
-                  type="button"
-                  className="workbench-secondary-action"
-                  aria-label="results-next-page"
-                  disabled={loading || page >= totalPages}
-                  onClick={() => void load({ table, page: page + 1 })}
-                >
-                  {TEXT.nextPage}
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className={`results-table-wrap${isResizingColumn ? " dragging" : ""}`} data-testid="results-table-wrap">
-            <table className="table results-table" style={{ minWidth: tableMinWidth, tableLayout: "fixed" }}>
-              <colgroup>
-                <col style={{ width: RESULTS_SELECT_COLUMN_WIDTH }} />
-                {resolvedVisibleColumnDefinitions.map((column) => (
-                  <col key={`results-col-${table}-${column.key}`} style={{ width: column.currentWidth }} />
-                ))}
-              </colgroup>
-              <thead>
-                <tr>
-                  <th className="results-th-cell table-select-cell" style={{ width: RESULTS_SELECT_COLUMN_WIDTH, minWidth: RESULTS_SELECT_COLUMN_WIDTH }}>
-                    <label className="row">
-                      <input
-                        type="checkbox"
-                        aria-label={TEXT.selectPage}
-                        checked={allSelectedOnPage}
-                        onChange={toggleSelectAll}
-                      />
-                    </label>
-                  </th>
-                  {resolvedVisibleColumnDefinitions.map((column, index) => {
-                    const nextColumn = resolvedVisibleColumnDefinitions[index + 1];
-                    const canResize = nextColumn != null;
-                    return (
-                      <th
-                        key={column.key}
-                        className="results-th-cell"
-                        style={{ width: column.currentWidth, minWidth: column.currentWidth }}
-                      >
-                        <div className="results-th">
-                          <span className="results-th-label">{column.label}</span>
-                          {renderSortButtons(column.key, sortBy, sortDir, (field, direction) => {
-                            void handleSort(field, direction);
-                          })}
-                        </div>
-                        {canResize ? (
-                          <div
-                            className={`results-column-resizer${resizingColumnId === `${table}:${column.key}` ? " dragging" : ""}`}
-                            role="separator"
-                            aria-orientation="vertical"
-                            aria-label={`resize-column-${column.key}`}
-                            onPointerDown={(event) => {
-                              startColumnResize(column, nextColumn, event.clientX);
-                              event.preventDefault();
-                            }}
-                            onMouseDown={(event) => {
-                              startColumnResize(column, nextColumn, event.clientX);
-                              event.preventDefault();
-                            }}
-                          />
-                        ) : null}
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((item) => (
-                  <tr
-                    key={item.id}
-                    className={activeRowId === item.id ? "active" : ""}
-                    data-row-active={activeRowId === item.id ? "true" : "false"}
-                    onClick={() => setActiveRowId(item.id)}
-                  >
-                    <td className="table-select-cell" onClick={(event) => event.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        aria-label={`select-item-${item.id}`}
-                        checked={allMatchingSelected || selectedIds.includes(item.id)}
-                        onChange={() => {
-                          setActiveRowId(item.id);
-                          toggleSelected(item.id);
-                        }}
-                      />
-                    </td>
-                    {resolvedVisibleColumnDefinitions.map((column) => (
-                      <td key={`${item.id}-${column.key}`}>
-                        <div className={getCellContentClass(column.key)}>{column.render(item)}</div>
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {!loading && items.length === 0 && <div className="drawer-empty">{TEXT.empty}</div>}
-        </div>
+        <ResultsDataTable
+          table={table}
+          tableLabel={tableLabel}
+          visibleColumnCount={visibleColumnDefinitions.length}
+          error={error}
+          message={message}
+          showSelectAllMatching={showSelectAllMatching}
+          selectAllMatchingPrefix={TEXT.selectAllMatchingPrefix}
+          allMatchingSelected={allMatchingSelected}
+          allMatchingSelectedLabel={TEXT.allMatchingSelected}
+          items={items}
+          total={total}
+          selectedCount={selectedCount}
+          totalPages={totalPages}
+          page={page}
+          selectedOnPage={selectedOnPage}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          sortDirectionLabel={sortDirectionLabel}
+          pageSize={pageSize}
+          loading={loading}
+          loadingLabel={TEXT.loading}
+          prevPageLabel={TEXT.prevPage}
+          nextPageLabel={TEXT.nextPage}
+          selectPageLabel={TEXT.selectPage}
+          emptyLabel={TEXT.empty}
+          tableMinWidth={tableMinWidth}
+          isResizingColumn={isResizingColumn}
+          selectColumnWidth={RESULTS_SELECT_COLUMN_WIDTH}
+          columns={resolvedVisibleColumnDefinitions}
+          allSelectedOnPage={allSelectedOnPage}
+          resizingColumnId={resizingColumnId}
+          activeRowId={activeRowId}
+          selectedIds={selectedIds}
+          onPageChange={(nextPage) => load({ table, page: nextPage })}
+          onSort={handleSort}
+          onStartColumnResize={startColumnResize}
+          onSetActiveRowId={setActiveRowId}
+          onToggleSelectAll={toggleSelectAll}
+          onToggleSelected={toggleSelected}
+        />
 
         {isSplitLayout && (
           <div

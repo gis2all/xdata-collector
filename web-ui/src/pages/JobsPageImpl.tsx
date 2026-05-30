@@ -1,11 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   JobBatchAction,
-  JobBatchResponse,
   JobRecord,
-  RunRecord,
   RuleSet,
-  RuleSetDefinition,
   TaskPackFile,
   TaskPackSummary,
   batchJobs,
@@ -29,28 +26,52 @@ import {
 import {
   DEFAULT_RULE_SET_DEFINITION,
   DEFAULT_SEARCH_SPEC,
-  buildQueryPreview,
   cloneRuleDefinition,
   cloneSearchSpec,
   joinCommaLinesForTextarea,
   splitCommaLines,
 } from "../collector";
-import { RuleSetEditor } from "../components/RuleSetEditor";
-import { SearchSpecEditor } from "../components/SearchSpecEditor";
-import { TagPills } from "../components/TagPills";
 import {
   EMPTY_RUN_PROGRESS,
   buildRunProgress,
-  executionStatusLabel,
-  executionStatusTone,
-  type RunProgress,
 } from "../runProgress";
 import { ImportedTaskPackDraft, readImportedTaskPack } from "../taskPacks";
 import { formatUtcPlus8Time } from "../time";
+import { JobWorkspace } from "./jobs/JobWorkspace";
+import { JobsTable } from "./jobs/JobsTable";
+import {
+  ACTIVE_BATCH_ACTIONS,
+  DELETED_BATCH_ACTIONS,
+  JOBS_SELECT_COLUMN_WIDTH,
+  JOB_TABLE_COLUMNS,
+  batchActionMessage,
+  batchConfirmText,
+  buildActiveJobRunFromJob,
+  getJobColumnMinWidth,
+  jobSelectionState,
+  jobState,
+  readJobColumnWidths,
+  resolveJobColumnWidth,
+  writeJobColumnWidths,
+  type ActiveJobRun,
+  type BatchActionSpec,
+  type JobColumnResizeState,
+  type JobColumnWidths,
+  type JobStatusFilter,
+  type JobTableColumnKey,
+  type JobTableColumnDefinition,
+} from "./jobs/jobsTableConfig";
+import {
+  DEFAULT_FORM,
+  buildJobDraftComparable,
+  buildJobPackComparable,
+  buildPackPayload,
+  draftSourceLabel,
+  type DraftSourceKind,
+  type JobFormState,
+} from "./jobs/jobDraft";
 
-type JobStatusFilter = "active" | "all" | "deleted";
 type DrawerMode = "create" | "view" | "edit";
-type JobSelectionState = "none" | "active" | "deleted" | "mixed";
 type RefreshOptions = {
   page?: number;
   query?: string;
@@ -60,337 +81,10 @@ type RefreshOptions = {
   silent?: boolean;
 };
 
-type JobFormState = {
-  name: string;
-  group_name: string;
-  interval_minutes: number;
-  enabled: boolean;
-  pack_name: string | null;
-  import_pack_name: string;
-  tagsText: string;
-  search_spec: ReturnType<typeof cloneSearchSpec>;
-  rule_set: {
-    id?: number | null;
-    name: string;
-    description: string;
-    version: number;
-    definition: RuleSetDefinition;
-  };
-};
-
-type BatchActionSpec = {
-  action: JobBatchAction;
-  label: string;
-  tone?: "danger" | "ghost";
-};
-
-type ActiveJobRun = {
-  run: RunRecord;
-  progress: RunProgress;
-};
-
-type JobTableColumnKey = "name" | "pack" | "group" | "tags" | "interval" | "status" | "next_run_at" | "last_run";
-
-type JobTableColumnDefinition = {
-  key: JobTableColumnKey;
-  label: string;
-  width: number;
-  render: (job: JobRecord, activeRun: ActiveJobRun | undefined) => ReactNode;
-};
-
-type JobColumnWidths = Partial<Record<JobTableColumnKey, number>>;
-
-type JobColumnResizeState = {
-  leftKey: JobTableColumnKey;
-  rightKey: JobTableColumnKey;
-  startX: number;
-  leftStartWidth: number;
-  rightStartWidth: number;
-  leftMinWidth: number;
-  rightMinWidth: number;
-};
-
-function buildActiveJobRunFromJob(job: JobRecord): ActiveJobRun | null {
-  if (!job.last_run_id || String(job.last_run_status || "").toLowerCase() !== "running") {
-    return null;
-  }
-  const run: RunRecord = {
-    id: job.last_run_id,
-    job_id: job.id,
-    trigger_type: "auto",
-    status: job.last_run_status || "running",
-    started_at: job.last_run_started_at || job.updated_at,
-    ended_at: job.last_run_ended_at || null,
-    error_text: job.last_run_error_text || null,
-    stats_json: (job.last_run_stats as Record<string, number> | undefined) || {},
-    result_json: null,
-  };
-  return {
-    run,
-    progress: buildRunProgress(run),
-  };
-}
-
-const JOB_TABLE_COLUMNS: JobTableColumnDefinition[] = [
-  {
-    key: "name",
-    label: "任务",
-    width: 220,
-    render: (job) => (
-      <>
-        <div className="job-name jobs-row-title">{job.name}</div>
-        <div className="kv jobs-row-meta">#{job.id}</div>
-      </>
-    ),
-  },
-  {
-    key: "pack",
-    label: "任务包",
-    width: 220,
-    render: (job) => (
-      <>
-        <div className="job-name jobs-row-title">{job.pack_meta?.name || job.pack_name || "--"}</div>
-        <div className="kv jobs-row-meta">{job.pack_name || "--"}</div>
-      </>
-    ),
-  },
-  {
-    key: "group",
-    label: "分组",
-    width: 160,
-    render: (job) => job.group_name || "--",
-  },
-  {
-    key: "tags",
-    label: "任务标签",
-    width: 180,
-    render: (job) => <TagPills tags={job.tags} />,
-  },
-  {
-    key: "interval",
-    label: "间隔",
-    width: 110,
-    render: (job) => `${job.interval_minutes} 分钟`,
-  },
-  {
-    key: "status",
-    label: "状态",
-    width: 110,
-    render: (job) => <span className={`badge ${job.deleted_at ? "b" : job.enabled ? "a" : ""}`}>{jobState(job)}</span>,
-  },
-  {
-    key: "next_run_at",
-    label: "下次运行",
-    width: 220,
-    render: (job) => formatUtcPlus8Time(job.next_run_at),
-  },
-  {
-    key: "last_run",
-    label: "最近运行",
-    width: 220,
-    render: (job, activeRun) =>
-      activeRun ? (
-        <>
-          <div className="jobs-running-status">
-            <span>{`${activeRun.run.status || "running"} `}</span>
-            <span className="jobs-running-percent">{`${activeRun.progress.progressPercent || 0}%`}</span>
-          </div>
-          <div className="kv">{formatUtcPlus8Time(activeRun.progress.startedAt)}</div>
-        </>
-      ) : (
-        <>
-          <div>{job.last_run_status || "--"}</div>
-          <div className="kv">{formatUtcPlus8Time(job.last_run_ended_at || job.last_run_started_at)}</div>
-        </>
-      ),
-  },
-];
-
-function normalizeJobColumnWidths(value: unknown): JobColumnWidths {
-  if (value == null || typeof value !== "object") {
-    return {};
-  }
-  const allowed = new Set(JOB_TABLE_COLUMNS.map((column) => column.key));
-  const result: JobColumnWidths = {};
-  for (const [key, rawWidth] of Object.entries(value as Record<string, unknown>)) {
-    if (!allowed.has(key as JobTableColumnKey)) {
-      continue;
-    }
-    if (typeof rawWidth !== "number" || !Number.isFinite(rawWidth) || rawWidth <= 0) {
-      continue;
-    }
-    result[key as JobTableColumnKey] = Math.round(rawWidth);
-  }
-  return result;
-}
-
-function readJobColumnWidths(): JobColumnWidths {
-  if (typeof window === "undefined") {
-    return {};
-  }
-  const raw = window.localStorage.getItem(JOBS_COLUMN_WIDTHS_KEY);
-  if (!raw) {
-    return {};
-  }
-  try {
-    return normalizeJobColumnWidths(JSON.parse(raw) as Record<string, unknown>);
-  } catch {
-    return {};
-  }
-}
-
-function writeJobColumnWidths(widths: JobColumnWidths) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.setItem(JOBS_COLUMN_WIDTHS_KEY, JSON.stringify(widths));
-}
-
-function getJobColumnMinWidth(column: JobTableColumnDefinition) {
-  if (column.width <= 90) return 72;
-  if (column.width <= 120) return 88;
-  if (column.width <= 160) return 120;
-  return 140;
-}
-
-function resolveJobColumnWidth(column: JobTableColumnDefinition, storedWidth?: number) {
-  const minWidth = getJobColumnMinWidth(column);
-  const width = typeof storedWidth === "number" && Number.isFinite(storedWidth) ? storedWidth : column.width;
-  return Math.max(minWidth, Math.round(width));
-}
-
-const DEFAULT_FORM: JobFormState = {
-  name: "mining-watch",
-  group_name: "",
-  interval_minutes: 60,
-  enabled: true,
-  pack_name: null,
-  import_pack_name: "",
-  tagsText: "",
-  search_spec: cloneSearchSpec(DEFAULT_SEARCH_SPEC),
-  rule_set: {
-    id: 1,
-    name: "Default Rule Set",
-    description: "Built-in opportunity discovery rules.",
-    version: 1,
-    definition: cloneRuleDefinition(DEFAULT_RULE_SET_DEFINITION),
-  },
-};
-
-const ACTIVE_BATCH_ACTIONS: BatchActionSpec[] = [
-  { action: "enable", label: "批量启用", tone: "ghost" },
-  { action: "disable", label: "批量停用", tone: "ghost" },
-  { action: "run_now", label: "批量立即运行" },
-  { action: "delete", label: "批量删除", tone: "danger" },
-];
-
-const DELETED_BATCH_ACTIONS: BatchActionSpec[] = [
-  { action: "restore", label: "批量恢复" },
-  { action: "purge", label: "批量彻底删除", tone: "danger" },
-];
-
 const MIN_LIST_PANE_WIDTH = 320;
 const MIN_DRAWER_PANE_WIDTH = 320;
 const RESIZER_WIDTH = 20;
 const SPLIT_LAYOUT_BREAKPOINT = 1160;
-const JOBS_SELECT_COLUMN_WIDTH = 48;
-const JOBS_COLUMN_WIDTHS_KEY = "jobs.columnWidths.v1";
-
-function jobState(job: JobRecord) {
-  if (job.deleted_at) return "已删除";
-  return job.enabled ? "已启用" : "已停用";
-}
-
-function jobSelectionState(status: JobStatusFilter, allMatchingSelected: boolean, selectedIds: number[], selectedDeletedById: Record<number, boolean>) {
-  if (allMatchingSelected) {
-    if (status === "active") return "active" as JobSelectionState;
-    if (status === "deleted") return "deleted" as JobSelectionState;
-    return "mixed" as JobSelectionState;
-  }
-  if (!selectedIds.length) return "none" as JobSelectionState;
-  const deletedStates = new Set(selectedIds.map((id) => Boolean(selectedDeletedById[id])));
-  if (deletedStates.size > 1) return "mixed" as JobSelectionState;
-  return deletedStates.has(true) ? "deleted" : "active";
-}
-
-function batchActionMessage(result: JobBatchResponse) {
-  const summary = `已成功 ${result.succeeded} 条，失败 ${result.failed} 条`;
-  if (result.action === "run_now" && result.failed_items.length) {
-    return [summary, ...result.failed_items.slice(0, 3).map((item) => `${item.name}: ${item.error}`)].join("\n");
-  }
-  return summary;
-}
-
-function batchConfirmText(action: JobBatchAction, count: number) {
-  if (action === "delete") return `确认删除 ${count} 条任务吗？`;
-  if (action === "purge") return `确认彻底删除 ${count} 条任务吗？此操作不可恢复。`;
-  if (action === "run_now") return `确认顺序执行 ${count} 条任务吗？`;
-  return "";
-}
-
-function buildJobDraftComparable(form: JobFormState) {
-  const tags = splitCommaLines(form.tagsText);
-  return {
-    tags,
-    search_spec: cloneSearchSpec(form.search_spec),
-    rule_set: {
-      name: form.rule_set.name.trim(),
-      description: form.rule_set.description.trim(),
-      definition: cloneRuleDefinition(form.rule_set.definition),
-    },
-  };
-}
-
-function buildJobPackComparable(pack: TaskPackFile) {
-  return {
-    tags: [...(pack.tags || [])],
-    search_spec: cloneSearchSpec(pack.search_spec),
-    rule_set: {
-      name: String(pack.rule_set.name || "").trim(),
-      description: String(pack.rule_set.description || "").trim(),
-      definition: cloneRuleDefinition(pack.rule_set.definition),
-    },
-  };
-}
-
-function buildPackPayload(form: JobFormState, packName: string) {
-  return {
-    meta: {
-      name: packName,
-      description: form.rule_set.description,
-    },
-    tags: splitCommaLines(form.tagsText),
-    search_spec: cloneSearchSpec(form.search_spec),
-    rule_set: {
-      id: form.rule_set.id ?? null,
-      name: form.rule_set.name,
-      description: form.rule_set.description,
-      version: form.rule_set.version,
-      definition: cloneRuleDefinition(form.rule_set.definition),
-    },
-  };
-}
-
-type DraftSourceKind = "blank" | "pack" | "file";
-
-function draftSourceLabel(kind: DraftSourceKind) {
-  if (kind === "pack") return "任务包载入";
-  if (kind === "file") return "文件导入";
-  return "默认空白";
-}
-
-function JobsSectionHeader({ title, description, actions }: { title: string; description?: string; actions?: ReactNode }) {
-  return (
-    <div className="jobs-section-header workbench-section-header">
-      <div className="workbench-section-copy">
-        <h5 className="workbench-section-title">{title}</h5>
-        {description ? <p className="kv jobs-section-description">{description}</p> : null}
-      </div>
-      {actions ? <div className="jobs-section-actions">{actions}</div> : null}
-    </div>
-  );
-}
-
 export function JobsPage() {
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [taskPacks, setTaskPacks] = useState<TaskPackSummary[]>([]);
@@ -1332,49 +1026,6 @@ export function JobsPage() {
     void openJob(job, job.deleted_at ? "view" : "edit");
   }
 
-  function renderJobRunProgress(progress: RunProgress) {
-    const progressQueryLabel = progress.totalQueries > 0 ? `${progress.completedQueries} / ${progress.totalQueries}` : "-- / --";
-    return (
-      <section className="card manual-run-progress-card workbench-layer" data-testid="job-run-progress">
-        <div className="manual-run-progress-head">
-          <div className="manual-run-progress-copy">
-            <div className="workbench-section-eyebrow">执行进度</div>
-            <div className="manual-run-progress-title">
-              {progress.status === "success" ? "本次自动任务已完成" : progress.status === "failed" ? "本次自动任务已结束" : "自动任务正在按查询计划抓取"}
-            </div>
-            <div className="kv">
-              {progress.totalQueries > 0
-                ? `已完成 ${progressQueryLabel} 个查询切片`
-                : progress.runId
-                  ? `执行任务 #${progress.runId} 已启动，等待返回查询总数`
-                  : "正在创建执行任务..."}
-            </div>
-          </div>
-          <div className="manual-run-progress-side">
-            <span className={`jobs-summary-pill workbench-pill ${executionStatusTone(progress.status)}`}>
-              {executionStatusLabel(progress.status)}
-            </span>
-            <div className="manual-run-progress-percent">{`${progress.progressPercent}%`}</div>
-          </div>
-        </div>
-        <div
-          className="manual-run-progress-track"
-          role="progressbar"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={progress.progressPercent}
-        >
-          <div className="manual-run-progress-fill" style={{ width: `${progress.progressPercent}%` }} />
-        </div>
-        <div className="manual-run-progress-meta">
-          <span>{`查询 ${progressQueryLabel}`}</span>
-          <span>{`raw ${progress.fetchedRaw}`}</span>
-          <span>{`errors ${progress.queryErrors}`}</span>
-        </div>
-      </section>
-    );
-  }
-
   const drawerDisabled = Boolean(selectedJob?.deleted_at) && drawerMode !== "create";
   const workspaceTitle = selectedJob ? "当前任务工作区" : "新建任务工作区";
   const workspaceMeta = selectedJob ? `任务 #${selectedJob.id}` : "未保存新任务";
@@ -1400,42 +1051,6 @@ export function JobsPage() {
     ? (currentTaskPack ? (taskPackDirty ? "已修改未保存" : "未修改") : "已绑定")
     : "未绑定";
   const isCreateWorkspace = drawerOpen && !selectedJob;
-  const workspaceActionBar = (
-    <div className="drawer-footer" data-testid="jobs-primary-actions">
-      {!selectedJob ? (
-        <button type="button" className="workbench-primary-action" aria-label="submit-job" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
-      ) : selectedJob.deleted_at ? (
-        <>
-          <button type="button" className="workbench-secondary-action" onClick={() => handleRestore(selectedJob)}>{"恢复任务"}</button>
-          <button type="button" className="workbench-danger-action" onClick={() => handlePurge(selectedJob)}>{"彻底删除"}</button>
-        </>
-      ) : (
-        <>
-          <button type="button" className="workbench-primary-action" onClick={handleSave} disabled={saving}>{saving ? "保存中..." : "保存任务"}</button>
-          <button
-            type="button"
-            className="workbench-secondary-action"
-            onClick={() => handleRunNow(selectedJob)}
-            disabled={!selectedJob.enabled || selectedJobActiveRun?.progress.status === "running"}
-          >
-            {"立即运行"}
-          </button>
-          {selectedJobActiveRun?.progress.status === "running" ? (
-            <button
-              type="button"
-              className="workbench-danger-action"
-              onClick={() => handleStopRun(selectedJob, selectedJobActiveRun.run.id)}
-            >
-              {"停止运行"}
-            </button>
-          ) : null}
-          <button type="button" className="workbench-secondary-action" onClick={() => handleToggle(selectedJob)}>{selectedJob.enabled ? "停用任务" : "启用任务"}</button>
-          <button type="button" className="workbench-danger-action" onClick={() => handleDelete(selectedJob)}>{"删除任务"}</button>
-        </>
-      )}
-    </div>
-  );
-
   return (
     <div className="jobs-page" data-testid="jobs-page">
       <section className="card jobs-page-header workbench-page-header">
@@ -1537,118 +1152,29 @@ export function JobsPage() {
 
           {selectionWarning && <div className="alert error jobs-list-alert">{selectionWarning}</div>}
 
-          <div className="card jobs-table-card">
-            <div className="jobs-pagination" data-testid="jobs-pagination">
-              <span className="kv">{"共 "}{total}{" 条"}</span>
-              <div className="row">
-                <button
-                  type="button"
-                  className="workbench-secondary-action"
-                  disabled={page <= 1}
-                  onClick={() => refreshJobs({ page: page - 1 }).catch(() => undefined)}
-                >
-                  {"上一页"}
-                </button>
-                <span className="kv">{"第 "}{page}{" / "}{totalPages}{" 页"}</span>
-                <button
-                  type="button"
-                  className="workbench-secondary-action"
-                  disabled={page >= totalPages}
-                  onClick={() => refreshJobs({ page: page + 1 }).catch(() => undefined)}
-                >
-                  {"下一页"}
-                </button>
-              </div>
-            </div>
-
-            <div className={`jobs-table-wrap${isResizingColumn ? " dragging" : ""}`} data-testid="jobs-table-wrap">
-              {loading ? (
-                <div className="searching"><span className="spinner" /> {"??????..."}</div>
-              ) : (
-                <table className="table jobs-table" style={{ minWidth: jobsTableMinWidth, tableLayout: "fixed" }}>
-                  <colgroup>
-                    <col style={{ width: JOBS_SELECT_COLUMN_WIDTH }} />
-                    {resolvedJobColumns.map((column) => (
-                      <col key={`jobs-col-${column.key}`} style={{ width: column.currentWidth }} />
-                    ))}
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th className="jobs-th-cell table-select-cell" style={{ width: JOBS_SELECT_COLUMN_WIDTH, minWidth: JOBS_SELECT_COLUMN_WIDTH }}>
-                        <label className="field checkbox-row jobs-select-page-label">
-                          <input aria-label="jobs-select-page" type="checkbox" checked={allPageSelected} onChange={togglePageSelection} />
-                        </label>
-                      </th>
-                      {resolvedJobColumns.map((column, index) => {
-                        const nextColumn = resolvedJobColumns[index + 1];
-                        const canResize = nextColumn != null;
-                        return (
-                          <th
-                            key={column.key}
-                            className="jobs-th-cell"
-                            style={{ width: column.currentWidth, minWidth: column.currentWidth }}
-                          >
-                            <div className="jobs-th">
-                              <span className="jobs-th-label">{column.label}</span>
-                            </div>
-                            {canResize ? (
-                              <div
-                                className={`jobs-column-resizer${resizingColumnId === column.key ? " dragging" : ""}`}
-                                role="separator"
-                                aria-orientation="vertical"
-                                aria-label={`resize-job-column-${column.key}`}
-                                onPointerDown={(event) => {
-                                  startColumnResize(column, nextColumn, event.clientX);
-                                  event.preventDefault();
-                                }}
-                                onMouseDown={(event) => {
-                                  startColumnResize(column, nextColumn, event.clientX);
-                                  event.preventDefault();
-                                }}
-                              />
-                            ) : null}
-                          </th>
-                        );
-                      })}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {jobs.map((job) => {
-                      const activeRun = activeRunsByJobId[job.id];
-
-                      return (
-                        <tr
-                          key={job.id}
-                          className={`${job.deleted_at ? "row-deleted" : ""}${selectedJob?.id === job.id ? " active" : ""}`}
-                          data-job-active={selectedJob?.id === job.id ? "true" : "false"}
-                          onClick={() => openJobWorkspace(job)}
-                        >
-                          <td className="table-select-cell" onClick={(event) => event.stopPropagation()}>
-                            <input
-                              aria-label={`select-job-${job.id}`}
-                              type="checkbox"
-                              checked={allMatchingSelected || selectedIds.includes(job.id)}
-                              onChange={(event) => toggleRowSelection(job, event.target.checked)}
-                            />
-                          </td>
-                          {resolvedJobColumns.map((column) => (
-                            <td key={`${job.id}-${column.key}`}>
-                              {column.render(job, activeRun)}
-                            </td>
-                          ))}
-                        </tr>
-                      );
-                    })}
-                    {!jobs.length && (
-                      <tr>
-                        <td colSpan={8} style={{ textAlign: "center", color: "#64748b" }}>{status === "deleted" ? "???????" : "????"}</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
+          <JobsTable
+            total={total}
+            page={page}
+            totalPages={totalPages}
+            loading={loading}
+            jobsTableMinWidth={jobsTableMinWidth}
+            isResizingColumn={isResizingColumn}
+            selectColumnWidth={JOBS_SELECT_COLUMN_WIDTH}
+            columns={resolvedJobColumns}
+            allPageSelected={allPageSelected}
+            resizingColumnId={resizingColumnId}
+            jobs={jobs}
+            activeRunsByJobId={activeRunsByJobId}
+            selectedJobId={selectedJob?.id ?? null}
+            allMatchingSelected={allMatchingSelected}
+            selectedIds={selectedIds}
+            status={status}
+            onPageChange={(nextPage) => { void refreshJobs({ page: nextPage }); }}
+            onTogglePageSelection={togglePageSelection}
+            onStartColumnResize={startColumnResize}
+            onOpenJobWorkspace={openJobWorkspace}
+            onToggleRowSelection={toggleRowSelection}
+          />
         </section>
 
         {isSplitLayout && (
@@ -1663,324 +1189,57 @@ export function JobsPage() {
           />
         )}
 
-        <aside className={`jobs-drawer${drawerOpen ? " open" : ""}${drawerOpen ? "" : " jobs-drawer-empty"}${isCreateWorkspace ? " jobs-drawer-create" : ""}`}>
-          {drawerOpen ? (
-            <div className={`jobs-workspace${isCreateWorkspace ? " jobs-workspace-create" : ""}`}>
-              <div className="drawer-header">
-                <div>
-                  <h4>{workspaceTitle}</h4>
-                  <div className="kv">{workspaceMeta}</div>
-                </div>
-                <div className="drawer-header-actions">
-                  <button
-                    type="button"
-                    className="workbench-secondary-action"
-                    data-testid="jobs-close-workspace"
-                    onClick={() => { setSelectedJob(null); setDrawerMode("create"); resetForm(); setDrawerOpen(false); }}
-                  >
-                    {"关闭"}
-                  </button>
-                </div>
-              </div>
-
-              {workspaceActionBar}
-
-              <div className="jobs-current-task-section flat-section workbench-layer">
-                <JobsSectionHeader
-                  title="当前任务"
-                  description="先确认调度状态和基础设置，再继续调整任务正文。"
-                />
-                {selectedJobActiveRun ? renderJobRunProgress(selectedJobActiveRun.progress) : null}
-                <div className="jobs-current-task-hero flat-section">
-                  <div className="jobs-current-task-copy">
-                    <div className="jobs-current-task-eyebrow">{currentTaskEyebrow}</div>
-                    <div className="jobs-current-task-name">{currentTaskHeroTitle}</div>
-                    <p className="kv jobs-current-task-note">{currentTaskHeroDescription}</p>
-                  </div>
-                  <div className="jobs-current-task-pills workbench-pill-row">
-                    <span className="jobs-summary-pill workbench-pill">{`当前状态：${currentStatusLabel}`}</span>
-                    <span className="jobs-summary-pill workbench-pill">{`下次运行：${nextRunLabel}`}</span>
-                    <span className="jobs-summary-pill workbench-pill">{`最近运行：${lastRunLabel}`}</span>
-                  </div>
-                  <div className="jobs-current-task-meta">
-                    <span>{`最近运行时间：${lastRunTimeLabel}`}</span>
-                    {selectedJob?.deleted_at ? <span>{`删除时间：${formatUtcPlus8Time(selectedJob.deleted_at)}`}</span> : null}
-                  </div>
-                  <div className="jobs-current-task-summary-grid flat-row-list">
-                    <div className="flat-row">
-                      <span>{"当前状态"}</span>
-                      <strong>{currentStatusLabel}</strong>
-                    </div>
-                    <div className="flat-row">
-                      <span>{"最近运行状态"}</span>
-                      <strong>{lastRunLabel}</strong>
-                    </div>
-                    <div className="flat-row">
-                      <span>{"最近运行时间"}</span>
-                      <strong>{lastRunTimeLabel}</strong>
-                    </div>
-                  </div>
-                </div>
-                <div className="collector-grid collector-grid-2 jobs-current-task-form">
-                  <label className="field">
-                    <span>{"任务名称"}</span>
-                    <input aria-label="job-name" value={form.name} onChange={(e) => updateForm("name", e.target.value)} disabled={drawerDisabled} />
-                  </label>
-                  <label className="field">
-                    <span>{"分组"}</span>
-                    <input
-                      aria-label="job-group-name"
-                      value={form.group_name}
-                      onChange={(e) => updateForm("group_name", e.target.value)}
-                      disabled={drawerDisabled}
-                      placeholder="如：Alpha / Exchange / Research"
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{"执行间隔（分钟）"}</span>
-                    <input aria-label="job-interval" type="number" value={form.interval_minutes} onChange={(e) => updateForm("interval_minutes", Number(e.target.value))} disabled={drawerDisabled} />
-                  </label>
-                  <label className="field checkbox-row jobs-current-task-toggle">
-                    <span>{"\u542f\u7528"}</span>
-                    <input type="checkbox" checked={form.enabled} onChange={(e) => updateForm("enabled", e.target.checked)} disabled={drawerDisabled} />
-                  </label>
-                </div>
-              </div>
-              <div className="flat-section workbench-layer">
-                <JobsSectionHeader
-                  title="任务包操作"
-                  description="载入、导入或保存当前任务包。"
-                />
-                <div className="jobs-pack-context-hint flat-meta-strip" data-testid="jobs-pack-context-hint">
-                  <div className="workbench-pill-row">
-                    <span className="jobs-summary-pill workbench-pill">{`当前绑定：${currentTaskPackName || "--"}`}</span>
-                    <span className="jobs-summary-pill workbench-pill">{`绑定状态：${currentTaskPackBindingLabel}`}</span>
-                    <span className="jobs-summary-pill workbench-pill">{`tags：${formTags.length ? formTags.join(", ") : "--"}`}</span>
-                    <span className="jobs-summary-pill workbench-pill">{`草稿状态：${currentTaskPackDraftLabel}`}</span>
-                  </div>
-                </div>
-                <div className="collector-grid collector-grid-2 jobs-pack-manager-grid jobs-pack-actions-grid">
-                  <div className="jobs-pack-action-group flat-section">
-                    <div className="collector-subtitle">{"载入到当前草稿"}</div>
-                    <div className="kv" style={{ marginTop: 6 }}>{"可从任务包列表载入，或从本地 JSON 导入。"}</div>
-                    <div className="collector-toolbar" style={{ marginTop: 12, flexWrap: "wrap" }}>
-                      <select aria-label="job-pack-select" value={form.import_pack_name} onChange={(e) => updateForm("import_pack_name", e.target.value)} disabled={drawerDisabled}>
-                        <option value="">{"选择任务包"}</option>
-                        {taskPacks.map((item) => (
-                          <option key={item.pack_name} value={item.pack_name}>{item.name}</option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        className="workbench-secondary-action"
-                        aria-label="job-load-pack"
-                        onClick={() => handleImportPack().catch(() => undefined)}
-                        disabled={drawerDisabled}
-                      >
-                        {"载入任务包"}
-                      </button>
-                      <button
-                        type="button"
-                        className="workbench-secondary-action"
-                        aria-label="job-import-file-pack"
-                        onClick={() => { pendingFileActionRef.current = "draft"; fileInputRef.current?.click(); }}
-                        disabled={drawerDisabled}
-                      >
-                        {"从文件导入"}
-                      </button>
-                      <button
-                        type="button"
-                        className="workbench-secondary-action"
-                        aria-label="job-import-and-save-pack"
-                        onClick={() => { pendingFileActionRef.current = "save_new"; fileInputRef.current?.click(); }}
-                        disabled={drawerDisabled || savingPack}
-                      >
-                        {"导入并保存为新任务包"}
-                      </button>
-                      <input
-                        ref={fileInputRef}
-                        data-testid="job-pack-file-input"
-                        type="file"
-                        accept=".json,application/json"
-                        style={{ display: "none" }}
-                        onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          void (pendingFileActionRef.current === "save_new" ? handleImportAndSavePackFile(file) : handleImportPackFile(file));
-                          event.currentTarget.value = "";
-                        }}
-                      />
-                    </div>
-                    <div className="kv jobs-pack-note">{"从文件导入只替换当前草稿。"}</div>
-                    <div className="kv jobs-pack-note">{"导入并保存会新建并绑定任务包。"}</div>
-                  </div>
-                  <div className="jobs-pack-action-group flat-section">
-                    <div className="collector-subtitle">{"保存当前草稿"}</div>
-                    <div className="kv" style={{ marginTop: 6 }}>{"可另存为新任务包，或保存回当前任务包。"}</div>
-                    <label className="field" style={{ marginTop: 12 }}>
-                      <span>{"tags"}</span>
-                      <textarea
-                        className="workbench-textarea"
-                        rows={3}
-                        aria-label="job-pack-tags"
-                        value={form.tagsText}
-                        onChange={(event) => updateForm("tagsText", event.target.value)}
-                        disabled={drawerDisabled}
-                        placeholder="逗号或换行分隔，如：alpha, defi, wallet"
-                      />
-                    </label>
-                    <div className="collector-toolbar" style={{ marginTop: 12, flexWrap: "wrap" }}>
-                      <button
-                        type="button"
-                        className="workbench-secondary-action"
-                        aria-label="job-save-as-pack"
-                        onClick={() => handleSavePack("create").catch(() => undefined)}
-                        disabled={drawerDisabled || savingPack}
-                      >
-                        {"另存为新任务包"}
-                      </button>
-                      <button type="button" className="workbench-primary-action" aria-label="job-save-current-pack" onClick={() => handleSavePack("overwrite").catch(() => undefined)} disabled={drawerDisabled || savingPack || !form.pack_name}>{"保存到当前任务包"}</button>
-                      <button
-                        type="button"
-                        className="workbench-danger-action"
-                        aria-label="job-delete-pack"
-                        onClick={() => handleDeleteCurrentPack().catch(() => undefined)}
-                        disabled={drawerDisabled || deletingPack || !currentTaskPack?.pack_name}
-                      >
-                        {deletingPack ? "删除中..." : "删除当前任务包"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flat-section workbench-layer">
-                <JobsSectionHeader
-                  title="任务正文摘要"
-                  description="这里先快速预览当前草稿会形成的搜索表达，再继续深入编辑搜索条件和规则。"
-                />
-                <div className="jobs-task-body-summary">
-                  <div className="collector-query-preview jobs-pack-query-preview">
-                    <div className="collector-subtitle">{"查询摘要"}</div>
-                    <code>{buildQueryPreview(form.search_spec) || "--"}</code>
-                  </div>
-                  <div className="jobs-task-body-grid flat-row-list">
-                    <div className="flat-row">
-                      <span>{"关键词片段"}</span>
-                      <strong>{`${taskKeywordCount} 项`}</strong>
-                    </div>
-                    <div className="flat-row">
-                      <span>{"作者约束"}</span>
-                      <strong>{`${taskAuthorConstraintCount} 项`}</strong>
-                    </div>
-                    <div className="flat-row">
-                      <span>{"规则条数"}</span>
-                      <strong>{`${taskRuleCount} 条`}</strong>
-                    </div>
-                    <div className="flat-row">
-                      <span>{"等级数"}</span>
-                      <strong>{`${taskLevelCount} 层`}</strong>
-                    </div>
-                    <div className="flat-row flat-row-wide">
-                      <span>{"规则名称"}</span>
-                      <strong>{form.rule_set.name || "--"}</strong>
-                    </div>
-                    <div className="flat-row flat-row-wide">
-                      <span>{"规则说明"}</span>
-                      <strong>{form.rule_set.description || "未填写规则说明"}</strong>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flat-section workbench-layer">
-                <JobsSectionHeader
-                  title="搜索条件"
-                  description="这里定义自动任务具体要去搜什么。"
-                />
-                <SearchSpecEditor value={form.search_spec} onChange={(next) => updateForm("search_spec", next)} disabled={drawerDisabled} />
-              </div>
-
-              <div className="flat-section workbench-layer">
-                <JobsSectionHeader
-                  title="规则"
-                  description="这里定义原始结果如何筛选、打分和分级。"
-                />
-                <div className="collector-grid collector-grid-2" style={{ marginTop: 12, marginBottom: 12 }}>
-                  <label className="field">
-                    <span>{"规则名称"}</span>
-                    <input
-                      value={form.rule_set.name}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          rule_set: { ...prev.rule_set, name: e.target.value },
-                        }))
-                      }
-                      disabled={drawerDisabled}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{"规则说明"}</span>
-                    <input
-                      value={form.rule_set.description}
-                      onChange={(e) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          rule_set: { ...prev.rule_set, description: e.target.value },
-                        }))
-                      }
-                      disabled={drawerDisabled}
-                    />
-                  </label>
-                </div>
-                <RuleSetEditor
-                  ruleSet={currentRuleSetPreview}
-                  draft={form.rule_set.definition}
-                  onDraftChange={(next) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      rule_set: { ...prev.rule_set, definition: next },
-                    }))
-                  }
-                  disabled={drawerDisabled}
-                />
-              </div>
-
-              {selectedJob?.last_run_stats && (
-                <div className="flat-section workbench-layer">
-                  <JobsSectionHeader title="最近运行统计" description="保留最近一次任务执行的统计输出，便于快速复盘。" />
-                  <pre className="drawer-json">{JSON.stringify(selectedJob.last_run_stats, null, 2)}</pre>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="jobs-empty-shell" data-testid="jobs-empty-shell">
-              <div className="drawer-empty jobs-empty-workspace" data-testid="jobs-empty-workspace">
-                <div className="jobs-empty-hero flat-section">
-                  <div>
-                    <div className="jobs-empty-eyebrow">{"任务工作区"}</div>
-                    <h4>{"选择任务"}</h4>
-                  </div>
-                  <div className="workbench-pill-row">
-                    <span className="jobs-summary-pill workbench-pill">{`可用任务包：${taskPacks.length}`}</span>
-                  </div>
-                  <div className="jobs-empty-actions">
-                    <button type="button" className="workbench-primary-action" onClick={openCreate}>{"新建任务"}</button>
-                    <button
-                      type="button"
-                      className="workbench-secondary-action"
-                      data-testid="jobs-refresh-empty"
-                      onClick={() => refreshJobs({ keepDrawer: false, reloadSelected: false }).catch(() => undefined)}
-                      disabled={loading}
-                    >
-                      {"刷新列表"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </aside>
+        <JobWorkspace
+          drawerOpen={drawerOpen}
+          isCreateWorkspace={isCreateWorkspace}
+          selectedJob={selectedJob}
+          selectedJobActiveRun={selectedJobActiveRun}
+          workspaceTitle={workspaceTitle}
+          workspaceMeta={workspaceMeta}
+          drawerDisabled={drawerDisabled}
+          currentTaskEyebrow={currentTaskEyebrow}
+          currentTaskHeroTitle={currentTaskHeroTitle}
+          currentTaskHeroDescription={currentTaskHeroDescription}
+          currentStatusLabel={currentStatusLabel}
+          nextRunLabel={nextRunLabel}
+          lastRunLabel={lastRunLabel}
+          lastRunTimeLabel={lastRunTimeLabel}
+          currentTaskPackName={currentTaskPackName}
+          currentTaskPackBindingLabel={currentTaskPackBindingLabel}
+          currentTaskPackDraftLabel={currentTaskPackDraftLabel}
+          formTags={formTags}
+          taskPacks={taskPacks}
+          currentTaskPack={currentTaskPack}
+          form={form}
+          taskKeywordCount={taskKeywordCount}
+          taskAuthorConstraintCount={taskAuthorConstraintCount}
+          taskRuleCount={taskRuleCount}
+          taskLevelCount={taskLevelCount}
+          currentRuleSetPreview={currentRuleSetPreview}
+          saving={saving}
+          savingPack={savingPack}
+          deletingPack={deletingPack}
+          loading={loading}
+          fileInputRef={fileInputRef}
+          pendingFileActionRef={pendingFileActionRef}
+          updateForm={updateForm}
+          setForm={setForm}
+          handleSave={handleSave}
+          handleRestore={handleRestore}
+          handlePurge={handlePurge}
+          handleRunNow={handleRunNow}
+          handleStopRun={handleStopRun}
+          handleToggle={handleToggle}
+          handleDelete={handleDelete}
+          handleImportPack={handleImportPack}
+          handleSavePack={handleSavePack}
+          handleDeleteCurrentPack={handleDeleteCurrentPack}
+          handleImportPackFile={handleImportPackFile}
+          handleImportAndSavePackFile={handleImportAndSavePackFile}
+          onClose={() => { setSelectedJob(null); setDrawerMode("create"); resetForm(); setDrawerOpen(false); }}
+          onOpenCreate={openCreate}
+          onRefreshEmpty={() => { void refreshJobs({ keepDrawer: false, reloadSelected: false }); }}
+        />
       </div>
     </div>
   );
