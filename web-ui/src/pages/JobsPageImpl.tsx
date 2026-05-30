@@ -81,6 +81,10 @@ type RefreshOptions = {
   silent?: boolean;
 };
 
+function isNotFoundError(err: unknown) {
+  return err instanceof Error && err.message.trim().toLowerCase() === "not found";
+}
+
 const MIN_LIST_PANE_WIDTH = 320;
 const MIN_DRAWER_PANE_WIDTH = 320;
 const RESIZER_WIDTH = 20;
@@ -236,14 +240,29 @@ export function JobsPage() {
 
     const updates = await Promise.all(
       runningEntries.map(async ([jobId, entry]) => {
-        const run = await getRun(entry.run.id);
-        return { jobId: Number(jobId), run };
+        try {
+          const run = await getRun(entry.run.id);
+          return { jobId: Number(jobId), run, stale: false as const, error: null };
+        } catch (err) {
+          if (isNotFoundError(err)) {
+            return { jobId: Number(jobId), run: null, stale: true as const, error: null };
+          }
+          return { jobId: Number(jobId), run: null, stale: false as const, error: err };
+        }
       }),
     );
+    const firstError = updates.find((update) => update.error)?.error;
+    if (firstError) {
+      throw firstError;
+    }
 
     setActiveRunsByJobId((prev) => {
       const next = { ...prev };
       for (const update of updates) {
+        if (update.stale || !update.run) {
+          delete next[update.jobId];
+          continue;
+        }
         const progress = buildRunProgress(update.run);
         next[update.jobId] = { run: update.run, progress };
       }
@@ -251,7 +270,7 @@ export function JobsPage() {
       return next;
     });
     void refreshJobs({ reloadSelected: true, silent: true });
-    return updates.some((update) => buildRunProgress(update.run).status === "running");
+    return updates.some((update) => update.run && buildRunProgress(update.run).status === "running");
   }
 
   function applyLeftPaneWidth(nextWidth: number | null) {

@@ -59,3 +59,19 @@ def build_source_dedupe_key(
     digest_input = f"{normalized_author}|{normalized_text}"
     digest = sha1(digest_input.encode("utf-8")).hexdigest()[:16]
     return f"text:{digest}"
+
+
+def build_source_dedupe_key_with_fallback(
+    tweet_id: str | None = None,
+    url: str | None = None,
+    text: str | None = None,
+    author: str | None = None,
+    created_at: str | None = None,
+) -> str:
+    primary_key = build_source_dedupe_key(tweet_id=tweet_id, url=url, text=text, author=author)
+    if primary_key:
+        return primary_key
+    normalized_author = (author or "").strip().lower()
+    normalized_created_at = (created_at or "").strip()
+    normalized_text = " ".join((text or "").split()).lower()[:120]
+    return f"fallback:{normalized_author}|{normalized_created_at}|{normalized_text}"

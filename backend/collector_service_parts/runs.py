@@ -478,12 +478,13 @@ class RunMixin:
         normalized_tags = normalize_tags(tags)
         with connect(self.db_path) as conn:
             for item in curated_items:
-                dedupe_key = build_source_dedupe_key(
+                dedupe_key = build_source_dedupe_key_with_fallback(
                     tweet_id=item.get("tweet_id"),
                     url=item.get("url"),
                     text=item.get("text"),
                     author=item.get("author"),
-                ) or ""
+                    created_at=item.get("created_at"),
+                )
                 item_fetched_at = item.get("fetched_at") or fetched_at
                 conn.execute(
                     """

@@ -1,5 +1,6 @@
 import json
 import shutil
+import threading
 import time
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -152,6 +153,58 @@ class DesktopServiceTests(unittest.TestCase):
             },
             "rule_set_id": rule_set_id,
         }
+
+    def _runtime_finish_recorder(self):
+        finished_runs: set[int] = set()
+        finished = threading.Event()
+        original_finish_run = self.service.runtime_store.finish_run
+
+        def finish_and_signal(*args, **kwargs):
+            result = original_finish_run(*args, **kwargs)
+            finished_runs.add(int(args[0]))
+            finished.set()
+            return result
+
+        return finished_runs, finished, patch.object(self.service.runtime_store, "finish_run", side_effect=finish_and_signal)
+
+    def _wait_for_recorded_run_finish(
+        self,
+        run_id: int,
+        finished_runs: set[int],
+        finished: threading.Event,
+        timeout: float = 5.0,
+    ) -> dict[str, object]:
+        if int(run_id) not in finished_runs:
+            self.assertTrue(finished.wait(timeout), f"run {run_id} did not finish within {timeout} seconds")
+        return self.service.get_run(run_id)
+
+    def _runtime_progress_recorder(self, predicate):
+        matched_runs: dict[int, dict[str, object]] = {}
+        progressed = threading.Event()
+        original_update_run_progress = self.service.runtime_store.update_run_progress
+
+        def update_and_signal(*args, **kwargs):
+            result = original_update_run_progress(*args, **kwargs)
+            run_id = int(args[0])
+            current = self.service.get_run(run_id)
+            if predicate(current):
+                matched_runs[run_id] = current
+                progressed.set()
+            return result
+
+        return matched_runs, progressed, patch.object(self.service.runtime_store, "update_run_progress", side_effect=update_and_signal)
+
+    def _run_slot_release_recorder(self):
+        released = threading.Event()
+        original_release = self.service._release_run_slot
+
+        def release_and_signal():
+            try:
+                return original_release()
+            finally:
+                released.set()
+
+        return released, patch.object(self.service, "_release_run_slot", side_effect=release_and_signal)
 
     def _create_job(self, name: str, *, enabled: bool = True) -> dict[str, object]:
         default_rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
@@ -981,20 +1034,15 @@ class DesktopServiceTests(unittest.TestCase):
             }
         )
 
-        with patch.object(self.service, "dedupe_items", wraps=self.service.dedupe_items) as mock_dedupe:
+        finished_runs, finished, finish_patch = self._runtime_finish_recorder()
+        released, release_patch = self._run_slot_release_recorder()
+        with release_patch, finish_patch, patch.object(self.service, "dedupe_items", wraps=self.service.dedupe_items) as mock_dedupe:
             report = self.service.run_job_now(int(job["id"]))
 
             self.assertEqual(report["status"], "running")
             self.assertGreater(int(report["run_id"]), 0)
-
-            deadline = time.time() + 5
-            final_run = None
-            while time.time() < deadline:
-                current = self.service.get_run(int(report["run_id"]))
-                if current.get("status") != "running":
-                    final_run = current
-                    break
-                time.sleep(0.05)
+            final_run = self._wait_for_recorded_run_finish(int(report["run_id"]), finished_runs, finished)
+            self.assertTrue(released.wait(5), "background run did not release its slot")
 
         self.assertIsNotNone(final_run)
         assert final_run is not None
@@ -1010,9 +1058,14 @@ class DesktopServiceTests(unittest.TestCase):
     @patch("backend.collector_service.run_twitter_search")
     def test_run_job_now_updates_progress_while_running(self, mock_search) -> None:
         recent_created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        release_second_query = threading.Event()
+        call_count = 0
 
         def fake_search(query: str, _max_results: int):
-            time.sleep(0.05)
+            nonlocal call_count
+            call_count += 1
+            if call_count > 1:
+                self.assertTrue(release_second_query.wait(5), "second query was not released")
             return [
                 {
                     "id": f"tweet-{abs(hash(query)) % 100000}",
@@ -1048,23 +1101,23 @@ class DesktopServiceTests(unittest.TestCase):
             }
         )
 
-        started = self.service.run_job_now(int(job["id"]))
+        progress_runs, progressed, progress_patch = self._runtime_progress_recorder(
+            lambda current: current.get("status") == "running"
+            and int((current.get("stats_json") or {}).get("completed_queries", 0) or 0) > 0
+        )
+        finished_runs, finished, finish_patch = self._runtime_finish_recorder()
+        released, release_patch = self._run_slot_release_recorder()
+        with release_patch, progress_patch, finish_patch:
+            started = self.service.run_job_now(int(job["id"]))
 
-        run_id = int(started["run_id"])
-        observed_running_progress = False
-        deadline = time.time() + 5
-        final_run = None
-        while time.time() < deadline:
-            current = self.service.get_run(run_id)
-            stats = current.get("stats_json") or {}
-            if current.get("status") == "running" and int(stats.get("completed_queries", 0) or 0) > 0:
-                observed_running_progress = True
-            if current.get("status") != "running":
-                final_run = current
-                break
-            time.sleep(0.05)
+            run_id = int(started["run_id"])
+            self.assertTrue(progressed.wait(5), f"run {run_id} did not report running progress")
+            progress_seen = progress_runs[run_id]
+            release_second_query.set()
+            final_run = self._wait_for_recorded_run_finish(run_id, finished_runs, finished)
+            self.assertTrue(released.wait(5), "background run did not release its slot")
 
-        self.assertTrue(observed_running_progress)
+        self.assertEqual(progress_seen["status"], "running")
         self.assertIsNotNone(final_run)
         assert final_run is not None
         self.assertEqual(final_run["status"], "success")
@@ -1123,9 +1176,14 @@ class DesktopServiceTests(unittest.TestCase):
     @patch("backend.collector_service.run_twitter_search")
     def test_start_manual_run_updates_progress_while_running(self, mock_search) -> None:
         recent_created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        release_second_query = threading.Event()
+        call_count = 0
 
         def fake_search(query: str, _max_results: int):
-            time.sleep(0.05)
+            nonlocal call_count
+            call_count += 1
+            if call_count > 1:
+                self.assertTrue(release_second_query.wait(5), "second query was not released")
             return [
                 {
                     "id": f"tweet-{abs(hash(query)) % 100000}",
@@ -1140,39 +1198,39 @@ class DesktopServiceTests(unittest.TestCase):
 
         mock_search.side_effect = fake_search
         rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
-        started = self.service.start_manual_run(
-            {
-                "search_spec": {
-                    "all_keywords": ["alpha"],
-                    "language_mode": "zh_en",
-                    "days_filter": {"mode": "lte", "max": 1},
-                    "metric_filters": {
-                        "views": {"mode": "any"},
-                        "likes": {"mode": "any"},
-                        "replies": {"mode": "any"},
-                        "retweets": {"mode": "any"},
-                    },
-                    "metric_filters_explicit": True,
-                },
-                "rule_set_id": rule_set_id,
-            }
+        progress_runs, progressed, progress_patch = self._runtime_progress_recorder(
+            lambda current: current.get("status") == "running"
+            and int((current.get("stats_json") or {}).get("completed_queries", 0) or 0) > 0
         )
+        finished_runs, finished, finish_patch = self._runtime_finish_recorder()
+        released, release_patch = self._run_slot_release_recorder()
+        with release_patch, progress_patch, finish_patch:
+            started = self.service.start_manual_run(
+                {
+                    "search_spec": {
+                        "all_keywords": ["alpha"],
+                        "language_mode": "zh_en",
+                        "days_filter": {"mode": "lte", "max": 1},
+                        "metric_filters": {
+                            "views": {"mode": "any"},
+                            "likes": {"mode": "any"},
+                            "replies": {"mode": "any"},
+                            "retweets": {"mode": "any"},
+                        },
+                        "metric_filters_explicit": True,
+                    },
+                    "rule_set_id": rule_set_id,
+                }
+            )
 
-        run_id = int(started["run_id"])
-        observed_running_progress = False
-        deadline = time.time() + 5
-        final_run = None
-        while time.time() < deadline:
-            current = self.service.get_run(run_id)
-            stats = current.get("stats_json") or {}
-            if current.get("status") == "running" and int(stats.get("completed_queries", 0) or 0) > 0:
-                observed_running_progress = True
-            if current.get("status") != "running":
-                final_run = current
-                break
-            time.sleep(0.05)
+            run_id = int(started["run_id"])
+            self.assertTrue(progressed.wait(5), f"run {run_id} did not report running progress")
+            progress_seen = progress_runs[run_id]
+            release_second_query.set()
+            final_run = self._wait_for_recorded_run_finish(run_id, finished_runs, finished)
+            self.assertTrue(released.wait(5), "background run did not release its slot")
 
-        self.assertTrue(observed_running_progress)
+        self.assertEqual(progress_seen["status"], "running")
         self.assertIsNotNone(final_run)
         self.assertEqual(final_run["status"], "success")
         self.assertEqual(final_run["stats_json"]["total_queries"], 24)
@@ -1183,14 +1241,13 @@ class DesktopServiceTests(unittest.TestCase):
     def test_cancel_run_stops_manual_run_and_marks_it_cancelled(self, mock_search) -> None:
         recent_created_at = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
         started_queries: list[str] = []
+        first_progress = threading.Event()
 
         def fake_search(query: str, _max_results: int, timeout_seconds: int = 60, cancel_event=None):
             started_queries.append(query)
-            deadline = time.time() + 1.0
-            while time.time() < deadline:
-                if cancel_event is not None and cancel_event.is_set():
-                    raise RuntimeError("cancelled")
-                time.sleep(0.01)
+            first_progress.set()
+            if cancel_event is not None and cancel_event.wait(5):
+                raise RuntimeError("cancelled")
             return [
                 {
                     "id": f"tweet-{abs(hash(query)) % 100000}",
@@ -1205,44 +1262,34 @@ class DesktopServiceTests(unittest.TestCase):
 
         mock_search.side_effect = fake_search
         rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
-        started = self.service.start_manual_run(
-            {
-                "search_spec": {
-                    "all_keywords": ["alpha"],
-                    "language_mode": "zh_en",
-                    "days_filter": {"mode": "lte", "max": 1},
-                    "metric_filters": {
-                        "views": {"mode": "any"},
-                        "likes": {"mode": "any"},
-                        "replies": {"mode": "any"},
-                        "retweets": {"mode": "any"},
+        finished_runs, finished, finish_patch = self._runtime_finish_recorder()
+        released, release_patch = self._run_slot_release_recorder()
+        with release_patch, finish_patch:
+            started = self.service.start_manual_run(
+                {
+                    "search_spec": {
+                        "all_keywords": ["alpha"],
+                        "language_mode": "zh_en",
+                        "days_filter": {"mode": "lte", "max": 1},
+                        "metric_filters": {
+                            "views": {"mode": "any"},
+                            "likes": {"mode": "any"},
+                            "replies": {"mode": "any"},
+                            "retweets": {"mode": "any"},
+                        },
+                        "metric_filters_explicit": True,
                     },
-                    "metric_filters_explicit": True,
-                },
-                "rule_set_id": rule_set_id,
-            }
-        )
+                    "rule_set_id": rule_set_id,
+                }
+            )
 
-        run_id = int(started["run_id"])
-        deadline = time.time() + 5
-        while time.time() < deadline:
-            current = self.service.get_run(run_id)
-            stats = current.get("stats_json") or {}
-            if current.get("status") == "running" and int(stats.get("completed_queries", 0) or 0) >= 1:
-                break
-            time.sleep(0.05)
+            run_id = int(started["run_id"])
+            self.assertTrue(first_progress.wait(5), "manual run did not start search")
 
-        cancelled = self.service.cancel_run(run_id)
-        self.assertTrue(cancelled["cancel_requested"])
-
-        final_run = None
-        deadline = time.time() + 5
-        while time.time() < deadline:
-            current = self.service.get_run(run_id)
-            if current.get("status") != "running":
-                final_run = current
-                break
-            time.sleep(0.05)
+            cancelled = self.service.cancel_run(run_id)
+            self.assertTrue(cancelled["cancel_requested"])
+            final_run = self._wait_for_recorded_run_finish(run_id, finished_runs, finished)
+            self.assertTrue(released.wait(5), "background run did not release its slot")
 
         self.assertIsNotNone(final_run)
         assert final_run is not None
@@ -1486,15 +1533,12 @@ class DesktopServiceTests(unittest.TestCase):
             }
         )
 
-        started = self.service.run_job_now(int(job["id"]))
-        deadline = time.time() + 5
-        final_run = None
-        while time.time() < deadline:
-            current = self.service.get_run(int(started["run_id"]))
-            if current.get("status") != "running":
-                final_run = current
-                break
-            time.sleep(0.05)
+        finished_runs, finished, finish_patch = self._runtime_finish_recorder()
+        released, release_patch = self._run_slot_release_recorder()
+        with release_patch, finish_patch:
+            started = self.service.run_job_now(int(job["id"]))
+            final_run = self._wait_for_recorded_run_finish(int(started["run_id"]), finished_runs, finished)
+            self.assertTrue(released.wait(5), "background run did not release its slot")
 
         self.assertEqual(job["tags"], ["onchain", "airdrop"])
         self.assertIsNotNone(final_run)
@@ -1966,18 +2010,32 @@ class DesktopServiceTests(unittest.TestCase):
                     "text": "",
                     "created_at_x": "2026-04-13T00:00:00+00:00",
                 },
+                {
+                    "tweet_id": "",
+                    "canonical_url": "",
+                    "author": "fallback-author",
+                    "text": "",
+                    "created_at_x": "2026-04-14T00:00:00+00:00",
+                },
+                {
+                    "tweet_id": "",
+                    "canonical_url": "",
+                    "author": "fallback-author",
+                    "text": "",
+                    "created_at_x": "2026-04-14T00:00:00+00:00",
+                },
             ]
         )
 
         summary = self.service.dedupe_items(table="raw")
         page = self.service.list_items(table="raw", page=1, page_size=10, sort_by="id", sort_dir="asc")
 
-        self.assertEqual(summary["groups"], 3)
-        self.assertEqual(summary["deleted"], 3)
-        self.assertEqual(summary["kept"], 3)
-        self.assertEqual(summary["rows_before"], 7)
-        self.assertEqual(summary["rows_after"], 4)
-        self.assertEqual([item["id"] for item in page["items"]], [ids[0], ids[2], ids[4], ids[6]])
+        self.assertEqual(summary["groups"], 4)
+        self.assertEqual(summary["deleted"], 4)
+        self.assertEqual(summary["kept"], 4)
+        self.assertEqual(summary["rows_before"], 9)
+        self.assertEqual(summary["rows_after"], 5)
+        self.assertEqual([item["id"] for item in page["items"]], [ids[0], ids[2], ids[4], ids[6], ids[7]])
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 ﻿import unittest
 
-from backend.source_identity import build_source_dedupe_key, canonicalize_source_url
+from backend.source_identity import build_source_dedupe_key, build_source_dedupe_key_with_fallback, canonicalize_source_url
 
 
 class SourceIdentityTests(unittest.TestCase):
@@ -20,6 +20,24 @@ class SourceIdentityTests(unittest.TestCase):
         key_b = build_source_dedupe_key(text="Alpha   claim is live", author="binancewallet")
         self.assertEqual(key_a, key_b)
         self.assertTrue(key_a.startswith("text:"))
+
+    def test_fallback_uses_author_created_at_and_text_when_primary_identity_is_missing(self) -> None:
+        key_a = build_source_dedupe_key_with_fallback(
+            tweet_id="",
+            url="",
+            text="",
+            author="demo",
+            created_at="2026-04-10T00:00:00+00:00",
+        )
+        key_b = build_source_dedupe_key_with_fallback(
+            tweet_id=None,
+            url=None,
+            text=None,
+            author="demo",
+            created_at="2026-04-10T00:00:00+00:00",
+        )
+        self.assertEqual(key_a, key_b)
+        self.assertEqual(key_a, "fallback:demo|2026-04-10T00:00:00+00:00|")
 
 
 if __name__ == "__main__":

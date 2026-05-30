@@ -28,6 +28,7 @@ from backend.collector_store import connect, row_to_dict, utc_now_iso
 from backend.models import RunCancelled, SearchResult
 from backend.source_identity import (
     build_source_dedupe_key,
+    build_source_dedupe_key_with_fallback,
     canonicalize_source_url,
 )
 from backend.twitter_cli import find_twitter_cli, get_twitter_cli_version, normalize_search_payload, run_twitter_search
@@ -640,14 +641,13 @@ def _dedupe_search_results(items: list[SearchResult]) -> list[SearchResult]:
     deduped: list[SearchResult] = []
     seen: set[str] = set()
     for item in items:
-        key = build_source_dedupe_key(
+        key = build_source_dedupe_key_with_fallback(
             tweet_id=item.tweet_id,
             url=item.url,
             text=item.text,
             author=item.author,
-        ) or canonicalize_source_url(item.url)
-        if not key:
-            key = f"{item.author}|{item.created_at}|{item.text[:120]}"
+            created_at=item.created_at,
+        )
         if key in seen:
             continue
         seen.add(key)

@@ -331,14 +331,13 @@ class ItemMixin:
                     ).fetchall()
                 ]
                 for row in rows:
-                    dedupe_key = build_source_dedupe_key(
+                    dedupe_key = build_source_dedupe_key_with_fallback(
                         tweet_id=row.get("tweet_id"),
                         url=row.get("canonical_url"),
                         text=row.get("text"),
                         author=row.get("author"),
-                    ) or ""
-                    if not dedupe_key:
-                        continue
+                        created_at=row.get("created_at_x"),
+                    )
                     grouped.setdefault(dedupe_key, []).append(
                         {
                             "id": int(row["id"]),

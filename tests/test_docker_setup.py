@@ -36,8 +36,10 @@ def test_dockerfile_installs_backend_and_frontend_runtime_dependencies() -> None
     assert "python:3.13-slim" in content
     assert "nodejs" in content
     assert "npm ci" in content
-    assert "git+https://github.com/public-clis/twitter-cli.git" in content
-    assert "xreach-cli" in content
+    assert "git+https://github.com/public-clis/twitter-cli.git@7c634e0d396b1e7af9f63315b414925fe4f29ae7" in content
+    assert "xreach-cli@0.3.0" in content
+    assert "pipx install git+https://github.com/public-clis/twitter-cli.git\n" not in content
+    assert "npm install -g xreach-cli\n" not in content
     assert "EXPOSE 8765 5177" in content
 
 
