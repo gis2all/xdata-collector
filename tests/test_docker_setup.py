@@ -19,11 +19,9 @@ def test_docker_compose_declares_local_workbench_services() -> None:
     assert "./config:/app/config" in content
     assert "./.env:/app/.env:ro" in content
     assert "working_dir: /app/web-ui" in content
-    assert "host.docker.internal:7897" in content
     assert "DOCKER_PROXY_URL" in content
-    assert "HTTP_PROXY: ${DOCKER_PROXY_URL:-http://host.docker.internal:7897}" in content
-    assert "HTTPS_PROXY: ${DOCKER_PROXY_URL:-http://host.docker.internal:7897}" in content
-    assert "ALL_PROXY: ${DOCKER_PROXY_URL:-http://host.docker.internal:7897}" in content
+    assert "${DOCKER_PROXY_URL:+${DOCKER_PROXY_URL}}" in content
+    assert "host.docker.internal:7897" not in content
     assert "NO_PROXY: localhost,127.0.0.1,api,scheduler,web-ui" in content
 
 
@@ -36,7 +34,9 @@ def test_dockerfile_installs_backend_and_frontend_runtime_dependencies() -> None
     assert "python:3.13-slim" in content
     assert "nodejs" in content
     assert " git " in content or " git \\" in content
+    assert "psutil" in content
     assert "npm ci" in content
+    assert "psutil" in content
     assert "git+https://github.com/public-clis/twitter-cli.git@7c634e0d396b1e7af9f63315b414925fe4f29ae7" in content
     assert "xreach-cli@0.3.0" in content
     assert "pipx install git+https://github.com/public-clis/twitter-cli.git\n" not in content

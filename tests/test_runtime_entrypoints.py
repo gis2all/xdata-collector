@@ -6,6 +6,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
+import doctor
+import install
 from run import bootstrap, scheduler, static_web_server
 
 
@@ -31,6 +33,7 @@ class BootstrapTests(unittest.TestCase):
         with (
             patch.object(sys, "argv", ["bootstrap.py"]),
             patch("run.bootstrap.ensure_pipx") as mock_ensure_pipx,
+            patch("run.bootstrap.install_python_runtime_dependencies") as mock_install_python_runtime_dependencies,
             patch("run.bootstrap.install_twitter_cli") as mock_install_twitter_cli,
             patch("run.bootstrap.install_xreach_cli") as mock_install_xreach_cli,
             patch("run.bootstrap._print_step") as mock_print_step,
@@ -39,9 +42,44 @@ class BootstrapTests(unittest.TestCase):
 
         self.assertEqual(result, 0)
         mock_ensure_pipx.assert_called_once_with()
+        mock_install_python_runtime_dependencies.assert_called_once_with()
         mock_install_twitter_cli.assert_called_once_with()
         mock_install_xreach_cli.assert_called_once_with()
         self.assertGreaterEqual(mock_print_step.call_count, 2)
+
+
+class InstallTests(unittest.TestCase):
+    def test_ensure_no_args_rejects_extra_arguments(self) -> None:
+        with patch.object(sys, "argv", ["install.py", "doctor"]):
+            with self.assertRaisesRegex(SystemExit, "does not accept arguments"):
+                install.ensure_no_args()
+
+    def test_install_frontend_dependencies_prefers_npm_ci(self) -> None:
+        with patch("install._resolve_command", return_value="C:/node/npm.cmd"), patch("install._run") as mock_run:
+            install.install_frontend_dependencies()
+
+        mock_run.assert_called_once_with(["C:/node/npm.cmd", "ci"], cwd=install.WEB_UI_DIR)
+
+
+class DoctorTests(unittest.TestCase):
+    def test_parse_args_supports_json_flag(self) -> None:
+        args = doctor.parse_args([])
+        self.assertFalse(args.json)
+        args = doctor.parse_args(["--json"])
+        self.assertTrue(args.json)
+
+    def test_main_returns_zero_when_all_checks_pass(self) -> None:
+        checks = [doctor.CheckResult(name="python", ok=True, detail="ok")]
+        with patch("doctor.collect_checks", return_value=checks), patch("builtins.print"):
+            self.assertEqual(doctor.main([]), 0)
+
+    def test_main_returns_one_when_any_check_fails(self) -> None:
+        checks = [
+            doctor.CheckResult(name="python", ok=True, detail="ok"),
+            doctor.CheckResult(name="docker", ok=False, detail="missing"),
+        ]
+        with patch("doctor.collect_checks", return_value=checks), patch("builtins.print"):
+            self.assertEqual(doctor.main([]), 1)
 
 
 class SchedulerTests(unittest.TestCase):

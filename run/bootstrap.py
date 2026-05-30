@@ -44,6 +44,11 @@ def ensure_pipx() -> None:
     _run([sys.executable, "-m", "pipx", "ensurepath"])
 
 
+def install_python_runtime_dependencies() -> None:
+    _print_step("Installing shared Python runtime dependencies...")
+    _run([sys.executable, "-m", "pip", "install", "--upgrade", "psutil"])
+
+
 def install_twitter_cli() -> None:
     _print_step("Installing twitter-cli via pipx...")
     # Keep this pinned ref in sync with Dockerfile to avoid local/container CLI drift.
@@ -63,6 +68,7 @@ def main() -> int:
     ensure_no_args()
     _print_step(f"platform={sys.platform} python={sys.executable}")
     ensure_pipx()
+    install_python_runtime_dependencies()
     install_twitter_cli()
     install_xreach_cli()
     _print_step("Bootstrap finished.")

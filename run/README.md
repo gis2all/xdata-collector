@@ -1,6 +1,6 @@
 # Run
 
-`run/` 是当前仓库的底层运行脚本目录；推荐从根目录 `install.py` 和 `services.py` 进入。
+`run/` 是当前仓库的底层运行脚本目录；推荐从根目录 `doctor.py`、`install.py` 和 `services.py` 进入。
 
 ## 当前内容
 
@@ -8,6 +8,7 @@
 - `scheduler.py`：后台调度器主入口
 - `static_web_server.py`：构建后前端静态文件服务
 - `bootstrap.py`：跨平台本机依赖准备脚本
+- `doctor.py`：跨平台环境自检入口
 
 ## 默认端口 / 无端口约定
 
@@ -21,6 +22,8 @@
 推荐命令：
 
 ```bash
+python doctor.py
+python install.py
 python services.py start
 python services.py status
 python services.py stop
@@ -36,6 +39,7 @@ python services.py restart
 说明：
 
 - 根目录 `services.py` 默认只管理开发主链路，不包含 `run/static_web_server.py`
+- `services.py` 现在优先使用 `psutil` 统一处理 PID、端口和进程树
 - 运行状态写入 `runtime/pids/`
 - 当前日志写入 `runtime/logs/*.current.out.log` 和 `runtime/logs/*.current.err.log`
 
@@ -57,5 +61,6 @@ python services.py restart
 
 - 这里负责“怎么启动系统”的底层入口
 - 核心业务编排仍在 `backend/`
-- 推荐首次安装从根目录 `install.py` 进入；`bootstrap.py` 负责准备本机依赖，包括 `pipx` 和 `twitter-cli`
+- 推荐首次启动顺序：`python doctor.py` -> `python install.py` -> `python services.py start`
+- `bootstrap.py` 负责准备本机依赖，包括 `pipx`、`psutil`、`twitter-cli` 和 `xreach-cli`
 - `bootstrap.py` 不负责启动 API、scheduler 或前端

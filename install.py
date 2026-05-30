@@ -47,7 +47,7 @@ def install_frontend_dependencies() -> None:
     if npm is None:
         raise RuntimeError("npm not found. Install Node.js before running install.py.")
     _print_step("Installing frontend dependencies in web-ui...")
-    _run([npm, "install"], cwd=WEB_UI_DIR)
+    _run([npm, "ci"], cwd=WEB_UI_DIR)
 
 
 def main() -> int:

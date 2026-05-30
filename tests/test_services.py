@@ -1,7 +1,7 @@
 ﻿import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import services
 
@@ -97,6 +97,24 @@ class ServicesHelpersTests(unittest.TestCase):
             self.assertEqual(status.state, "stopped")
             self.assertEqual(killed, [123, 456])
             self.assertFalse(pid_file.exists())
+
+    def test_find_pids_by_port_prefers_psutil_connections(self) -> None:
+        listener = Mock()
+        listener.status = "LISTEN"
+        listener.laddr = Mock(port=8765)
+        listener.pid = 4321
+        with patch("services.psutil.net_connections", return_value=[listener]):
+            self.assertEqual(services.find_pids_by_port(8765), [4321])
+
+    def test_terminate_pid_tree_uses_psutil_process_tree(self) -> None:
+        child = Mock()
+        parent = Mock()
+        parent.children.return_value = [child]
+        with patch("services.psutil.Process", return_value=parent), patch("services.psutil.wait_procs", return_value=([], [])):
+            services.terminate_pid_tree(1234)
+
+        child.terminate.assert_called_once_with()
+        parent.terminate.assert_called_once_with()
 
 
 if __name__ == "__main__":

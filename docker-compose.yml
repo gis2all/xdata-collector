@@ -1,10 +1,10 @@
 x-proxy-env: &proxy-env
-  HTTP_PROXY: ${DOCKER_PROXY_URL:-http://host.docker.internal:7897}
-  HTTPS_PROXY: ${DOCKER_PROXY_URL:-http://host.docker.internal:7897}
-  ALL_PROXY: ${DOCKER_PROXY_URL:-http://host.docker.internal:7897}
-  http_proxy: ${DOCKER_PROXY_URL:-http://host.docker.internal:7897}
-  https_proxy: ${DOCKER_PROXY_URL:-http://host.docker.internal:7897}
-  all_proxy: ${DOCKER_PROXY_URL:-http://host.docker.internal:7897}
+  HTTP_PROXY: ${DOCKER_PROXY_URL:+${DOCKER_PROXY_URL}}
+  HTTPS_PROXY: ${DOCKER_PROXY_URL:+${DOCKER_PROXY_URL}}
+  ALL_PROXY: ${DOCKER_PROXY_URL:+${DOCKER_PROXY_URL}}
+  http_proxy: ${DOCKER_PROXY_URL:+${DOCKER_PROXY_URL}}
+  https_proxy: ${DOCKER_PROXY_URL:+${DOCKER_PROXY_URL}}
+  all_proxy: ${DOCKER_PROXY_URL:+${DOCKER_PROXY_URL}}
   NO_PROXY: localhost,127.0.0.1,api,scheduler,web-ui
   no_proxy: localhost,127.0.0.1,api,scheduler,web-ui
 

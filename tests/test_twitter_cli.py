@@ -173,6 +173,15 @@ class TwitterCliRuntimeTests(unittest.TestCase):
 
         self.assertEqual(PureWindowsPath(cli), PureWindowsPath("C:/Users/tester/.local/bin/twitter.exe"))
 
+    def test_finds_xreach_in_home_npm_global_bin_directory(self) -> None:
+        with patch("backend.twitter_cli.shutil.which", return_value=None), patch(
+            "backend.twitter_cli.Path.home",
+            return_value=__import__("pathlib").Path("/Users/tester"),
+        ):
+            cli = find_xreach_cli()
+
+        self.assertIn("xreach", cli)
+
     def test_xreach_missing_message_names_npm_package(self) -> None:
         with patch("backend.twitter_cli.shutil.which", return_value=None), patch(
             "backend.twitter_cli.Path.exists",

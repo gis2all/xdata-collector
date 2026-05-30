@@ -15,6 +15,8 @@ from typing import Iterable
 from urllib.error import URLError
 from urllib.request import urlopen
 
+import psutil
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 RUNTIME_DIR = PROJECT_ROOT / "runtime"
 LOG_DIR = RUNTIME_DIR / "logs"
@@ -282,6 +284,17 @@ def discover_process_pids(service: ManagedService) -> list[int]:
 
 
 def list_processes() -> list[tuple[int, str]]:
+    processes: list[tuple[int, str]] = []
+    for process in psutil.process_iter(["pid", "cmdline"]):
+        try:
+            pid = int(process.info["pid"])
+            cmdline = process.info.get("cmdline") or []
+            command = " ".join(str(part) for part in cmdline if part)
+            processes.append((pid, command))
+        except (psutil.Error, OSError, TypeError, ValueError):
+            continue
+    if processes:
+        return processes
     if os.name == "nt":
         command = [
             "powershell",
@@ -302,7 +315,7 @@ def list_processes() -> list[tuple[int, str]]:
             if item.get("ProcessId") is not None
         ]
     completed = subprocess.run(["ps", "-ax", "-o", "pid=,command="], capture_output=True, text=True, encoding="utf-8", errors="replace", check=True)  # noqa: S603
-    processes: list[tuple[int, str]] = []
+    processes = []
     for line in completed.stdout.splitlines():
         stripped = line.strip()
         if not stripped:
@@ -357,9 +370,24 @@ def wait_for_pid(pid: int, timeout_seconds: float) -> None:
 
 
 def find_pids_by_port(port: int) -> list[int]:
+    try:
+        listeners = psutil.net_connections(kind="tcp")
+    except (psutil.AccessDenied, psutil.Error, OSError):
+        listeners = []
+    pids: list[int] = []
+    for listener in listeners:
+        local_addr = getattr(listener, "laddr", None)
+        listener_port = getattr(local_addr, "port", None)
+        status = str(getattr(listener, "status", "")).upper()
+        pid = getattr(listener, "pid", None)
+        if listener_port == port and status.startswith("LISTEN") and isinstance(pid, int):
+            pids.append(pid)
+    if pids:
+        return unique_ints(pids)
+
     if os.name == "nt":
         completed = subprocess.run(["netstat", "-ano", "-p", "tcp"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=True)  # noqa: S603
-        pids: list[int] = []
+        pids = []
         needle = f":{port}"
         for line in completed.stdout.splitlines():
             parts = line.split()
@@ -370,7 +398,7 @@ def find_pids_by_port(port: int) -> list[int]:
                 pids.append(int(pid))
         return unique_ints(pids)
 
-    pids: list[int] = []
+    pids = []
     for candidate in (["lsof", "-tiTCP:%d" % port, "-sTCP:LISTEN"], ["fuser", "-n", "tcp", str(port)]):
         if shutil.which(candidate[0]) is None:
             continue
@@ -388,19 +416,10 @@ def find_pids_by_port(port: int) -> list[int]:
 def pid_exists(pid: int) -> bool:
     if pid <= 0:
         return False
-    if os.name == "nt":
-        completed = subprocess.run(
-            ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=True,
-        )  # noqa: S603
-        output = completed.stdout.strip()
-        if not output or output.startswith("INFO:"):
-            return False
-        return f'"{pid}"' in output or output.endswith(f",{pid}")
+    try:
+        return psutil.pid_exists(pid)
+    except psutil.Error:
+        pass
     try:
         os.kill(pid, 0)
     except OSError:
@@ -409,31 +428,25 @@ def pid_exists(pid: int) -> bool:
 
 
 def terminate_pid_tree(pid: int) -> None:
-    if not pid_exists(pid):
-        return
-    if os.name == "nt":
-        subprocess.run(["taskkill", "/PID", str(pid), "/T"], capture_output=True, text=True)  # noqa: S603
-        if pid_exists(pid):
-            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True)  # noqa: S603
-        return
     try:
-        os.killpg(pid, signal.SIGTERM)
-    except OSError:
+        parent = psutil.Process(pid)
+    except (psutil.NoSuchProcess, psutil.Error):
+        return
+    processes = parent.children(recursive=True)
+    processes.append(parent)
+    for process in processes:
         try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            return
-    deadline = time.time() + 5.0
-    while time.time() < deadline and pid_exists(pid):
-        time.sleep(0.2)
-    if pid_exists(pid):
-        try:
-            os.killpg(pid, signal.SIGKILL)
-        except OSError:
+            process.terminate()
+        except (psutil.NoSuchProcess, psutil.Error):
+            continue
+    gone, alive = psutil.wait_procs(processes, timeout=5.0)
+    if alive:
+        for process in alive:
             try:
-                os.kill(pid, signal.SIGKILL)
-            except OSError:
-                return
+                process.kill()
+            except (psutil.NoSuchProcess, psutil.Error):
+                continue
+        psutil.wait_procs(alive, timeout=2.0)
 
 
 def read_pid(path: Path) -> int | None:
