@@ -26,11 +26,12 @@ class CheckResult:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Check local runtime prerequisites for XData Collector")
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    parser.add_argument("--skip-docker", action="store_true", help="skip docker CLI and daemon checks")
     return parser.parse_args(argv)
 
 
-def collect_checks() -> list[CheckResult]:
-    return [
+def collect_checks(*, skip_docker: bool = False) -> list[CheckResult]:
+    checks = [
         check_python(),
         check_node(),
         check_npm(),
@@ -38,10 +39,12 @@ def collect_checks() -> list[CheckResult]:
         check_twitter_cli(),
         check_xreach_cli(),
         check_env_file(),
-        check_docker_cli(),
-        check_docker_daemon(),
         check_ports(),
     ]
+    if not skip_docker:
+        checks.insert(-1, check_docker_cli())
+        checks.insert(-1, check_docker_daemon())
+    return checks
 
 
 def check_python() -> CheckResult:
@@ -162,7 +165,7 @@ def render_text(checks: list[CheckResult]) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    checks = collect_checks()
+    checks = collect_checks(skip_docker=args.skip_docker)
     rendered = render_json(checks) if args.json else render_text(checks)
     print(rendered)
     return 0 if all(check.ok for check in checks) else 1

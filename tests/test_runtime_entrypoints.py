@@ -67,6 +67,8 @@ class DoctorTests(unittest.TestCase):
         self.assertFalse(args.json)
         args = doctor.parse_args(["--json"])
         self.assertTrue(args.json)
+        args = doctor.parse_args(["--skip-docker"])
+        self.assertTrue(args.skip_docker)
 
     def test_main_returns_zero_when_all_checks_pass(self) -> None:
         checks = [doctor.CheckResult(name="python", ok=True, detail="ok")]

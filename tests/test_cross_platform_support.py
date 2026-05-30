@@ -4,15 +4,18 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_ci_workflow_uses_os_matrix_and_cross_platform_smoke_steps() -> None:
+def test_ci_workflow_preserves_required_jobs_and_adds_cross_platform_smoke() -> None:
     workflow = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
+    assert "backend:" in workflow
+    assert "web-ui:" in workflow
+    assert "native-smoke:" in workflow
     assert "strategy:" in workflow
     assert "matrix:" in workflow
-    assert "windows-latest" in workflow
+    assert "windows-2022" in workflow
     assert "ubuntu-latest" in workflow
     assert "macos-latest" in workflow
-    assert "python doctor.py" in workflow
+    assert "python doctor.py --skip-docker" in workflow
     assert "python install.py" in workflow
 
 
