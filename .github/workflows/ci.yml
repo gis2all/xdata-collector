@@ -69,6 +69,92 @@ jobs:
         working-directory: web-ui
         run: npm run build
 
+  docker-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Seed CI .env
+        run: python -c "from pathlib import Path; Path('.env').write_text('TWITTER_AUTH_TOKEN=dummy\nTWITTER_CT0=dummy\n', encoding='utf-8')"
+
+      - name: Reset smoke state
+        run: python -c "from pathlib import Path; import shutil; Path('data').mkdir(exist_ok=True); Path('data/app.db').unlink(missing_ok=True); shutil.rmtree('runtime', ignore_errors=True)"
+
+      - name: Start Docker smoke stack
+        run: docker compose up --build -d
+
+      - name: Wait for Docker API health
+        run: |
+          python - <<'PY'
+          import json
+          import time
+          import urllib.request
+
+          deadline = time.time() + 90
+          url = "http://127.0.0.1:8765/health"
+          last_error = ""
+          payload = None
+
+          while time.time() < deadline:
+              try:
+                  with urllib.request.urlopen(url, timeout=3) as response:
+                      payload = json.load(response)
+                      if (
+                          response.status == 200
+                          and isinstance(payload, dict)
+                          and payload.get("summary")
+                          and payload.get("db", {}).get("connected") is True
+                      ):
+                          break
+                      last_error = f"unexpected payload: {payload!r}"
+              except Exception as exc:  # noqa: BLE001
+                  last_error = str(exc)
+              time.sleep(2)
+          else:
+              raise SystemExit(f"timed out waiting for {url}: {last_error}")
+
+          print(json.dumps(payload, ensure_ascii=False))
+          PY
+
+      - name: Wait for Docker web UI
+        run: |
+          python - <<'PY'
+          import time
+          import urllib.request
+
+          deadline = time.time() + 60
+          url = "http://127.0.0.1:5177"
+          last_error = ""
+
+          while time.time() < deadline:
+              try:
+                  with urllib.request.urlopen(url, timeout=3) as response:
+                      if response.status < 500:
+                          print(f"web-ui status={response.status}")
+                          break
+                      last_error = f"status={response.status}"
+              except Exception as exc:  # noqa: BLE001
+                  last_error = str(exc)
+              time.sleep(2)
+          else:
+              raise SystemExit(f"timed out waiting for {url}: {last_error}")
+          PY
+
+      - name: Check Docker compose status
+        run: docker compose ps
+
+      - name: Dump Docker logs on failure
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --no-color
+
+      - name: Stop Docker smoke stack
+        if: always()
+        run: docker compose down --volumes --remove-orphans
+
   native-smoke:
     name: Native (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

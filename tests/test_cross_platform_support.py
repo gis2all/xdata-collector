@@ -10,6 +10,7 @@ def test_ci_workflow_preserves_required_jobs_and_adds_cross_platform_smoke() -> 
     assert "backend:" in workflow
     assert "web-ui:" in workflow
     assert "native-smoke:" in workflow
+    assert "docker-smoke:" in workflow
     assert "strategy:" in workflow
     assert "matrix:" in workflow
     assert "windows-2022" in workflow
@@ -23,6 +24,12 @@ def test_ci_workflow_preserves_required_jobs_and_adds_cross_platform_smoke() -> 
     assert "Dump service logs on failure" in workflow
     assert "runtime/logs" in workflow
     assert "python install.py" in workflow
+    assert "docker compose up --build -d" in workflow
+    assert "docker compose ps" in workflow
+    assert "docker compose logs --no-color" in workflow
+    assert "docker compose down --volumes --remove-orphans" in workflow
+    assert "http://127.0.0.1:8765/health" in workflow
+    assert "http://127.0.0.1:5177" in workflow
 
 
 def test_readme_documents_doctor_first_and_proxy_opt_in() -> None:
