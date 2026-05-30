@@ -112,7 +112,13 @@ jobs:
         run: python -c "from pathlib import Path; import shutil; Path('data').mkdir(exist_ok=True); Path('data/app.db').unlink(missing_ok=True); shutil.rmtree('runtime', ignore_errors=True)"
 
       - name: Start services smoke
+        env:
+          XDATA_SERVICE_WAIT_SECONDS: "45"
         run: python services.py start
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: python -c "import sys; from pathlib import Path; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); root=Path('runtime/logs'); print('[logs] runtime/logs missing') if not root.exists() else None; [print(f'===== {path} =====\\n{path.read_text(encoding='utf-8', errors='replace')}') for path in sorted(root.glob('*.log'))]"
 
       - name: Check services status
         run: python services.py status

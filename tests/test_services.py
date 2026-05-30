@@ -11,6 +11,20 @@ class ServicesHelpersTests(unittest.TestCase):
         args = services.parse_args(["start"])
         self.assertEqual(args.command, "start")
 
+    def test_env_float_uses_default_for_missing_invalid_or_non_positive_values(self) -> None:
+        with patch.dict("services.os.environ", {}, clear=False):
+            self.assertEqual(services._env_float("XDATA_SERVICE_WAIT_SECONDS", 20.0), 20.0)
+
+        with patch.dict("services.os.environ", {"XDATA_SERVICE_WAIT_SECONDS": "bad"}, clear=False):
+            self.assertEqual(services._env_float("XDATA_SERVICE_WAIT_SECONDS", 20.0), 20.0)
+
+        with patch.dict("services.os.environ", {"XDATA_SERVICE_WAIT_SECONDS": "0"}, clear=False):
+            self.assertEqual(services._env_float("XDATA_SERVICE_WAIT_SECONDS", 20.0), 20.0)
+
+    def test_env_float_accepts_positive_override(self) -> None:
+        with patch.dict("services.os.environ", {"XDATA_SERVICE_WAIT_SECONDS": "45"}, clear=False):
+            self.assertEqual(services._env_float("XDATA_SERVICE_WAIT_SECONDS", 20.0), 45.0)
+
     def test_read_and_write_pid_roundtrip(self) -> None:
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "api.pid"

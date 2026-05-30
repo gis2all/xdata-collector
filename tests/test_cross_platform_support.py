@@ -19,6 +19,9 @@ def test_ci_workflow_preserves_required_jobs_and_adds_cross_platform_smoke() -> 
     assert "Reset smoke state" in workflow
     assert "Path('data/app.db').unlink(missing_ok=True)" in workflow
     assert "shutil.rmtree('runtime', ignore_errors=True)" in workflow
+    assert 'XDATA_SERVICE_WAIT_SECONDS: "45"' in workflow
+    assert "Dump service logs on failure" in workflow
+    assert "runtime/logs" in workflow
     assert "python install.py" in workflow
 
 

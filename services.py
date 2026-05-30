@@ -17,6 +17,18 @@ from urllib.request import urlopen
 
 import psutil
 
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
 PROJECT_ROOT = Path(__file__).resolve().parent
 RUNTIME_DIR = PROJECT_ROOT / "runtime"
 LOG_DIR = RUNTIME_DIR / "logs"
@@ -27,7 +39,7 @@ DEFAULT_HOST = "127.0.0.1"
 API_PORT = 8765
 DEV_UI_PORT = 5177
 SCHEDULER_TICK_SECONDS = 30
-WAIT_SECONDS = 20.0
+WAIT_SECONDS = _env_float("XDATA_SERVICE_WAIT_SECONDS", 20.0)
 POLL_SECONDS = 0.5
 
 
