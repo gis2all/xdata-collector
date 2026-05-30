@@ -28,14 +28,16 @@
 
 > 不要使用个人 `X` 主账号。现有使用经验表明一定会触发限制，专门的测试账号虽然限制但仍可获取数据。
 
-### 1. 获取 X Cookie
+### 1. 准备 X Cookie
 
-在已登录 `https://x.com` 的浏览器开发者工具里，从 `Application -> Storage -> Cookies -> https://x.com` 取出 `auth_token` 和 `ct0`，再写入项目根目录 `.env`：
+在已登录 `https://x.com` 的浏览器开发者工具里，从 `Application -> Storage -> Cookies -> https://x.com` 取出 `auth_token` 和 `ct0`，再写入项目根目录 `.env` 文件：
 
 ```env
 TWITTER_AUTH_TOKEN=你的 auth_token
 TWITTER_CT0=你的 ct0
 ```
+
+Cookie 过期、账号风控或浏览器 Cookie 解密失败都会影响采集稳定性。
 
 ### 2. 选择启动方式
 
@@ -50,10 +52,12 @@ TWITTER_CT0=你的 ct0
 
 执行：
 
-```bash
+```powershell
 python install.py
 python services.py start
 ```
+
+`python install.py` 会先调用 `run/bootstrap.py` 准备本机依赖，包括安装/更新 `pipx`、通过 `pipx` 安装 `twitter-cli`，以及通过 `npm` 安装 `xreach-cli`。如果安装过程提示 PATH 已变更，请重新打开终端后再运行 `python services.py start`。
 
 该路径会启动以下三个服务：
 
@@ -68,9 +72,9 @@ python services.py start
 
 #### Docker 启动
 
-适用于希望将运行环境隔离到容器中的场景。执行前请先确认 `.env` 已写入  `TWITTER_AUTH_TOKEN` / `TWITTER_CT0`。
+适用于希望将运行环境隔离到容器中的场景。执行前请先确认 `.env` 已写入 `TWITTER_AUTH_TOKEN` / `TWITTER_CT0`。
 
-```bash
+```powershell
 docker compose up --build
 ```
 
@@ -94,21 +98,20 @@ docker compose up --build
 
 停止容器：
 
-```bash
+```powershell
 docker compose down
 ```
 
 Docker 注意事项：
 
-- 仓库当前默认把容器代理指向 `http://host.docker.internal:7897`
-- 如果代理端口不同，请先将 `DOCKER_PROXY_URL` 设置为目标代理地址，再运行 `docker compose up --build`
-- 如果当前环境不使用这套代理配置，通常需要按实际网络环境调整 `DOCKER_PROXY_URL` 或 `docker-compose.yml`
+- 默认代理是 `http://host.docker.internal:7897`；
+- 不用代理时请移除 `docker-compose.yml` 里的代理环境变量，使用其他代理时设置 `DOCKER_PROXY_URL`
 
 ## 常用入口
 
 常用命令：
 
-- `python install.py`：安装前端依赖
+- `python install.py`：准备 `pipx` / `twitter-cli` / `xreach-cli` 并安装前端依赖
 - `python services.py start`：启动 `API`、`Scheduler` 和 `Dev UI`
 - `python services.py stop`：停止服务
 - `python services.py restart`：重启服务
@@ -122,9 +125,9 @@ Docker 注意事项：
 
 如需要预览前端构建产物，可执行：
 
-```bash
+```powershell
 cd web-ui
-npm run build
+npm.cmd run build
 cd ..
 python run/static_web_server.py --root web-ui/dist
 ```

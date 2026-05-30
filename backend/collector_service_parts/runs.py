@@ -7,7 +7,7 @@ from .common import *  # noqa: F401,F403
 def _service_module():
     import sys
 
-    return sys.modules["backend.collector_service_impl"]
+    return sys.modules["backend.collector_service"]
 
 class RunMixin:
     def _running_run_for_job(self, job_id: int) -> dict[str, Any] | None:

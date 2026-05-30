@@ -10,7 +10,7 @@ ENV PYTHONUNBUFFERED=1 \
     NO_COLOR=1
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates nodejs npm build-essential gyp \
+    && apt-get install -y --no-install-recommends ca-certificates git nodejs npm build-essential gyp \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python -m pip install --no-cache-dir --upgrade pip pipx \

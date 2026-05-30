@@ -7,7 +7,7 @@ from .common import *  # noqa: F401,F403
 def _service_module():
     import sys
 
-    return sys.modules["backend.collector_service_impl"]
+    return sys.modules["backend.collector_service"]
 
 class HealthMixin:
     _HEALTH_X_CACHE_SECONDS: float = 30.0
