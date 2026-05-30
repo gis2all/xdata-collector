@@ -120,5 +120,5 @@
 | Python 编译 | 24 files compiled |
 | 服务重启 | api / scheduler / web-ui 均 running |
 | 健康检查 `/health` | `db.connected: true`, `x.connected: true` |
-| 前端 smoke | /, /results, /jobs, #/manual 均 HTTP 200 |
+| 前端 smoke | /, /results, /jobs, #/manual 均 HTTP 200；headless Chrome #/manual, #/jobs, #/results 无 console error / pageerror / 失败请求 / 5xx 响应 |
 | API smoke | /items, /jobs, /runs 均返回 JSON；CORS local 反射正常，外部拒绝正常 |
