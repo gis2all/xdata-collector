@@ -43,11 +43,13 @@ def test_generate_coverage_badge_endpoint_json(tmp_path: Path) -> None:
 
 
 def test_coverage_artifacts_are_configured_outside_repo_root() -> None:
-    workflow = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    workflow = (PROJECT_ROOT / ".github" / "workflows" / "coverage-badge.yml").read_text(encoding="utf-8")
+    ci_workflow = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     gitignore = (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8")
 
     assert "runtime/tmp/coverage/coverage.json" in workflow
+    assert "publish-coverage-badge" not in ci_workflow
     assert 'data_file = "runtime/tmp/coverage/.coverage"' in pyproject
     assert ".coverage" in gitignore
     assert "coverage.json" in gitignore
