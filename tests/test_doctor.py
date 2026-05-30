@@ -1,4 +1,5 @@
 import json
+import subprocess
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -12,7 +13,7 @@ class DoctorHelpersTests(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             project_root = Path(tmp)
             with patch("doctor.PROJECT_ROOT", project_root):
-                checks = doctor.collect_checks()
+                checks = doctor.collect_checks(skip_docker=True)
 
         env_check = next(check for check in checks if check.name == ".env")
         self.assertFalse(env_check.ok)
@@ -23,11 +24,22 @@ class DoctorHelpersTests(unittest.TestCase):
             project_root = Path(tmp)
             (project_root / ".env").write_text("TWITTER_AUTH_TOKEN=\n", encoding="utf-8")
             with patch("doctor.PROJECT_ROOT", project_root):
-                checks = doctor.collect_checks()
+                checks = doctor.collect_checks(skip_docker=True)
 
         env_check = next(check for check in checks if check.name == ".env")
         self.assertFalse(env_check.ok)
         self.assertIn("TWITTER_CT0", env_check.detail)
+
+    def test_check_docker_daemon_handles_timeout(self) -> None:
+        timeout = subprocess.TimeoutExpired(["docker", "info"], timeout=10)
+        with patch("doctor._resolve_command", return_value="docker"), patch(
+            "doctor.subprocess.run",
+            side_effect=timeout,
+        ):
+            result = doctor.check_docker_daemon()
+
+        self.assertFalse(result.ok)
+        self.assertIn("timed out", result.detail)
 
     def test_render_json_emits_machine_readable_payload(self) -> None:
         rendered = doctor.render_json([doctor.CheckResult(name="python", ok=True, detail="3.13")])

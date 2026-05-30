@@ -1,6 +1,6 @@
 import subprocess
 import unittest
-from pathlib import PureWindowsPath
+from pathlib import Path, PureWindowsPath
 from unittest.mock import Mock, patch
 
 from backend.twitter_cli import (
@@ -174,13 +174,17 @@ class TwitterCliRuntimeTests(unittest.TestCase):
         self.assertEqual(PureWindowsPath(cli), PureWindowsPath("C:/Users/tester/.local/bin/twitter.exe"))
 
     def test_finds_xreach_in_home_npm_global_bin_directory(self) -> None:
+        expected = Path("/Users/tester/.npm-global/bin/xreach")
         with patch("backend.twitter_cli.shutil.which", return_value=None), patch(
-            "backend.twitter_cli.Path.home",
-            return_value=__import__("pathlib").Path("/Users/tester"),
+            "backend.twitter_cli._xreach_fallback_paths",
+            return_value=[expected],
+        ), patch(
+            "backend.twitter_cli.Path.exists",
+            return_value=True,
         ):
             cli = find_xreach_cli()
 
-        self.assertIn("xreach", cli)
+        self.assertEqual(cli, str(expected))
 
     def test_xreach_missing_message_names_npm_package(self) -> None:
         with patch("backend.twitter_cli.shutil.which", return_value=None), patch(

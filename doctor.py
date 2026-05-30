@@ -129,6 +129,8 @@ def check_docker_daemon() -> CheckResult:
             timeout=10,
             check=False,
         )
+    except subprocess.TimeoutExpired:
+        return CheckResult(name="docker-daemon", ok=False, detail="docker daemon check timed out")
     except OSError as exc:
         return CheckResult(name="docker-daemon", ok=False, detail=str(exc))
     output = (completed.stdout or completed.stderr).strip()
@@ -189,6 +191,8 @@ def _check_command_version(
             timeout=10,
             check=False,
         )
+    except subprocess.TimeoutExpired:
+        return CheckResult(name=name, ok=False, detail="command timed out")
     except OSError as exc:
         return CheckResult(name=name, ok=False, detail=str(exc))
     output = (completed.stdout or completed.stderr).strip()

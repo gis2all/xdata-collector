@@ -132,10 +132,13 @@ def ensure_schema_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE x_items_curated ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'")
     if "fetched_at" not in curated_columns:
         conn.execute("ALTER TABLE x_items_curated ADD COLUMN fetched_at TEXT NULL")
+    curated_metrics_added = False
     for metric in ("views", "likes", "replies", "retweets"):
         if metric not in curated_columns:
             conn.execute(f"ALTER TABLE x_items_curated ADD COLUMN {metric} INTEGER NOT NULL DEFAULT 0")
-    _backfill_curated_metrics_from_raw(conn)
+            curated_metrics_added = True
+    if curated_metrics_added:
+        _backfill_curated_metrics_from_raw(conn)
 
 
 def _coerce_metric(payload: Any, key: str) -> int:
