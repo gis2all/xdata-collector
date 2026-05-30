@@ -108,6 +108,9 @@ jobs:
       - name: Run doctor smoke
         run: python doctor.py --skip-docker
 
+      - name: Reset smoke state
+        run: python -c "from pathlib import Path; import shutil; Path('data').mkdir(exist_ok=True); Path('data/app.db').unlink(missing_ok=True); shutil.rmtree('runtime', ignore_errors=True)"
+
       - name: Start services smoke
         run: python services.py start
 

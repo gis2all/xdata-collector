@@ -16,6 +16,9 @@ def test_ci_workflow_preserves_required_jobs_and_adds_cross_platform_smoke() -> 
     assert "ubuntu-latest" in workflow
     assert "macos-latest" in workflow
     assert "python doctor.py --skip-docker" in workflow
+    assert "Reset smoke state" in workflow
+    assert "Path('data/app.db').unlink(missing_ok=True)" in workflow
+    assert "shutil.rmtree('runtime', ignore_errors=True)" in workflow
     assert "python install.py" in workflow
 
 
