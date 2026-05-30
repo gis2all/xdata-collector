@@ -1,5 +1,6 @@
 # Sensitive local configuration
 .env
+.claude/
 
 # Python cache and local environments
 __pycache__/
