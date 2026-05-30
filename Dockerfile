@@ -10,13 +10,13 @@ ENV PYTHONUNBUFFERED=1 \
     NO_COLOR=1
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates nodejs npm build-essential gyp \
+    && apt-get install -y --no-install-recommends ca-certificates git nodejs npm build-essential gyp \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python -m pip install --no-cache-dir --upgrade pip pipx \
-    && python -m pipx install git+https://github.com/public-clis/twitter-cli.git
+RUN python -m pip install --no-cache-dir --upgrade pip pipx psutil \
+    && python -m pipx install git+https://github.com/public-clis/twitter-cli.git@7c634e0d396b1e7af9f63315b414925fe4f29ae7
 
-RUN npm_config_python=/usr/bin/python3 npm install -g xreach-cli
+RUN npm_config_python=/usr/bin/python3 npm install -g xreach-cli@0.3.0
 
 COPY web-ui/package*.json ./web-ui/
 RUN cd web-ui && npm ci

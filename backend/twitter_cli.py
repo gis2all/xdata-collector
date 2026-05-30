@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.models import SearchResult
+from backend.models import RunCancelled
 
 
 def find_twitter_cli() -> str:
@@ -19,9 +20,9 @@ def find_twitter_cli() -> str:
         path = shutil.which(candidate)
         if path:
             return path
-    fallback = Path.home() / ".local" / "bin" / "twitter.exe"
-    if fallback.exists():
-        return str(fallback)
+    for fallback in _twitter_fallback_paths():
+        if fallback.exists():
+            return str(fallback)
     raise RuntimeError("twitter-cli not found. Run python install.py or python run/bootstrap.py, or install twitter-cli manually.")
 
 
@@ -54,10 +55,85 @@ def find_xreach_cli() -> str:
         path = shutil.which(candidate)
         if path:
             return path
-    fallback = Path.home() / "AppData" / "Roaming" / "npm" / "xreach.cmd"
-    if fallback.exists():
-        return str(fallback)
+    for fallback in _xreach_fallback_paths():
+        if fallback.exists():
+            return str(fallback)
     raise RuntimeError("xreach not found. Install with `npm i -g xreach-cli`.")
+
+
+def _xreach_fallback_paths() -> list[Path]:
+    candidates = [
+        Path.home() / "AppData" / "Roaming" / "npm" / "xreach.cmd",
+        Path.home() / ".npm-global" / "bin" / "xreach",
+        Path.home() / ".local" / "bin" / "xreach",
+    ]
+    npm_prefix = _npm_global_prefix()
+    if npm_prefix is not None:
+        candidates.extend(
+            [
+                npm_prefix / "xreach.cmd",
+                npm_prefix / "xreach",
+                npm_prefix / "bin" / "xreach",
+            ]
+        )
+    seen: set[str] = set()
+    unique_candidates: list[Path] = []
+    for candidate in candidates:
+        normalized = str(candidate)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique_candidates.append(candidate)
+    return unique_candidates
+
+
+def _twitter_fallback_paths() -> list[Path]:
+    candidates = [
+        Path.home() / ".local" / "bin" / "twitter.exe",
+        Path.home() / ".local" / "bin" / "twitter",
+    ]
+    seen: set[str] = set()
+    unique_candidates: list[Path] = []
+    for candidate in candidates:
+        normalized = str(candidate)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique_candidates.append(candidate)
+    return unique_candidates
+
+
+def _npm_global_prefix() -> Path | None:
+    commands: list[str] = []
+    for candidate in ("npm.cmd", "npm"):
+        resolved = shutil.which(candidate)
+        if resolved:
+            commands.append(resolved)
+        commands.append(candidate)
+    seen: set[str] = set()
+    for npm in commands:
+        if npm in seen:
+            continue
+        seen.add(npm)
+        try:
+            completed = subprocess.run(
+                [npm, "prefix", "-g"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=10,
+                **_windows_subprocess_run_kwargs(),
+            )
+        except OSError:
+            continue
+        if completed.returncode != 0:
+            continue
+        prefix = (completed.stdout or "").strip()
+        if prefix:
+            return Path(prefix)
+    return None
 
 
 def _windows_subprocess_run_kwargs() -> dict[str, Any]:
@@ -89,15 +165,15 @@ def _run_cli_command(
         if cancel_event is not None and cancel_event.is_set():
             process.kill()
             stdout, stderr = process.communicate()
-            raise RuntimeError("cancelled")
+            raise RunCancelled("cancelled")
         try:
             stdout, stderr = process.communicate(timeout=0.1)
             break
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
             if (time.monotonic() - start) >= timeout_seconds:
                 process.kill()
                 stdout, stderr = process.communicate()
-                raise subprocess.TimeoutExpired(command, timeout_seconds, output=stdout, stderr=stderr)
+                raise subprocess.TimeoutExpired(command, timeout_seconds, output=stdout, stderr=stderr) from exc
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 

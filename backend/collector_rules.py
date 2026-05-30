@@ -599,6 +599,9 @@ def evaluate_rule_set(
             score += int(effect.get("score", 0) or 0)
             if effect.get("level"):
                 level_hint = str(effect["level"])
+            # When multiple rules match, the last rule&#39;s level takes precedence.
+            # This is by design: rules are evaluated in order, and later rules
+            # can override the level of earlier matches.
         if excluded:
             stats["excluded"] += 1
             continue

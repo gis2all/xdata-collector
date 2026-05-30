@@ -18,3 +18,11 @@ class SearchResult:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+class RunCancelled(Exception):
+    """Raised when a run is cancelled by user request."""
+
+
+
+class RequestTooLarge(Exception):
+    """Raised when request body exceeds MAX_BODY_SIZE."""

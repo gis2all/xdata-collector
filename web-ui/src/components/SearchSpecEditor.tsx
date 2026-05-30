@@ -179,7 +179,7 @@ function RangeField({ label, value, onChange, disabled, maximum, hint }: RangeFi
             aria-label={`${label}-min`}
             type="number"
             value={value.min ?? 0}
-            onChange={(e) => onChange(buildRangeValue("gte", value, { min: e.target.value }, maximum))}
+            onChange={(e) => onChange(buildRangeValue("gte", value, { min: normalizeNumberInput(e.target.value) }, maximum))}
             disabled={disabled}
           />
         )}
@@ -188,7 +188,7 @@ function RangeField({ label, value, onChange, disabled, maximum, hint }: RangeFi
             aria-label={`${label}-max`}
             type="number"
             value={value.max ?? 0}
-            onChange={(e) => onChange(buildRangeValue("lte", value, { max: e.target.value }, maximum))}
+            onChange={(e) => onChange(buildRangeValue("lte", value, { max: normalizeNumberInput(e.target.value) }, maximum))}
             disabled={disabled}
           />
         )}
@@ -198,7 +198,7 @@ function RangeField({ label, value, onChange, disabled, maximum, hint }: RangeFi
               aria-label={`${label}-min`}
               type="number"
               value={value.min ?? 0}
-              onChange={(e) => onChange(buildRangeValue("between", value, { min: e.target.value }, maximum))}
+              onChange={(e) => onChange(buildRangeValue("between", value, { min: normalizeNumberInput(e.target.value) }, maximum))}
               disabled={disabled}
             />
             <span className="kv">{TEXT.between}</span>
@@ -206,7 +206,7 @@ function RangeField({ label, value, onChange, disabled, maximum, hint }: RangeFi
               aria-label={`${label}-max`}
               type="number"
               value={value.max ?? 0}
-              onChange={(e) => onChange(buildRangeValue("between", value, { max: e.target.value }, maximum))}
+              onChange={(e) => onChange(buildRangeValue("between", value, { max: normalizeNumberInput(e.target.value) }, maximum))}
               disabled={disabled}
             />
           </>

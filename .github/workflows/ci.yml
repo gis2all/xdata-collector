@@ -25,13 +25,19 @@ jobs:
           python-version: "3.13"
 
       - name: Install test tooling
-        run: python -m pip install --upgrade pip pytest
+        run: python -m pip install --upgrade pip pytest pytest-cov ruff pre-commit psutil
 
       - name: Compile key Python entrypoints
-        run: python -m py_compile install.py services.py run/bootstrap.py backend/twitter_cli.py backend/collector_service.py backend/workspace_store.py
+        run: python -c "import py_compile, tempfile; from pathlib import Path; files=[Path('doctor.py'),Path('install.py'),Path('services.py'),Path('run/api.py'),Path('run/bootstrap.py'),Path('run/scheduler.py'),Path('run/static_web_server.py'),Path('.github/scripts/generate_coverage_badge.py')]+sorted(Path('backend').glob('*.py'))+sorted(Path('backend/collector_service_parts').glob('*.py')); td=tempfile.TemporaryDirectory(); root=Path(td.name); [py_compile.compile(str(f), cfile=str(root / (str(i)+'_'+f.name+'.pyc')), doraise=True) for i,f in enumerate(files)]; print(f'compiled {len(files)} files')"
 
-      - name: Run backend tests
-        run: python -m pytest -c tests/pytest.ini tests
+      - name: Run Python lint
+        run: python -m ruff check doctor.py backend run tests services.py install.py --select F --extend-select B904 --ignore F401,F403,F405
+
+      - name: Validate pre-commit config
+        run: python -m pre_commit validate-config
+
+      - name: Run backend tests with coverage
+        run: python -m pytest -c tests/pytest.ini tests --cov=backend --cov=run --cov=services --cov=doctor --cov-report=term-missing --cov-fail-under=75
 
   web-ui:
     runs-on: ubuntu-latest
@@ -51,6 +57,10 @@ jobs:
         working-directory: web-ui
         run: npm ci
 
+      - name: Run web typecheck
+        working-directory: web-ui
+        run: npm exec tsc -- -p tsconfig.app.json --noEmit
+
       - name: Run web tests
         working-directory: web-ui
         run: npm test
@@ -58,3 +68,147 @@ jobs:
       - name: Build web app
         working-directory: web-ui
         run: npm run build
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Seed CI .env
+        run: python -c "from pathlib import Path; Path('.env').write_text('TWITTER_AUTH_TOKEN=dummy\nTWITTER_CT0=dummy\n', encoding='utf-8')"
+
+      - name: Reset smoke state
+        run: python -c "from pathlib import Path; import shutil; Path('data').mkdir(exist_ok=True); Path('data/app.db').unlink(missing_ok=True); shutil.rmtree('runtime', ignore_errors=True)"
+
+      - name: Start Docker smoke stack
+        run: docker compose up --build -d
+
+      - name: Wait for Docker API health
+        run: |
+          python - <<'PY'
+          import json
+          import time
+          import urllib.request
+
+          deadline = time.time() + 90
+          url = "http://127.0.0.1:8765/health"
+          last_error = ""
+          payload = None
+
+          while time.time() < deadline:
+              try:
+                  with urllib.request.urlopen(url, timeout=3) as response:
+                      payload = json.load(response)
+                      if (
+                          response.status == 200
+                          and isinstance(payload, dict)
+                          and payload.get("summary")
+                          and payload.get("db", {}).get("connected") is True
+                      ):
+                          break
+                      last_error = f"unexpected payload: {payload!r}"
+              except Exception as exc:  # noqa: BLE001
+                  last_error = str(exc)
+              time.sleep(2)
+          else:
+              raise SystemExit(f"timed out waiting for {url}: {last_error}")
+
+          print(json.dumps(payload, ensure_ascii=False))
+          PY
+
+      - name: Wait for Docker web UI
+        run: |
+          python - <<'PY'
+          import time
+          import urllib.request
+
+          deadline = time.time() + 60
+          url = "http://127.0.0.1:5177"
+          last_error = ""
+
+          while time.time() < deadline:
+              try:
+                  with urllib.request.urlopen(url, timeout=3) as response:
+                      if response.status < 500:
+                          print(f"web-ui status={response.status}")
+                          break
+                      last_error = f"status={response.status}"
+              except Exception as exc:  # noqa: BLE001
+                  last_error = str(exc)
+              time.sleep(2)
+          else:
+              raise SystemExit(f"timed out waiting for {url}: {last_error}")
+          PY
+
+      - name: Check Docker compose status
+        run: docker compose ps
+
+      - name: Dump Docker logs on failure
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs --no-color
+
+      - name: Stop Docker smoke stack
+        if: always()
+        run: docker compose down --volumes --remove-orphans
+
+  native-smoke:
+    name: Native (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-2022
+          - ubuntu-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: web-ui/package-lock.json
+
+      - name: Install test tooling
+        run: python -m pip install --upgrade pip psutil
+
+      - name: Seed CI .env
+        run: python -c "from pathlib import Path; Path('.env').write_text('TWITTER_AUTH_TOKEN=dummy\nTWITTER_CT0=dummy\n', encoding='utf-8')"
+
+      - name: Install project dependencies
+        run: python install.py
+
+      - name: Run doctor smoke
+        run: python doctor.py --skip-docker
+
+      - name: Reset smoke state
+        run: python -c "from pathlib import Path; import shutil; Path('data').mkdir(exist_ok=True); Path('data/app.db').unlink(missing_ok=True); shutil.rmtree('runtime', ignore_errors=True)"
+
+      - name: Start services smoke
+        env:
+          XDATA_SERVICE_WAIT_SECONDS: "45"
+        run: python services.py start
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: python -c "import sys; from pathlib import Path; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); root=Path('runtime/logs'); print('[logs] runtime/logs missing') if not root.exists() else None; [print(f'===== {path} =====\\n{path.read_text(encoding='utf-8', errors='replace')}') for path in sorted(root.glob('*.log'))]"
+
+      - name: Check services status
+        run: python services.py status
+
+      - name: Stop services smoke
+        if: always()
+        run: python services.py stop

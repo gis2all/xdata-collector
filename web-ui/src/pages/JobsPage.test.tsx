@@ -1003,6 +1003,66 @@ describe("JobsPage", () => {
     expect(within(screen.getByTestId("job-run-progress")).getByText("已完成 9 / 24 个查询切片")).toBeInTheDocument();
   });
 
+  it("drops a stale active run when progress polling returns not found", async () => {
+    listJobsMock
+      .mockResolvedValueOnce({
+        page: 1,
+        page_size: 10,
+        total: 1,
+        items: [
+          makeJob(12, {
+            name: "scheduled-running-job",
+            last_run_id: 912,
+            last_run_status: "running",
+            last_run_started_at: "2026-04-14T00:00:00+00:00",
+            last_run_stats: { total_queries: 24, completed_queries: 20, progress_percent: 83, fetched_raw: 30, query_errors: 0 },
+          }),
+        ],
+      } as any)
+      .mockResolvedValue({
+        page: 1,
+        page_size: 10,
+        total: 1,
+        items: [
+          makeJob(12, {
+            name: "scheduled-running-job",
+            last_run_id: null,
+            last_run_status: null,
+            last_run_started_at: null,
+            last_run_ended_at: null,
+            last_run_stats: {},
+          }),
+        ],
+      } as any);
+    getJobMock.mockResolvedValue(
+      makeJob(12, {
+        name: "scheduled-running-job",
+        last_run_id: null,
+        last_run_status: "cancelled",
+        last_run_started_at: "2026-04-14T00:00:00+00:00",
+        last_run_ended_at: "2026-04-14T00:05:00+00:00",
+      }) as any,
+    );
+    getRunMock.mockRejectedValue(new Error("not found"));
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("scheduled-running-job")).toBeInTheDocument();
+    });
+    expect(screen.getByText((_, node) => node?.textContent === "running 83%")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(getRunMock).toHaveBeenCalledWith(912);
+    }, { timeout: 2000 });
+    await waitFor(() => {
+      expect(screen.queryByText("not found")).not.toBeInTheDocument();
+    }, { timeout: 2000 });
+    await waitFor(() => {
+      expect(screen.queryByText((_, node) => node?.textContent === "running 83%")).not.toBeInTheDocument();
+    }, { timeout: 2000 });
+  });
+
   it("shows disabled run-now and enable control for stopped jobs", async () => {
     listJobsMock.mockResolvedValue({
       page: 1,

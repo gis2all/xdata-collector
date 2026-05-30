@@ -1,9 +1,12 @@
 # Sensitive local configuration
 .env
+.claude/
 
 # Python cache and local environments
 __pycache__/
 *.py[cod]
+.coverage
+coverage.json
 .pytest_cache/
 .venv/
 venv/

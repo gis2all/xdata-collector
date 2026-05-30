@@ -51,9 +51,9 @@ def _exclusive_lock(path: Path):
 
                     fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
-            except OSError:
+            except OSError as exc:
                 if time.time() >= deadline:
-                    raise TimeoutError(f"timed out waiting for lock: {path}")
+                    raise TimeoutError(f"timed out waiting for lock: {path}") from exc
                 time.sleep(_FILE_LOCK_POLL_SECONDS)
         try:
             yield
@@ -406,6 +406,7 @@ class WorkspaceStore:
         self.legacy_config_dir = Path(legacy_config_dir) if legacy_config_dir is not None else self.workspace_path.parent
         self.legacy_db_path = Path(legacy_db_path) if legacy_db_path is not None else PROJECT_ROOT / "data" / "app.db"
         self.pack_store = TaskPackStore(packs_dir=self.packs_dir, project_root=self.project_root)
+        self._cache_lock = threading.RLock()
         self._cache: dict[str, Any] | None = None
         self._mtime: float | None = None
 
@@ -415,16 +416,18 @@ class WorkspaceStore:
             self._write_workspace(workspace)
             return copy.deepcopy(workspace)
         mtime = self.workspace_path.stat().st_mtime
-        if self._cache is not None and self._mtime == mtime:
-            return copy.deepcopy(self._cache)
+        with self._cache_lock:
+            if self._cache is not None and self._mtime == mtime:
+                return copy.deepcopy(self._cache)
         payload = _read_json_file(self.workspace_path)
         if self._is_legacy_workspace(payload):
             workspace = self._migrate_legacy_workspace(payload)
             self._write_workspace(workspace)
             return copy.deepcopy(workspace)
         workspace = self._normalize_workspace(payload)
-        self._cache = workspace
-        self._mtime = self.workspace_path.stat().st_mtime
+        with self._cache_lock:
+            self._cache = workspace
+            self._mtime = self.workspace_path.stat().st_mtime
         return copy.deepcopy(workspace)
 
     def update_workspace(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -441,8 +444,9 @@ class WorkspaceStore:
     def _write_workspace(self, workspace: dict[str, Any]) -> None:
         normalized = self._normalize_workspace(workspace)
         _atomic_write_text(self.workspace_path, json.dumps(normalized, ensure_ascii=False, indent=2) + "\n")
-        self._cache = normalized
-        self._mtime = self.workspace_path.stat().st_mtime
+        with self._cache_lock:
+            self._cache = normalized
+            self._mtime = self.workspace_path.stat().st_mtime
 
     def _is_legacy_workspace(self, payload: Any) -> bool:
         if not isinstance(payload, dict):

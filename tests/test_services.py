@@ -1,7 +1,7 @@
 ﻿import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import services
 
@@ -10,6 +10,20 @@ class ServicesHelpersTests(unittest.TestCase):
     def test_parse_args_accepts_supported_commands(self) -> None:
         args = services.parse_args(["start"])
         self.assertEqual(args.command, "start")
+
+    def test_env_float_uses_default_for_missing_invalid_or_non_positive_values(self) -> None:
+        with patch.dict("services.os.environ", {}, clear=False):
+            self.assertEqual(services._env_float("XDATA_SERVICE_WAIT_SECONDS", 20.0), 20.0)
+
+        with patch.dict("services.os.environ", {"XDATA_SERVICE_WAIT_SECONDS": "bad"}, clear=False):
+            self.assertEqual(services._env_float("XDATA_SERVICE_WAIT_SECONDS", 20.0), 20.0)
+
+        with patch.dict("services.os.environ", {"XDATA_SERVICE_WAIT_SECONDS": "0"}, clear=False):
+            self.assertEqual(services._env_float("XDATA_SERVICE_WAIT_SECONDS", 20.0), 20.0)
+
+    def test_env_float_accepts_positive_override(self) -> None:
+        with patch.dict("services.os.environ", {"XDATA_SERVICE_WAIT_SECONDS": "45"}, clear=False):
+            self.assertEqual(services._env_float("XDATA_SERVICE_WAIT_SECONDS", 20.0), 45.0)
 
     def test_read_and_write_pid_roundtrip(self) -> None:
         with TemporaryDirectory() as tmp:
@@ -97,6 +111,24 @@ class ServicesHelpersTests(unittest.TestCase):
             self.assertEqual(status.state, "stopped")
             self.assertEqual(killed, [123, 456])
             self.assertFalse(pid_file.exists())
+
+    def test_find_pids_by_port_prefers_psutil_connections(self) -> None:
+        listener = Mock()
+        listener.status = "LISTEN"
+        listener.laddr = Mock(port=8765)
+        listener.pid = 4321
+        with patch("services.psutil.net_connections", return_value=[listener]):
+            self.assertEqual(services.find_pids_by_port(8765), [4321])
+
+    def test_terminate_pid_tree_uses_psutil_process_tree(self) -> None:
+        child = Mock()
+        parent = Mock()
+        parent.children.return_value = [child]
+        with patch("services.psutil.Process", return_value=parent), patch("services.psutil.wait_procs", return_value=([], [])):
+            services.terminate_pid_tree(1234)
+
+        child.terminate.assert_called_once_with()
+        parent.terminate.assert_called_once_with()
 
 
 if __name__ == "__main__":

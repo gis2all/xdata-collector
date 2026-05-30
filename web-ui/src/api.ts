@@ -515,10 +515,11 @@ export type DedupeItemsResponse = {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8765";
 
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
+async function req<T>(path: string, init?: RequestInit, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...init,
+    ...(signal ? { signal } : {}),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "request failed" }));

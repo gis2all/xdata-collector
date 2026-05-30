@@ -2,6 +2,7 @@ import sqlite3
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from backend.collector_store import connect, ensure_schema_columns, row_to_dict
 
@@ -155,6 +156,67 @@ class CollectorStoreTests(unittest.TestCase):
                 count = conn.execute("SELECT COUNT(1) FROM x_items_raw").fetchone()[0]
 
             self.assertEqual(count, 1)
+
+    def test_connect_runs_schema_maintenance_once_per_database_path(self) -> None:
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "collector.db"
+
+            with patch("backend.collector_store._backfill_curated_metrics_from_raw") as backfill:
+                with connect(db_path) as conn:
+                    conn.execute("SELECT 1").fetchone()
+                with connect(db_path) as conn:
+                    conn.execute("SELECT 1").fetchone()
+
+            self.assertEqual(backfill.call_count, 0)
+
+    def test_connect_backfills_legacy_database_once_per_database_path(self) -> None:
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "legacy.db"
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                """
+                CREATE TABLE x_items_raw (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id INTEGER NOT NULL,
+                    tweet_id TEXT,
+                    canonical_url TEXT,
+                    author TEXT,
+                    text TEXT,
+                    created_at_x TEXT,
+                    metrics_json TEXT NOT NULL DEFAULT '{}',
+                    query_name TEXT,
+                    fetched_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE x_items_curated (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id INTEGER NOT NULL,
+                    dedupe_key TEXT NOT NULL,
+                    level TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    summary_zh TEXT NOT NULL,
+                    excerpt TEXT NOT NULL,
+                    is_zero_cost INTEGER NOT NULL,
+                    source_url TEXT NOT NULL,
+                    author TEXT,
+                    created_at_x TEXT,
+                    state TEXT NOT NULL DEFAULT 'new'
+                )
+                """
+            )
+            conn.commit()
+            conn.close()
+
+            with patch("backend.collector_store._backfill_curated_metrics_from_raw") as backfill:
+                with connect(db_path) as upgraded:
+                    upgraded.execute("SELECT 1").fetchone()
+                with connect(db_path) as upgraded:
+                    upgraded.execute("SELECT 1").fetchone()
+
+            self.assertEqual(backfill.call_count, 1)
 
     def test_row_to_dict_decodes_json_fields_and_keeps_invalid_json_as_string(self) -> None:
         conn = sqlite3.connect(":memory:")

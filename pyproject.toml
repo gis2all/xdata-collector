@@ -1,0 +1,13 @@
+[tool.ruff]
+line-length = 140
+target-version = "py313"
+extend-exclude = [
+  "web-ui/dist",
+  ".claude",
+]
+
+[tool.ruff.lint]
+select = ["F", "B904"]
+
+[tool.coverage.run]
+data_file = "runtime/tmp/coverage/.coverage"
