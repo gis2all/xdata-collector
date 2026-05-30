@@ -140,7 +140,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
         except json.JSONDecodeError:
             self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid json"})
-        except (IndexError, ValueError) as exc:
+        except (IndexError, ValueError):
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
         except FileNotFoundError as exc:
             self._json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
@@ -163,7 +163,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
         except json.JSONDecodeError:
             self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid json"})
-        except (IndexError, ValueError) as exc:
+        except (IndexError, ValueError):
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
         except FileNotFoundError as exc:
             self._json(HTTPStatus.NOT_FOUND, {"error": str(exc)})
@@ -285,7 +285,7 @@ class ApiHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
         except json.JSONDecodeError:
             self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid json"})
-        except (IndexError, ValueError) as exc:
+        except (IndexError, ValueError):
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
         except FileNotFoundError as exc:
             self._json(HTTPStatus.NOT_FOUND, {"error": str(exc)})

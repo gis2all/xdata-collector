@@ -51,9 +51,9 @@ def _exclusive_lock(path: Path):
 
                     fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
-            except OSError:
+            except OSError as exc:
                 if time.time() >= deadline:
-                    raise TimeoutError(f"timed out waiting for lock: {path}")
+                    raise TimeoutError(f"timed out waiting for lock: {path}") from exc
                 time.sleep(_FILE_LOCK_POLL_SECONDS)
         try:
             yield

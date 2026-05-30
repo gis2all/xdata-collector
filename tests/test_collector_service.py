@@ -1,7 +1,6 @@
 import json
 import shutil
 import threading
-import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -232,6 +231,84 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertFalse(cloned["is_builtin"])
         self.assertIn("\u526f\u672c", cloned["name"])
 
+    def test_rule_set_crud_round_trips_through_service_layer(self) -> None:
+        created = self.service.create_rule_set(
+            {
+                "name": "Alpha Signals",
+                "description": "capture alpha launches",
+                "version": 3,
+                "definition": {
+                    "levels": [{"id": "A", "label": "A", "min_score": 80, "color": "#22c55e"}],
+                    "rules": [{"id": "rule-alpha", "level": "A", "conditions": [{"type": "text_contains_any", "values": ["alpha"]}]}],
+                },
+            }
+        )
+
+        self.assertGreater(int(created["id"]), 1)
+        self.assertEqual(created["name"], "Alpha Signals")
+        self.assertEqual(created["description"], "capture alpha launches")
+        self.assertEqual(created["version"], 3)
+        self.assertFalse(created["is_builtin"])
+        self.assertEqual(created["definition_json"]["rules"][0]["id"], "rule-alpha")
+
+        loaded = self.service.get_rule_set(int(created["id"]))
+        self.assertEqual(loaded["id"], created["id"])
+        self.assertEqual(loaded["definition_json"]["rules"][0]["conditions"][0]["values"], ["alpha"])
+
+        updated = self.service.update_rule_set(
+            int(created["id"]),
+            {
+                "name": "Alpha Signals v2",
+                "description": "capture updated alpha launches",
+                "version": 4,
+                "definition": {
+                    "levels": [{"id": "B", "label": "B", "min_score": 60, "color": "#f59e0b"}],
+                    "rules": [{"id": "rule-author", "level": "B", "conditions": [{"type": "author_in", "values": ["alpha_ops"]}]}],
+                },
+            },
+        )
+        self.assertEqual(updated["id"], created["id"])
+        self.assertEqual(updated["name"], "Alpha Signals v2")
+        self.assertEqual(updated["description"], "capture updated alpha launches")
+        self.assertEqual(updated["version"], 4)
+        self.assertEqual(updated["definition_json"]["rules"][0]["id"], "rule-author")
+        self.assertEqual(updated["definition_json"]["rules"][0]["conditions"][0]["values"], ["alpha_ops"])
+
+        deleted = self.service.delete_rule_set(int(created["id"]))
+        self.assertEqual(deleted["id"], created["id"])
+        with self.assertRaisesRegex(ValueError, "not found"):
+            self.service.get_rule_set(int(created["id"]))
+
+    def test_rule_set_crud_rejects_builtin_and_in_use_rule_sets(self) -> None:
+        created = self.service.create_rule_set(
+            {
+                "name": "Pack Rule",
+                "description": "used by job",
+                "definition": {"levels": [], "rules": []},
+            }
+        )
+        created_id = int(created["id"])
+        self.service.create_job(
+            {
+                "name": "pack-watch",
+                "interval_minutes": 30,
+                "enabled": True,
+                "rule_set_id": created_id,
+                "search_spec": {
+                    "all_keywords": ["alpha"],
+                    "language_mode": "en",
+                    "days_filter": {"mode": "lte", "max": 7},
+                },
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "builtin rule set cannot be updated"):
+            self.service.update_rule_set(1, {"name": "should-fail"})
+        with self.assertRaisesRegex(ValueError, "builtin rule set cannot be deleted"):
+            self.service.delete_rule_set(1)
+        with self.assertRaisesRegex(ValueError, "referenced by existing jobs"):
+            self.service.delete_rule_set(created_id)
+
     def test_list_task_packs_bootstraps_legacy_workspace(self) -> None:
         legacy_root = self.test_dir / "legacy_task_pack_bootstrap"
         workspace_path = legacy_root / "config" / "workspace.json"
@@ -353,6 +430,47 @@ class DesktopServiceTests(unittest.TestCase):
         self.assertTrue(job["search_spec_json"]["metric_filters_explicit"])
         toggled = self.service.toggle_job(int(job["id"]), False)
         self.assertEqual(toggled["enabled"], 0)
+
+    def test_tick_runs_due_jobs_in_id_order_skips_running_jobs_and_counts_failures(self) -> None:
+        job_one = self._create_job("tick-one")
+        job_two = self._create_job("tick-two")
+        job_three = self._create_job("tick-three")
+        job_four = self._create_job("tick-four", enabled=False)
+        job_five = self._create_job("tick-five")
+        self.service.delete_job(int(job_five["id"]))
+
+        workspace = self.service.get_workspace()
+        due_at = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        later_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+        for item in workspace["jobs"]:
+            job_id = int(item["id"])
+            if job_id in {int(job_one["id"]), int(job_two["id"]), int(job_three["id"]), int(job_four["id"]), int(job_five["id"])}:
+                item["next_run_at"] = due_at
+            else:
+                item["next_run_at"] = later_at
+        self.service.update_workspace(workspace)
+
+        called: list[int] = []
+
+        def fake_running_run_for_job(job_id: int):
+            if int(job_id) == int(job_two["id"]):
+                return {"id": 999, "status": "running"}
+            return None
+
+        def fake_run_job_now(job_id: int):
+            called.append(int(job_id))
+            if int(job_id) == int(job_three["id"]):
+                raise RuntimeError("boom")
+            return {"id": int(job_id), "run_id": 1000 + int(job_id)}
+
+        with (
+            patch.object(self.service, "_running_run_for_job", side_effect=fake_running_run_for_job),
+            patch.object(self.service, "run_job_now", side_effect=fake_run_job_now),
+        ):
+            result = self.service.tick()
+
+        self.assertEqual(called, [int(job_one["id"]), int(job_three["id"])])
+        self.assertEqual(result, {"triggered": 1, "failed": 1})
 
     def test_job_group_name_round_trips_and_is_searchable(self) -> None:
         default_rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
@@ -798,7 +916,6 @@ class DesktopServiceTests(unittest.TestCase):
                 "url": "https://x.com/galxe/status/1001",
             }
         ]
-        rule_set_id = self.service.list_rule_sets()["items"][0]["id"]
 
         report = self.service.run_manual(
             {

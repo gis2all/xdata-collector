@@ -94,11 +94,11 @@ def _run_cli_command(
         try:
             stdout, stderr = process.communicate(timeout=0.1)
             break
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
             if (time.monotonic() - start) >= timeout_seconds:
                 process.kill()
                 stdout, stderr = process.communicate()
-                raise subprocess.TimeoutExpired(command, timeout_seconds, output=stdout, stderr=stderr)
+                raise subprocess.TimeoutExpired(command, timeout_seconds, output=stdout, stderr=stderr) from exc
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
