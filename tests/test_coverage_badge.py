@@ -49,6 +49,7 @@ def test_coverage_artifacts_are_configured_outside_repo_root() -> None:
     gitignore = (PROJECT_ROOT / ".gitignore").read_text(encoding="utf-8")
 
     assert "runtime/tmp/coverage/coverage.json" in workflow
+    assert "psutil" in workflow
     assert "publish-coverage-badge" not in ci_workflow
     assert 'data_file = "runtime/tmp/coverage/.coverage"' in pyproject
     assert ".coverage" in gitignore
