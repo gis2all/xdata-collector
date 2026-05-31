@@ -35,8 +35,10 @@ import {
   EMPTY_RUN_PROGRESS,
   buildRunProgress,
 } from "../runProgress";
-import { ImportedTaskPackDraft, readImportedTaskPack } from "../taskPacks";
+import { readImportedTaskPack } from "../taskPacks";
 import { formatUtcPlus8Time } from "../time";
+import { usePagination } from "../hooks/usePagination";
+import { useSplitPaneResize } from "../hooks/useSplitPaneResize";
 import { JobWorkspace } from "./jobs/JobWorkspace";
 import { JobsTable } from "./jobs/JobsTable";
 import {
@@ -54,7 +56,6 @@ import {
   resolveJobColumnWidth,
   writeJobColumnWidths,
   type ActiveJobRun,
-  type BatchActionSpec,
   type JobColumnResizeState,
   type JobColumnWidths,
   type JobStatusFilter,
@@ -66,8 +67,6 @@ import {
   buildJobDraftComparable,
   buildJobPackComparable,
   buildPackPayload,
-  draftSourceLabel,
-  type DraftSourceKind,
   type JobFormState,
 } from "./jobs/jobDraft";
 
@@ -115,23 +114,22 @@ export function JobsPage() {
   const [selectedDeletedById, setSelectedDeletedById] = useState<Record<number, boolean>>({});
   const [currentTaskPack, setCurrentTaskPack] = useState<TaskPackFile | null>(null);
   const [activeRunsByJobId, setActiveRunsByJobId] = useState<Record<number, ActiveJobRun>>({});
-  const [draftSource, setDraftSource] = useState<DraftSourceKind>("blank");
   const [columnWidths, setColumnWidths] = useState<JobColumnWidths>(() => readJobColumnWidths());
-  const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? SPLIT_LAYOUT_BREAKPOINT : window.innerWidth));
-  const [leftPaneWidth, setLeftPaneWidth] = useState<number | null>(null);
-  const [isResizing, setIsResizing] = useState(false);
   const [isResizingColumn, setIsResizingColumn] = useState(false);
   const [resizingColumnId, setResizingColumnId] = useState<JobTableColumnKey | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingFileActionRef = useRef<"draft" | "save_new">("draft");
-  const layoutRef = useRef<HTMLDivElement | null>(null);
-  const dragBoundsRef = useRef<{ left: number; width: number } | null>(null);
   const columnResizeStateRef = useRef<JobColumnResizeState | null>(null);
   const runPollTimerRef = useRef<number | null>(null);
   const activeRunsRef = useRef<Record<number, ActiveJobRun>>({});
+  const { isSplitLayout, isResizing, layoutRef, startResizing } = useSplitPaneResize({
+    breakpoint: SPLIT_LAYOUT_BREAKPOINT,
+    minLeftPaneWidth: MIN_LIST_PANE_WIDTH,
+    minRightPaneWidth: MIN_DRAWER_PANE_WIDTH,
+    resizerWidth: RESIZER_WIDTH,
+  });
 
-  const isSplitLayout = viewportWidth > SPLIT_LAYOUT_BREAKPOINT;
-  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
+  const { totalPages } = usePagination(total, pageSize);
   const selectedOnPage = allMatchingSelected ? jobs.length : jobs.filter((job) => selectedIds.includes(job.id)).length;
   const selectedCount = allMatchingSelected ? total : selectedIds.length;
   const allPageSelected = jobs.length > 0 && selectedOnPage === jobs.length;
@@ -273,22 +271,6 @@ export function JobsPage() {
     return updates.some((update) => update.run && buildRunProgress(update.run).status === "running");
   }
 
-  function applyLeftPaneWidth(nextWidth: number | null) {
-    setLeftPaneWidth(nextWidth);
-    if (!layoutRef.current) return;
-    layoutRef.current.style.gridTemplateColumns = nextWidth === null
-      ? ""
-      : `${nextWidth}px ${RESIZER_WIDTH}px minmax(${MIN_DRAWER_PANE_WIDTH}px, 1fr)`;
-  }
-
-  function updateDraggedWidth(clientX: number | undefined) {
-    const bounds = dragBoundsRef.current;
-    if (!bounds || typeof clientX !== "number" || Number.isNaN(clientX)) return;
-    const maxWidth = Math.max(MIN_LIST_PANE_WIDTH, bounds.width - MIN_DRAWER_PANE_WIDTH - RESIZER_WIDTH);
-    const nextWidth = Math.min(Math.max(clientX - bounds.left, MIN_LIST_PANE_WIDTH), maxWidth);
-    applyLeftPaneWidth(nextWidth);
-  }
-
   async function loadTaskPacks() {
     const data = await listTaskPacks();
     const items = data.items || [];
@@ -371,55 +353,6 @@ export function JobsPage() {
   }, [activeRunsByJobId]);
 
   useEffect(() => {
-    function handleWindowResize() {
-      setViewportWidth(window.innerWidth);
-    }
-
-    window.addEventListener("resize", handleWindowResize);
-
-    function handlePointerMove(event: PointerEvent) {
-      updateDraggedWidth(event.clientX);
-    }
-
-    function handleMouseMove(event: MouseEvent) {
-      updateDraggedWidth(event.clientX);
-    }
-
-    function stopResizing() {
-      dragBoundsRef.current = null;
-      setIsResizing(false);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    }
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", stopResizing);
-    window.addEventListener("pointercancel", stopResizing);
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", stopResizing);
-
-    return () => {
-      window.removeEventListener("resize", handleWindowResize);
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", stopResizing);
-      window.removeEventListener("pointercancel", stopResizing);
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", stopResizing);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    };
-  }, []);
-
-  useEffect(() => {
-    if (isSplitLayout) return;
-    setIsResizing(false);
-    applyLeftPaneWidth(null);
-    dragBoundsRef.current = null;
-    document.body.style.userSelect = "";
-    document.body.style.cursor = "";
-  }, [isSplitLayout]);
-
-  useEffect(() => {
     function updateResizedColumnWidth(clientX: number | undefined) {
       const resizeState = columnResizeStateRef.current;
       if (!resizeState || typeof clientX !== "number" || Number.isNaN(clientX)) {
@@ -495,7 +428,6 @@ export function JobsPage() {
       import_pack_name: taskPacks[0]?.pack_name || "",
     });
     setCurrentTaskPack(null);
-    setDraftSource("blank");
   }
 
   function resetTaskBodyToDraft() {
@@ -522,15 +454,6 @@ export function JobsPage() {
     setAllMatchingSelected(false);
     setSelectionWarning("");
     setSelectedDeletedById({});
-  }
-
-  function startResizing() {
-    if (!isSplitLayout || !layoutRef.current) return;
-    const bounds = layoutRef.current.getBoundingClientRect();
-    dragBoundsRef.current = { left: bounds.left, width: bounds.width };
-    setIsResizing(true);
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
   }
 
   function handleResizerPointerDown(event: React.PointerEvent<HTMLDivElement>) {
@@ -580,7 +503,6 @@ export function JobsPage() {
       setDrawerMode(mode);
       const pack = detail.pack_name ? await getTaskPack(detail.pack_name).catch(() => null) : null;
       setCurrentTaskPack(pack);
-      setDraftSource(pack ? "pack" : "blank");
       setForm({
         name: detail.name,
         group_name: detail.group_name || "",
@@ -691,7 +613,6 @@ export function JobsPage() {
     try {
       const pack = await getTaskPack(form.import_pack_name);
       setCurrentTaskPack(pack);
-      setDraftSource(pack ? "pack" : "blank");
       setForm((prev) => ({
         ...prev,
         search_spec: cloneSearchSpec(pack.search_spec),
@@ -722,7 +643,6 @@ export function JobsPage() {
       const payload = buildPackPayload(form, targetName);
       const saved = mode === "overwrite" && form.pack_name ? await updateTaskPack(form.pack_name, payload) : await createTaskPack({ pack_name: targetName, ...payload });
       setCurrentTaskPack(saved);
-      setDraftSource("pack");
       setForm((prev) => ({ ...prev, pack_name: saved.pack_name, import_pack_name: saved.pack_name, tagsText: joinCommaLinesForTextarea(saved.tags || []) }));
       setActionMessage(mode === "overwrite" ? "已保存到当前任务包" : `已另存为新任务包 ${saved.pack_name}`);
       await loadTaskPacks();
@@ -897,7 +817,7 @@ export function JobsPage() {
   async function handleToggle(job: JobRecord) {
     setError("");
     try {
-      const updated = await toggleJob(job.id, !Boolean(job.enabled));
+      const updated = await toggleJob(job.id, !job.enabled);
       setActionMessage(updated.enabled ? "已启用" : "已停用");
       if (selectedJob?.id === job.id) {
         setSelectedJob(updated);
@@ -914,7 +834,6 @@ export function JobsPage() {
     try {
       const imported = await readImportedTaskPack(file);
       setCurrentTaskPack(null);
-      setDraftSource("file");
       setForm((prev) => ({
         ...prev,
         pack_name: null,
@@ -961,7 +880,6 @@ export function JobsPage() {
       };
       const saved = await createTaskPack({ pack_name: targetName, ...payload });
       setCurrentTaskPack(saved);
-      setDraftSource("pack");
       setForm((prev) => ({
         ...prev,
         pack_name: saved.pack_name,

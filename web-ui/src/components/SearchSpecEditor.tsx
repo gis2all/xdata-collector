@@ -1,5 +1,4 @@
 import { LanguageMode, RangeFilter, RangeMode, SearchSpec } from "../api";
-import { useMemo } from "react";
 
 import { buildQueryPreview, joinCommaLinesForTextarea, splitCommaLines } from "../collector";
 import { useDelimitedInputDraft } from "./useDelimitedInputDraft";

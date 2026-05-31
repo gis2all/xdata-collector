@@ -4,12 +4,12 @@ import {
   dedupeItems,
   deleteItem,
   deleteItems,
+  isAbortError,
   listItems,
   type ItemSortField,
   type ItemTable,
   type ResultsFilterConditionNode,
   type ResultsFilterGroupNode,
-  type ResultsFilterNode,
   type ResultsFilterRelation,
   type ResultItemRecord,
   type SortDirection,
@@ -19,6 +19,7 @@ import { ResultsFilterBuilder } from "./results/ResultsFilterBuilder";
 import { ResultsDataTable } from "./results/ResultsDataTable";
 import { ResultsPageHeader } from "./results/ResultsPageHeader";
 import { ResultsTableManager } from "./results/ResultsTableManager";
+import { usePagination } from "../hooks/usePagination";
 import {
   COLUMN_DEFINITIONS_BY_TABLE,
   DEFAULT_VISIBLE_COLUMNS_BY_TABLE,
@@ -46,7 +47,6 @@ import {
   type ResultsFilterState,
 } from "./results/resultsFilterState";
 
-const RESULTS_COLUMN_WIDTHS_KEY = "results.columnWidths.v1";
 const PAGE_SIZE = 100;
 const RESULTS_SELECT_COLUMN_WIDTH = 48;
 const RESULTS_SPLIT_LAYOUT_BREAKPOINT = 1180;
@@ -113,11 +113,13 @@ export function ResultsPage() {
   const [isResizingColumn, setIsResizingColumn] = useState(false);
   const [resizingColumnId, setResizingColumnId] = useState<string | null>(null);
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? RESULTS_SPLIT_LAYOUT_BREAKPOINT : window.innerWidth));
-  const [leftPaneWidth, setLeftPaneWidth] = useState<number | null>(null);
+  const [, setLeftPaneWidth] = useState<number | null>(null);
   const [isResizingWorkspace, setIsResizingWorkspace] = useState(false);
   const resizeStateRef = useRef<ColumnResizeState | null>(null);
   const workspaceLayoutRef = useRef<HTMLElement | null>(null);
   const workspaceDragBoundsRef = useRef<{ left: number; width: number } | null>(null);
+  const loadAbortRef = useRef<AbortController | null>(null);
+  const loadRequestIdRef = useRef(0);
 
   const currentFilterState = filterStateByTable[table];
   const keywordInput = currentFilterState.keywordInput;
@@ -139,7 +141,7 @@ export function ResultsPage() {
   );
   const sortFieldSet = useMemo(() => new Set(columnDefinitions.map((column) => column.key)), [columnDefinitions]);
   const pageSize = PAGE_SIZE;
-  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
+  const { totalPages } = usePagination(total, pageSize);
   const selectedOnPage = allMatchingSelected ? items.length : items.filter((item) => selectedIds.includes(item.id)).length;
   const selectedCount = allMatchingSelected ? total : selectedIds.length;
   const activeItem = useMemo(() => items.find((item) => item.id === activeRowId) ?? null, [activeRowId, items]);
@@ -410,6 +412,11 @@ export function ResultsPage() {
     const nextSortBy = options?.sortBy ?? sortBy;
     const nextSortDir = options?.sortDir ?? sortDir;
     const shouldClearSelection = Boolean(options?.clearSelection);
+    loadAbortRef.current?.abort();
+    const controller = new AbortController();
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
+    loadAbortRef.current = controller;
     setLoading(true);
     setError("");
     if (!options?.preserveMessage) {
@@ -424,7 +431,11 @@ export function ResultsPage() {
         sort_by: nextSortBy,
         sort_dir: nextSortDir,
         filter_tree: useStructuredFilter ? nextFilterTree : undefined,
+        signal: controller.signal,
       });
+      if (controller.signal.aborted || requestId !== loadRequestIdRef.current) {
+        return;
+      }
       let nextItems = data.items || [];
       let totalItems = data.total || 0;
       let currentPage = data.page || nextPage;
@@ -440,7 +451,11 @@ export function ResultsPage() {
             sort_by: nextSortBy,
             sort_dir: nextSortDir,
             filter_tree: useStructuredFilter ? nextFilterTree : undefined,
+            signal: controller.signal,
           });
+          if (controller.signal.aborted || requestId !== loadRequestIdRef.current) {
+            return;
+          }
           nextItems = fallback.items || [];
           totalItems = fallback.total || 0;
           currentPage = fallback.page || fallbackPage;
@@ -466,6 +481,9 @@ export function ResultsPage() {
         setAllMatchingSelected(false);
       }
     } catch (err) {
+      if (isAbortError(err) || controller.signal.aborted || requestId !== loadRequestIdRef.current) {
+        return;
+      }
       setItems([]);
       setTotal(0);
       setPage(1);
@@ -473,9 +491,20 @@ export function ResultsPage() {
       setAllMatchingSelected(false);
       setError(err instanceof Error ? err.message : "request failed");
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) {
+        setLoading(false);
+        if (loadAbortRef.current === controller) {
+          loadAbortRef.current = null;
+        }
+      }
     }
   }
+
+  useEffect(() => {
+    return () => {
+      loadAbortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     void load({
@@ -487,7 +516,6 @@ export function ResultsPage() {
       sortDir,
     });
     // initial page load only; refresh and sorting are explicit actions
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleSort(field: ItemSortField, direction: SortDirection) {
