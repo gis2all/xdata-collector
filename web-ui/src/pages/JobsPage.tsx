@@ -1,1 +1,5 @@
-export { JobsPage } from "./JobsPageImpl";
+import { JobsPageContent } from "./jobs/JobsPageContent";
+
+export function JobsPage() {
+  return <JobsPageContent />;
+}

@@ -301,8 +301,8 @@ task pack 是手动搜索页和自动任务页的正文真相。每个 pack 当�
 
 ### Results 页面
 
-- `web-ui/src/pages/ResultsPage.tsx` 是 thin re-export。
-- 页面级状态、数据加载、批量操作和布局拼装在 `ResultsPageImpl.tsx`。
+- `web-ui/src/pages/ResultsPage.tsx` 是页面入口薄壳。
+- 页面级状态、数据加载、批量操作和布局拼装在 `pages/results/ResultsPageContent.tsx` 与其子模块。
 - 结果页子模块：
   - `pages/results/resultsTableConfig.tsx`：列定义、列宽、单元格渲染 helper。
   - `pages/results/resultsFilterState.ts`：filter tree 类型辅助、读写、normalize / sanitize。
@@ -320,8 +320,8 @@ task pack 是手动搜索页和自动任务页的正文真相。每个 pack 当�
 
 ### Jobs 页面
 
-- `web-ui/src/pages/JobsPage.tsx` 是 thin re-export。
-- 页面级状态、API orchestration、drawer/open/save/run handlers 在 `JobsPageImpl.tsx`。
+- `web-ui/src/pages/JobsPage.tsx` 是页面入口薄壳。
+- 页面级状态、API orchestration、drawer/open/save/run handlers 在 `pages/jobs/JobsPageContent.tsx` 与其子模块。
 - 自动任务页子模块：
   - `pages/jobs/jobsTableConfig.tsx`：列定义、列宽、选择态、批量操作文案和 job 状态 helper。
   - `pages/jobs/jobDraft.ts`：表单 state、task pack payload、draft compare / import helper。
@@ -446,7 +446,7 @@ task pack 是手动搜索页和自动任务页的正文真相。每个 pack 当�
 
 改自动任务：
 
-1. `web-ui/src/pages/JobsPageImpl.tsx`
+1. `web-ui/src/pages/JobsPage.tsx`
 2. `web-ui/src/pages/jobs/`
 3. `backend/collector_service_parts/jobs.py`
 4. `backend/collector_service_parts/runs.py`
@@ -455,7 +455,7 @@ task pack 是手动搜索页和自动任务页的正文真相。每个 pack 当�
 
 改结果页：
 
-1. `web-ui/src/pages/ResultsPageImpl.tsx`
+1. `web-ui/src/pages/ResultsPage.tsx`
 2. `web-ui/src/pages/results/`
 3. `web-ui/src/api.ts`
 4. `backend/collector_service_parts/items.py`

@@ -1,1 +1,5 @@
-export { ResultsPage } from "./ResultsPageImpl";
+import { ResultsPageContent } from "./results/ResultsPageContent";
+
+export function ResultsPage() {
+  return <ResultsPageContent />;
+}
