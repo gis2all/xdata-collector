@@ -1305,6 +1305,16 @@ it("renders default business columns and utc+8 timestamps", async () => {
     expect(await screen.findByText("已删除记录 #7")).toBeInTheDocument();
   });
 
+  it("does not render the detail rail delete action when no record is active", async () => {
+    listItemsMock.mockResolvedValueOnce(makePage([], 0));
+
+    render(<ResultsPage />);
+
+    const detailRail = await screen.findByTestId("results-detail-rail");
+
+    expect(within(detailRail).queryByRole("button", { name: /^delete-detail-item-/ })).not.toBeInTheDocument();
+  });
+
   it("runs full-table dedupe and shows the summary", async () => {
     listItemsMock
       .mockResolvedValueOnce(makePage([makeRawItem(1)], 1))

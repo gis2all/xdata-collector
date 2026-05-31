@@ -7,6 +7,9 @@ type ResultsWorkspaceProps = {
 };
 
 export function ResultsWorkspace({ state }: ResultsWorkspaceProps) {
+  const activeItem = state.activeItem;
+  const detailDeleteHandler = activeItem ? () => void state.handleDeleteOne(activeItem) : undefined;
+
   return (
     <section
       ref={state.workspaceLayoutRef}
@@ -69,11 +72,11 @@ export function ResultsWorkspace({ state }: ResultsWorkspaceProps) {
 
       <aside className="results-detail-rail workbench-layer" data-testid="results-detail-rail">
         <ResultsDetailRail
-          item={state.activeItem}
+          item={activeItem}
           table={state.table}
           tableLabel={state.tableLabel}
           total={state.total}
-          onDelete={state.activeItem ? () => void state.handleDeleteOne(state.activeItem) : undefined}
+          onDelete={detailDeleteHandler}
           deleteDisabled={state.loading}
         />
       </aside>

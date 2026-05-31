@@ -43,6 +43,12 @@
 - macOS 本机运行
 - Docker 运行
 
+文档契约固定字串：
+
+- Windows / Linux / macOS
+- `python doctor.py`
+- `DOCKER_PROXY_URL`
+
 默认端口：
 
 - API：`127.0.0.1:8765`
