@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode, RefObject } from "react";
 
 import {
   dedupeItems,
@@ -84,88 +83,6 @@ const TABLE_LABELS: Record<ItemTable, string> = {
   raw: "原始结果",
 };
 
-type ResultsPageState = {
-  table: ItemTable;
-  tableLabel: string;
-  activeKeywordLabel: string;
-  keywordInput: string;
-  appliedKeyword: string;
-  draftFilterTree: ResultsFilterGroupNode;
-  appliedFilterTree: ResultsFilterGroupNode;
-  currentFilterState: ResultsFilterState;
-  hasAdvancedFilter: boolean;
-  fieldMenuOpen: boolean;
-  tableName: string;
-  visibleColumns: ItemSortField[];
-  columnDefinitions: typeof COLUMN_DEFINITIONS_BY_TABLE.raw;
-  visibleColumnDefinitions: ColumnDefinition[];
-  currentColumnWidths: ColumnWidthsByTable[ItemTable] | undefined;
-  resolvedVisibleColumnDefinitions: Array<ColumnDefinition & { currentWidth: number }>;
-  sortFieldSet: Set<ItemSortField>;
-  items: ResultItemRecord[];
-  total: number;
-  page: number;
-  totalPages: number;
-  selectedIds: number[];
-  allMatchingSelected: boolean;
-  selectedCount: number;
-  selectedOnPage: number;
-  allPageSelected: boolean;
-  showSelectAllMatching: boolean;
-  activeRowId: number | null;
-  activeItem: ResultItemRecord | null;
-  sortBy: ItemSortField;
-  sortDir: SortDirection;
-  sortDirectionLabel: string;
-  pageSize: number;
-  loading: boolean;
-  error: string;
-  message: string;
-  visibleColumnCount: number;
-  tableMinWidth: number;
-  isResizingColumn: boolean;
-  resizingColumnId: string | null;
-  isSplitLayout: boolean;
-  isResizingWorkspace: boolean;
-  selectedItemCountLabel: string;
-  dedupeConfirmText: string;
-  batchDeleteConfirm: string;
-  currentFilterStateSummaryLabel: string;
-  currentTableSummaryLabel: string;
-  currentColumnWidthCount: number;
-  tableNameLabel: string;
-  TEXT: typeof TEXT;
-  fieldMenu: ReactNode;
-  handleKeywordInputChange: (value: string) => void;
-  handleToggleAdvancedFilters: () => void;
-  addConditionToGroup: (path: number[]) => void;
-  addGroupToGroup: (path: number[]) => void;
-  removeDraftNode: (path: number[]) => void;
-  updateGroupRelation: (path: number[], relation: ResultsFilterRelation) => void;
-  updateCondition: (path: number[], updater: (current: ResultsFilterConditionNode) => ResultsFilterConditionNode) => void;
-  handleSort: (field: ItemSortField, direction: SortDirection) => Promise<void>;
-  handleRefresh: () => Promise<void>;
-  handleResetFilters: () => Promise<void>;
-  handleTableSwitch: (nextTable: ItemTable) => Promise<void>;
-  handleDeleteOne: (item: ResultItemRecord) => Promise<void>;
-  handleBatchDelete: () => Promise<void>;
-  handleDedupe: () => Promise<void>;
-  handleSelectAllMatching: () => void;
-  handleClearSelection: () => void;
-  toggleSelected: (id: number) => void;
-  toggleSelectAll: () => void;
-  toggleColumnVisibility: (key: ItemSortField) => void;
-  handleRestoreDefaultColumns: () => void;
-  startColumnResize: (
-    leftColumn: ColumnDefinition & { currentWidth: number },
-    rightColumn: (ColumnDefinition & { currentWidth: number }) | undefined,
-    clientX: number | undefined,
-  ) => void;
-  handleWorkspaceResizerPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
-  handleWorkspaceResizerMouseDown: (event: ReactMouseEvent<HTMLDivElement>) => void;
-  workspaceLayoutRef: RefObject<HTMLElement | null>;
-};
-
 export function useResultsPageState() {
   const [table, setTable] = useState<ItemTable>("raw");
   const [items, setItems] = useState<ResultItemRecord[]>([]);
@@ -221,7 +138,6 @@ export function useResultsPageState() {
   const selectedCount = allMatchingSelected ? total : selectedIds.length;
   const activeItem = useMemo(() => items.find((item) => item.id === activeRowId) ?? null, [activeRowId, items]);
   const allSelectedOnPage = items.length > 0 && selectedOnPage === items.length;
-  const allPageSelected = allSelectedOnPage;
   const showSelectAllMatching = !hasAdvancedFilter && !allMatchingSelected && allSelectedOnPage && total > items.length;
   const sortDirectionLabel = sortDir === "asc" ? "升序" : "降序";
   const tableMinWidth = Math.max(

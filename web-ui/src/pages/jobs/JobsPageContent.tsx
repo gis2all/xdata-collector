@@ -247,6 +247,10 @@ export function JobsPageContent() {
   }, [columnWidths]);
 
   useEffect(() => {
+    refreshJobsRef.current = () => refreshJobs({ reloadSelected: true, silent: true });
+  });
+
+  useEffect(() => {
     function updateResizedColumnWidth(clientX: number | undefined) {
       const resizeState = columnResizeStateRef.current;
       if (!resizeState || typeof clientX !== "number" || Number.isNaN(clientX)) {
@@ -431,7 +435,6 @@ export function JobsPageContent() {
       }
     }
   }
-  refreshJobsRef.current = () => refreshJobs({ reloadSelected: true, silent: true });
 
   async function handleImportPack() {
     if (!form.import_pack_name) return;
