@@ -449,12 +449,20 @@ class JobMixin:
             and (_parse_item_created_at(item.get("next_run_at")) or datetime.max.replace(tzinfo=timezone.utc)) <= now
         ]
         jobs.sort(key=lambda item: int(item.get("id") or 0))
+        failed_items: list[dict[str, Any]] = []
         for job in jobs:
             if self._running_run_for_job(int(job["id"])) is not None:
                 continue
             try:
                 self.run_job_now(int(job["id"]))
                 triggered += 1
-            except Exception:
+            except Exception as exc:  # noqa: BLE001
                 failed += 1
-        return {"triggered": triggered, "failed": failed}
+                failed_items.append(
+                    {
+                        "id": int(job["id"]),
+                        "name": str(job.get("name") or ""),
+                        "error": str(exc),
+                    }
+                )
+        return {"triggered": triggered, "failed": failed, "failed_items": failed_items}

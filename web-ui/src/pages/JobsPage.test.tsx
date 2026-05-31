@@ -218,6 +218,18 @@ describe("JobsPage", () => {
     expect(screen.getByTestId("jobs-resizer")).toBeInTheDocument();
   });
 
+  it("does not render question-mark placeholder text in loading or empty states", async () => {
+    listJobsMock.mockResolvedValueOnce({ page: 1, page_size: 10, total: 0, items: [] } as any);
+
+    render(<JobsPage />);
+
+    await waitFor(() => {
+      expect(listJobsMock).toHaveBeenCalled();
+    });
+
+    expect(document.body.textContent).not.toMatch(/\?{4,}/);
+  });
+
   it("updates the split width in real time while dragging the resizer", async () => {
     Object.defineProperty(window, "innerWidth", { value: 1440, writable: true });
 
@@ -809,7 +821,6 @@ describe("JobsPage", () => {
 
     const actionGroup = screen.getByTestId("jobs-primary-actions");
     const runButton = within(actionGroup).getByRole("button", { name: "立即运行" });
-    const toggleButton = within(actionGroup).getByRole("button", { name: "停用任务" });
 
     expect(runButton).not.toBeDisabled();
 

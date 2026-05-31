@@ -73,7 +73,9 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
 
     const editor = await screen.findByLabelText("workspace-json");
-    expect((editor as HTMLTextAreaElement).value).toContain('"version": 2');
+    await waitFor(() => {
+      expect((editor as HTMLTextAreaElement).value).toContain('"version": 2');
+    });
 
     fireEvent.change(editor, {
       target: {

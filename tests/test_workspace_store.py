@@ -1,4 +1,5 @@
 import json
+import os
 import threading
 import unittest
 from pathlib import Path
@@ -225,6 +226,52 @@ class WorkspaceStoreTests(unittest.TestCase):
 
             self.assertEqual(workspace["jobs"][0]["group_name"], "Alpha Ops")
             self.assertIsNone(workspace["jobs"][1]["group_name"])
+
+    def test_workspace_cache_detects_same_mtime_different_size(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config_dir = root / "config"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            workspace_path = config_dir / "workspace.json"
+
+            first = {
+                "version": 2,
+                "meta": {"updated_at": "2026-05-30T00:00:00+00:00", "next_job_id": 2},
+                "environment": {"db_path": "data/app.db", "runtime_dir": "runtime", "env_file": ".env"},
+                "jobs": [
+                    {
+                        "id": 1,
+                        "name": "alpha",
+                        "enabled": 1,
+                        "interval_minutes": 30,
+                        "pack_name": "alpha",
+                        "pack_path": "config/packs/alpha.json",
+                        "next_run_at": None,
+                        "created_at": "2026-05-30T00:00:00+00:00",
+                        "updated_at": "2026-05-30T00:00:00+00:00",
+                        "deleted_at": None,
+                    }
+                ],
+            }
+            second = {
+                **first,
+                "jobs": [
+                    {
+                        **first["jobs"][0],
+                        "name": "alpha-with-longer-name",
+                    }
+                ],
+            }
+            workspace_path.write_text(json.dumps(first, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            original_stat = workspace_path.stat()
+
+            store = WorkspaceStore(workspace_path=workspace_path, legacy_config_dir=config_dir, legacy_db_path=root / "data" / "app.db")
+            self.assertEqual(store.get_workspace()["jobs"][0]["name"], "alpha")
+
+            workspace_path.write_text(json.dumps(second, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            os.utime(workspace_path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+
+            self.assertEqual(store.get_workspace()["jobs"][0]["name"], "alpha-with-longer-name")
 
     def test_task_pack_store_creates_updates_and_reloads_pack_files(self) -> None:
         with TemporaryDirectory() as tmp:

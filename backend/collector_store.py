@@ -40,6 +40,7 @@ def initialize_database(db_path: str | Path) -> None:
         try:
             init_schema(conn)
             ensure_schema_columns(conn)
+            ensure_schema_indexes(conn)
             conn.commit()
         finally:
             conn.close()
@@ -57,6 +58,7 @@ def connect(db_path: str | Path) -> Iterator[sqlite3.Connection]:
         if _is_memory_database(db_path):
             init_schema(conn)
             ensure_schema_columns(conn)
+            ensure_schema_indexes(conn)
         yield conn
         conn.commit()
     finally:
@@ -108,6 +110,23 @@ def init_schema(conn: sqlite3.Connection) -> None:
             author_name TEXT,
             state TEXT NOT NULL DEFAULT 'new'
         );
+        """
+    )
+
+
+def ensure_schema_indexes(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE INDEX IF NOT EXISTS idx_x_items_raw_run_id ON x_items_raw(run_id);
+        CREATE INDEX IF NOT EXISTS idx_x_items_raw_fetched_at ON x_items_raw(fetched_at);
+        CREATE INDEX IF NOT EXISTS idx_x_items_raw_tweet_id ON x_items_raw(tweet_id);
+        CREATE INDEX IF NOT EXISTS idx_x_items_raw_author ON x_items_raw(author);
+
+        CREATE INDEX IF NOT EXISTS idx_x_items_curated_run_id ON x_items_curated(run_id);
+        CREATE INDEX IF NOT EXISTS idx_x_items_curated_level_score ON x_items_curated(level, score);
+        CREATE INDEX IF NOT EXISTS idx_x_items_curated_fetched_at ON x_items_curated(fetched_at);
+        CREATE INDEX IF NOT EXISTS idx_x_items_curated_dedupe_key ON x_items_curated(dedupe_key);
+        CREATE INDEX IF NOT EXISTS idx_x_items_curated_rule_set_id ON x_items_curated(rule_set_id);
         """
     )
 

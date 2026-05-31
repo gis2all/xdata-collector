@@ -515,40 +515,63 @@ export type DedupeItemsResponse = {
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8765";
 
-async function req<T>(path: string, init?: RequestInit, signal?: AbortSignal): Promise<T> {
+export type ApiRequestOptions = {
+  signal?: AbortSignal;
+};
+
+export function isAbortError(err: unknown) {
+  return err instanceof DOMException && err.name === "AbortError";
+}
+
+function apiErrorMessage(payload: unknown, fallback: string) {
+  if (!payload || typeof payload !== "object" || !("error" in payload)) {
+    return fallback;
+  }
+  const error = (payload as { error?: unknown }).error;
+  if (typeof error === "string") {
+    return error;
+  }
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message?: unknown }).message || fallback);
+  }
+  return fallback;
+}
+
+async function req<T>(path: string, init?: RequestInit, options?: ApiRequestOptions): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...init,
-    ...(signal ? { signal } : {}),
+    ...(options?.signal ? { signal: options.signal } : {}),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "request failed" }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    throw new Error(apiErrorMessage(err, `HTTP ${res.status}`));
   }
   return res.json();
 }
 
-export function health() {
-  return req<HealthSnapshot>("/health");
+export function health(options?: ApiRequestOptions) {
+  return req<HealthSnapshot>("/health", undefined, options);
 }
 
-export async function healthSnapshot() {
+export async function healthSnapshot(options?: ApiRequestOptions) {
   const res = await fetch(`${API_BASE}/health/snapshot`, {
     headers: {
       "Content-Type": "application/json",
     },
+    ...(options?.signal ? { signal: options.signal } : {}),
   });
   if (res.status === 404) return null;
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "request failed" }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    throw new Error(apiErrorMessage(err, `HTTP ${res.status}`));
   }
   return res.json() as Promise<HealthSnapshot>;
 }
 
 
-export function getWorkspace() {
-  return req<WorkspaceConfig>("/workspace");
+export function getWorkspace(options?: ApiRequestOptions) {
+  return req<WorkspaceConfig>("/workspace", undefined, options);
 }
 
 export function updateWorkspace(payload: WorkspaceConfig) {
@@ -565,16 +588,16 @@ export function importWorkspace(payload: WorkspaceConfig) {
   });
 }
 
-export function exportWorkspace() {
-  return req<WorkspaceConfig>("/workspace/export");
+export function exportWorkspace(options?: ApiRequestOptions) {
+  return req<WorkspaceConfig>("/workspace/export", undefined, options);
 }
 
-export function listTaskPacks() {
-  return req<{ items: TaskPackSummary[] }>("/task-packs");
+export function listTaskPacks(options?: ApiRequestOptions) {
+  return req<{ items: TaskPackSummary[] }>("/task-packs", undefined, options);
 }
 
-export function getTaskPack(packName: string) {
-  return req<TaskPackFile>(`/task-packs/${encodeURIComponent(packName)}`);
+export function getTaskPack(packName: string, options?: ApiRequestOptions) {
+  return req<TaskPackFile>(`/task-packs/${encodeURIComponent(packName)}`, undefined, options);
 }
 
 export function createTaskPack(payload: {
@@ -612,17 +635,17 @@ export function deleteTaskPack(packName: string) {
   });
 }
 
-export function listJobs(params: { page?: number; page_size?: number; query?: string; status?: string }) {
+export function listJobs(params: { page?: number; page_size?: number; query?: string; status?: string }, options?: ApiRequestOptions) {
   const q = new URLSearchParams();
   if (params.page) q.set("page", String(params.page));
   if (params.page_size) q.set("page_size", String(params.page_size));
   if (params.query) q.set("query", params.query);
   if (params.status) q.set("status", params.status);
-  return req<{ total: number; page: number; page_size: number; items: JobRecord[] }>(`/jobs?${q.toString()}`);
+  return req<{ total: number; page: number; page_size: number; items: JobRecord[] }>(`/jobs?${q.toString()}`, undefined, options);
 }
 
-export function getJob(id: number) {
-  return req<JobRecord>(`/jobs/${id}`);
+export function getJob(id: number, options?: ApiRequestOptions) {
+  return req<JobRecord>(`/jobs/${id}`, undefined, options);
 }
 
 export function runManualStart(payload: {
@@ -637,23 +660,23 @@ export function runManualStart(payload: {
   });
 }
 
-export function listRuns(params: { page?: number; page_size?: number }) {
+export function listRuns(params: { page?: number; page_size?: number }, options?: ApiRequestOptions) {
   const q = new URLSearchParams();
   if (params.page) q.set("page", String(params.page));
   if (params.page_size) q.set("page_size", String(params.page_size));
-  return req<{ total: number; page: number; page_size: number; items: RunRecord[] }>(`/runs?${q.toString()}`);
+  return req<{ total: number; page: number; page_size: number; items: RunRecord[] }>(`/runs?${q.toString()}`, undefined, options);
 }
 
-export function getRun(id: number) {
-  return req<RunRecord>(`/runs/${id}`);
+export function getRun(id: number, options?: ApiRequestOptions) {
+  return req<RunRecord>(`/runs/${id}`, undefined, options);
 }
 
 export function cancelRun(id: number) {
   return req<RunCancelResult>(`/runs/${id}/cancel`, { method: "POST", body: "{}" });
 }
 
-export function getRuntimeLogs() {
-  return req<{ items: RuntimeLogFile[] }>("/logs/runtime");
+export function getRuntimeLogs(options?: ApiRequestOptions) {
+  return req<{ items: RuntimeLogFile[] }>("/logs/runtime", undefined, options);
 }
 
 export function listItems(params: {
@@ -665,7 +688,9 @@ export function listItems(params: {
   sort_by?: ItemSortField;
   sort_dir?: SortDirection;
   filter_tree?: ResultsFilterGroupNode;
-}) {
+  signal?: AbortSignal;
+}, options?: ApiRequestOptions) {
+  const requestOptions = options ?? (params.signal ? { signal: params.signal } : undefined);
   const q = new URLSearchParams();
   q.set("table", params.table ?? "curated");
   if (params.page) q.set("page", String(params.page));
@@ -687,9 +712,9 @@ export function listItems(params: {
         sort_dir: params.sort_dir,
         filter_tree: params.filter_tree,
       }),
-    });
+    }, requestOptions);
   }
-  return req<{ total: number; page: number; page_size: number; items: ResultItemRecord[] }>(`/items?${q.toString()}`);
+  return req<{ total: number; page: number; page_size: number; items: ResultItemRecord[] }>(`/items?${q.toString()}`, undefined, requestOptions);
 }
 
 export function deleteItem(id: number, table: ItemTable = "curated") {

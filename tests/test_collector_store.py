@@ -27,6 +27,29 @@ class CollectorStoreTests(unittest.TestCase):
             self.assertNotIn("rule_sets", tables)
             self.assertNotIn("runtime_health_snapshot", tables)
 
+    def test_connect_creates_query_indexes_for_result_tables(self) -> None:
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "collector.db"
+            with connect(db_path) as conn:
+                indexes = {
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%'"
+                    ).fetchall()
+                }
+
+        self.assertTrue(
+            {
+                "idx_x_items_raw_run_id",
+                "idx_x_items_raw_fetched_at",
+                "idx_x_items_raw_tweet_id",
+                "idx_x_items_curated_run_id",
+                "idx_x_items_curated_level_score",
+                "idx_x_items_curated_fetched_at",
+                "idx_x_items_curated_dedupe_key",
+            }.issubset(indexes)
+        )
+
     def test_ensure_schema_columns_upgrades_legacy_result_tables(self) -> None:
         with TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "legacy.db"

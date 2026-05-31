@@ -4,7 +4,7 @@
 
 ## 当前内容
 
-- `api.py`：本地 HTTP API 主入口
+- `api.py`：Flask 版本地 HTTP API 主入口
 - `scheduler.py`：后台调度器主入口
 - `static_web_server.py`：构建后前端静态文件服务
 - `bootstrap.py`：跨平台本机依赖准备脚本

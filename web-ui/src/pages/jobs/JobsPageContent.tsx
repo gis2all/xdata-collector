@@ -12,7 +12,6 @@ import {
   deleteTaskPack,
   deleteJob,
   getJob,
-  getRun,
   getTaskPack,
   listJobs,
   listTaskPacks,
@@ -22,7 +21,7 @@ import {
   toggleJob,
   updateJob,
   updateTaskPack,
-} from "../api";
+} from "../../api";
 import {
   DEFAULT_RULE_SET_DEFINITION,
   DEFAULT_SEARCH_SPEC,
@@ -30,15 +29,13 @@ import {
   cloneSearchSpec,
   joinCommaLinesForTextarea,
   splitCommaLines,
-} from "../collector";
-import {
-  EMPTY_RUN_PROGRESS,
-  buildRunProgress,
-} from "../runProgress";
-import { ImportedTaskPackDraft, readImportedTaskPack } from "../taskPacks";
-import { formatUtcPlus8Time } from "../time";
-import { JobWorkspace } from "./jobs/JobWorkspace";
-import { JobsTable } from "./jobs/JobsTable";
+} from "../../collector";
+import { readImportedTaskPack } from "../../taskPacks";
+import { formatUtcPlus8Time } from "../../time";
+import { usePagination } from "../../hooks/usePagination";
+import { useSplitPaneResize } from "../../hooks/useSplitPaneResize";
+import { JobWorkspace } from "./JobWorkspace";
+import { JobsListPane } from "./JobsListPane";
 import {
   ACTIVE_BATCH_ACTIONS,
   DELETED_BATCH_ACTIONS,
@@ -46,30 +43,26 @@ import {
   JOB_TABLE_COLUMNS,
   batchActionMessage,
   batchConfirmText,
-  buildActiveJobRunFromJob,
   getJobColumnMinWidth,
-  jobSelectionState,
   jobState,
   readJobColumnWidths,
   resolveJobColumnWidth,
   writeJobColumnWidths,
-  type ActiveJobRun,
-  type BatchActionSpec,
   type JobColumnResizeState,
   type JobColumnWidths,
   type JobStatusFilter,
   type JobTableColumnKey,
   type JobTableColumnDefinition,
-} from "./jobs/jobsTableConfig";
+} from "./jobsTableConfig";
 import {
   DEFAULT_FORM,
   buildJobDraftComparable,
   buildJobPackComparable,
   buildPackPayload,
-  draftSourceLabel,
-  type DraftSourceKind,
   type JobFormState,
-} from "./jobs/jobDraft";
+} from "./jobDraft";
+import { useJobsRunState } from "./useJobsRunState";
+import { useJobsSelection } from "./useJobsSelection";
 
 type DrawerMode = "create" | "view" | "edit";
 type RefreshOptions = {
@@ -81,15 +74,11 @@ type RefreshOptions = {
   silent?: boolean;
 };
 
-function isNotFoundError(err: unknown) {
-  return err instanceof Error && err.message.trim().toLowerCase() === "not found";
-}
-
 const MIN_LIST_PANE_WIDTH = 320;
 const MIN_DRAWER_PANE_WIDTH = 320;
 const RESIZER_WIDTH = 20;
 const SPLIT_LAYOUT_BREAKPOINT = 1160;
-export function JobsPage() {
+export function JobsPageContent() {
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [taskPacks, setTaskPacks] = useState<TaskPackSummary[]>([]);
   const [total, setTotal] = useState(0);
@@ -109,37 +98,45 @@ export function JobsPage() {
   const [deletingPack, setDeletingPack] = useState(false);
   const [actionMessage, setActionMessage] = useState("");
   const [savingPack, setSavingPack] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [allMatchingSelected, setAllMatchingSelected] = useState(false);
-  const [selectionWarning, setSelectionWarning] = useState("");
-  const [selectedDeletedById, setSelectedDeletedById] = useState<Record<number, boolean>>({});
   const [currentTaskPack, setCurrentTaskPack] = useState<TaskPackFile | null>(null);
-  const [activeRunsByJobId, setActiveRunsByJobId] = useState<Record<number, ActiveJobRun>>({});
-  const [draftSource, setDraftSource] = useState<DraftSourceKind>("blank");
   const [columnWidths, setColumnWidths] = useState<JobColumnWidths>(() => readJobColumnWidths());
-  const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? SPLIT_LAYOUT_BREAKPOINT : window.innerWidth));
-  const [leftPaneWidth, setLeftPaneWidth] = useState<number | null>(null);
-  const [isResizing, setIsResizing] = useState(false);
   const [isResizingColumn, setIsResizingColumn] = useState(false);
   const [resizingColumnId, setResizingColumnId] = useState<JobTableColumnKey | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pendingFileActionRef = useRef<"draft" | "save_new">("draft");
-  const layoutRef = useRef<HTMLDivElement | null>(null);
-  const dragBoundsRef = useRef<{ left: number; width: number } | null>(null);
   const columnResizeStateRef = useRef<JobColumnResizeState | null>(null);
-  const runPollTimerRef = useRef<number | null>(null);
-  const activeRunsRef = useRef<Record<number, ActiveJobRun>>({});
+  const refreshJobsRef = useRef<() => Promise<void>>(async () => undefined);
+  const { isSplitLayout, isResizing, layoutRef, startResizing } = useSplitPaneResize({
+    breakpoint: SPLIT_LAYOUT_BREAKPOINT,
+    minLeftPaneWidth: MIN_LIST_PANE_WIDTH,
+    minRightPaneWidth: MIN_DRAWER_PANE_WIDTH,
+    resizerWidth: RESIZER_WIDTH,
+  });
 
-  const isSplitLayout = viewportWidth > SPLIT_LAYOUT_BREAKPOINT;
-  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
-  const selectedOnPage = allMatchingSelected ? jobs.length : jobs.filter((job) => selectedIds.includes(job.id)).length;
-  const selectedCount = allMatchingSelected ? total : selectedIds.length;
-  const allPageSelected = jobs.length > 0 && selectedOnPage === jobs.length;
-  const selectionState = useMemo(
-    () => jobSelectionState(status, allMatchingSelected, selectedIds, selectedDeletedById),
-    [status, allMatchingSelected, selectedIds, selectedDeletedById],
-  );
-  const showSelectAllMatching = !allMatchingSelected && jobs.length > 0 && selectedOnPage === jobs.length && total > jobs.length;
+  const { totalPages } = usePagination(total, pageSize);
+  const {
+    selectedIds,
+    allMatchingSelected,
+    selectionWarning,
+    selectedCount,
+    allPageSelected,
+    showSelectAllMatching,
+    clearSelection,
+    toggleRowSelection,
+    togglePageSelection,
+    selectAllMatchingJobs,
+    syncSelectedDeletedFromJobs,
+    isBatchActionEnabled,
+  } = useJobsSelection({ jobs, total, status });
+  const {
+    activeRunsByJobId,
+    mergeActiveRunsFromJobs,
+    pollActiveRunsOnce,
+    markJobRunStarted,
+  } = useJobsRunState({
+    onRefreshJobs: () => refreshJobsRef.current(),
+    onError: (message) => setError(message),
+  });
   const batchActionSpecs = useMemo(() => {
     if (status === "active") return ACTIVE_BATCH_ACTIONS;
     if (status === "deleted") return DELETED_BATCH_ACTIONS;
@@ -199,96 +196,6 @@ export function JobsPage() {
   );
   const selectedJobActiveRun = selectedJob ? activeRunsByJobId[selectedJob.id] ?? null : null;
 
-  function clearRunPollTimer() {
-    if (runPollTimerRef.current !== null) {
-      window.clearTimeout(runPollTimerRef.current);
-      runPollTimerRef.current = null;
-    }
-  }
-
-  function mergeActiveRunsFromJobs(items: JobRecord[]) {
-    setActiveRunsByJobId((prev) => {
-      const next = { ...prev };
-      for (const job of items) {
-        const current = next[job.id];
-        const snapshot = buildActiveJobRunFromJob(job);
-        if (!current && snapshot) {
-          next[job.id] = snapshot;
-          continue;
-        }
-        if (!current) continue;
-        if (current.progress.status === "running") continue;
-        if (job.last_run_id && current.run.id === job.last_run_id) {
-          delete next[job.id];
-          continue;
-        }
-        if (job.last_run_id && current.run.id !== job.last_run_id) {
-          delete next[job.id];
-        }
-      }
-      activeRunsRef.current = next;
-      return next;
-    });
-  }
-
-  async function pollActiveRunsOnce() {
-    const runningEntries = Object.entries(activeRunsRef.current).filter(([, entry]) => entry.progress.status === "running");
-    if (!runningEntries.length) {
-      clearRunPollTimer();
-      return false;
-    }
-
-    const updates = await Promise.all(
-      runningEntries.map(async ([jobId, entry]) => {
-        try {
-          const run = await getRun(entry.run.id);
-          return { jobId: Number(jobId), run, stale: false as const, error: null };
-        } catch (err) {
-          if (isNotFoundError(err)) {
-            return { jobId: Number(jobId), run: null, stale: true as const, error: null };
-          }
-          return { jobId: Number(jobId), run: null, stale: false as const, error: err };
-        }
-      }),
-    );
-    const firstError = updates.find((update) => update.error)?.error;
-    if (firstError) {
-      throw firstError;
-    }
-
-    setActiveRunsByJobId((prev) => {
-      const next = { ...prev };
-      for (const update of updates) {
-        if (update.stale || !update.run) {
-          delete next[update.jobId];
-          continue;
-        }
-        const progress = buildRunProgress(update.run);
-        next[update.jobId] = { run: update.run, progress };
-      }
-      activeRunsRef.current = next;
-      return next;
-    });
-    void refreshJobs({ reloadSelected: true, silent: true });
-    return updates.some((update) => update.run && buildRunProgress(update.run).status === "running");
-  }
-
-  function applyLeftPaneWidth(nextWidth: number | null) {
-    setLeftPaneWidth(nextWidth);
-    if (!layoutRef.current) return;
-    layoutRef.current.style.gridTemplateColumns = nextWidth === null
-      ? ""
-      : `${nextWidth}px ${RESIZER_WIDTH}px minmax(${MIN_DRAWER_PANE_WIDTH}px, 1fr)`;
-  }
-
-  function updateDraggedWidth(clientX: number | undefined) {
-    const bounds = dragBoundsRef.current;
-    if (!bounds || typeof clientX !== "number" || Number.isNaN(clientX)) return;
-    const maxWidth = Math.max(MIN_LIST_PANE_WIDTH, bounds.width - MIN_DRAWER_PANE_WIDTH - RESIZER_WIDTH);
-    const nextWidth = Math.min(Math.max(clientX - bounds.left, MIN_LIST_PANE_WIDTH), maxWidth);
-    applyLeftPaneWidth(nextWidth);
-  }
-
   async function loadTaskPacks() {
     const data = await listTaskPacks();
     const items = data.items || [];
@@ -318,16 +225,7 @@ export function JobsPage() {
       setTotal(totalItems);
       setPage(currentPage);
       mergeActiveRunsFromJobs(items);
-      setSelectedDeletedById((prev) => {
-        if (!selectedIds.length) return prev;
-        const next = { ...prev };
-        for (const job of items) {
-          if (selectedIds.includes(job.id)) {
-            next[job.id] = Boolean(job.deleted_at);
-          }
-        }
-        return next;
-      });
+      syncSelectedDeletedFromJobs(items);
     } catch (err) {
       setError(err instanceof Error ? err.message : "加载任务失败");
       setJobs([]);
@@ -345,79 +243,12 @@ export function JobsPage() {
   }, []);
 
   useEffect(() => {
-    activeRunsRef.current = activeRunsByJobId;
-  }, [activeRunsByJobId]);
-
-  useEffect(() => {
     writeJobColumnWidths(columnWidths);
   }, [columnWidths]);
 
   useEffect(() => {
-    if (!Object.values(activeRunsByJobId).some((entry) => entry.progress.status === "running")) {
-      clearRunPollTimer();
-      return;
-    }
-
-    clearRunPollTimer();
-    runPollTimerRef.current = window.setTimeout(() => {
-      void pollActiveRunsOnce().catch((err) => {
-        setError(err instanceof Error ? err.message : "获取自动任务进度失败");
-      });
-    }, 300);
-
-    return () => {
-      clearRunPollTimer();
-    };
-  }, [activeRunsByJobId]);
-
-  useEffect(() => {
-    function handleWindowResize() {
-      setViewportWidth(window.innerWidth);
-    }
-
-    window.addEventListener("resize", handleWindowResize);
-
-    function handlePointerMove(event: PointerEvent) {
-      updateDraggedWidth(event.clientX);
-    }
-
-    function handleMouseMove(event: MouseEvent) {
-      updateDraggedWidth(event.clientX);
-    }
-
-    function stopResizing() {
-      dragBoundsRef.current = null;
-      setIsResizing(false);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    }
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", stopResizing);
-    window.addEventListener("pointercancel", stopResizing);
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", stopResizing);
-
-    return () => {
-      window.removeEventListener("resize", handleWindowResize);
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", stopResizing);
-      window.removeEventListener("pointercancel", stopResizing);
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", stopResizing);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    };
-  }, []);
-
-  useEffect(() => {
-    if (isSplitLayout) return;
-    setIsResizing(false);
-    applyLeftPaneWidth(null);
-    dragBoundsRef.current = null;
-    document.body.style.userSelect = "";
-    document.body.style.cursor = "";
-  }, [isSplitLayout]);
+    refreshJobsRef.current = () => refreshJobs({ reloadSelected: true, silent: true });
+  });
 
   useEffect(() => {
     function updateResizedColumnWidth(clientX: number | undefined) {
@@ -477,14 +308,6 @@ export function JobsPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (selectionState === "mixed") {
-      setSelectionWarning("当前选择同时包含已删除和未删除任务，请先按状态筛选或重新勾选。");
-      return;
-    }
-    setSelectionWarning("");
-  }, [selectionState]);
-
   function resetForm() {
     setForm({
       ...DEFAULT_FORM,
@@ -495,7 +318,6 @@ export function JobsPage() {
       import_pack_name: taskPacks[0]?.pack_name || "",
     });
     setCurrentTaskPack(null);
-    setDraftSource("blank");
   }
 
   function resetTaskBodyToDraft() {
@@ -515,22 +337,6 @@ export function JobsPage() {
       },
     }));
     setCurrentTaskPack(null);
-  }
-
-  function clearSelection() {
-    setSelectedIds([]);
-    setAllMatchingSelected(false);
-    setSelectionWarning("");
-    setSelectedDeletedById({});
-  }
-
-  function startResizing() {
-    if (!isSplitLayout || !layoutRef.current) return;
-    const bounds = layoutRef.current.getBoundingClientRect();
-    dragBoundsRef.current = { left: bounds.left, width: bounds.width };
-    setIsResizing(true);
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
   }
 
   function handleResizerPointerDown(event: React.PointerEvent<HTMLDivElement>) {
@@ -580,7 +386,6 @@ export function JobsPage() {
       setDrawerMode(mode);
       const pack = detail.pack_name ? await getTaskPack(detail.pack_name).catch(() => null) : null;
       setCurrentTaskPack(pack);
-      setDraftSource(pack ? "pack" : "blank");
       setForm({
         name: detail.name,
         group_name: detail.group_name || "",
@@ -606,60 +411,6 @@ export function JobsPage() {
 
   function updateForm<K extends keyof JobFormState>(key: K, value: JobFormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
-  }
-
-  function toggleRowSelection(job: JobRecord, checked: boolean) {
-    if (allMatchingSelected) {
-      clearSelection();
-      return;
-    }
-    setSelectedIds((prev) => {
-      if (checked) {
-        return prev.includes(job.id) ? prev : [...prev, job.id];
-      }
-      return prev.filter((item) => item !== job.id);
-    });
-    setSelectedDeletedById((prev) => {
-      if (!checked) {
-        const next = { ...prev };
-        delete next[job.id];
-        return next;
-      }
-      return { ...prev, [job.id]: Boolean(job.deleted_at) };
-    });
-  }
-
-  function togglePageSelection() {
-    if (allMatchingSelected || allPageSelected) {
-      clearSelection();
-      return;
-    }
-    const pageIds = jobs.map((job) => job.id);
-    setSelectedIds((prev) => {
-      const next = [...prev];
-      for (const id of pageIds) {
-        if (!next.includes(id)) next.push(id);
-      }
-      return next;
-    });
-    setSelectedDeletedById((prev) => {
-      const next = { ...prev };
-      for (const job of jobs) {
-        next[job.id] = Boolean(job.deleted_at);
-      }
-      return next;
-    });
-  }
-
-  function selectAllMatchingJobs() {
-    setAllMatchingSelected(true);
-    setSelectedIds([]);
-  }
-
-  function isBatchActionEnabled(action: JobBatchAction) {
-    if (!selectedCount || selectionState === "none" || selectionState === "mixed") return false;
-    const requiresDeleted = action === "restore" || action === "purge";
-    return requiresDeleted ? selectionState === "deleted" : selectionState === "active";
   }
 
   async function refreshJobs(options: RefreshOptions = {}) {
@@ -691,7 +442,6 @@ export function JobsPage() {
     try {
       const pack = await getTaskPack(form.import_pack_name);
       setCurrentTaskPack(pack);
-      setDraftSource(pack ? "pack" : "blank");
       setForm((prev) => ({
         ...prev,
         search_spec: cloneSearchSpec(pack.search_spec),
@@ -722,7 +472,6 @@ export function JobsPage() {
       const payload = buildPackPayload(form, targetName);
       const saved = mode === "overwrite" && form.pack_name ? await updateTaskPack(form.pack_name, payload) : await createTaskPack({ pack_name: targetName, ...payload });
       setCurrentTaskPack(saved);
-      setDraftSource("pack");
       setForm((prev) => ({ ...prev, pack_name: saved.pack_name, import_pack_name: saved.pack_name, tagsText: joinCommaLinesForTextarea(saved.tags || []) }));
       setActionMessage(mode === "overwrite" ? "已保存到当前任务包" : `已另存为新任务包 ${saved.pack_name}`);
       await loadTaskPacks();
@@ -824,54 +573,11 @@ export function JobsPage() {
     }
   }
 
-  async function handleRunNow(job: JobRecord) {
+async function handleRunNow(job: JobRecord) {
     setError("");
     try {
       const started = await runJobNow(job.id);
-      setActiveRunsByJobId((prev) => ({
-        ...prev,
-        [job.id]: {
-          run: {
-            id: started.run_id,
-            job_id: job.id,
-            trigger_type: "auto",
-            status: "running",
-            started_at: new Date().toISOString(),
-            ended_at: null,
-            error_text: null,
-            stats_json: {},
-            result_json: null,
-          },
-          progress: {
-            ...EMPTY_RUN_PROGRESS,
-            runId: started.run_id,
-            status: "running",
-            startedAt: new Date().toISOString(),
-          },
-        },
-      }));
-      activeRunsRef.current = {
-        ...activeRunsRef.current,
-        [job.id]: {
-          run: {
-            id: started.run_id,
-            job_id: job.id,
-            trigger_type: "auto",
-            status: "running",
-            started_at: new Date().toISOString(),
-            ended_at: null,
-            error_text: null,
-            stats_json: {},
-            result_json: null,
-          },
-          progress: {
-            ...EMPTY_RUN_PROGRESS,
-            runId: started.run_id,
-            status: "running",
-            startedAt: new Date().toISOString(),
-          },
-        },
-      };
+      markJobRunStarted(job.id, started.run_id);
       setActionMessage(`已触发 ${job.name} 立即运行`);
       await refreshJobs({ reloadSelected: false });
       void pollActiveRunsOnce().catch((err) => {
@@ -897,7 +603,7 @@ export function JobsPage() {
   async function handleToggle(job: JobRecord) {
     setError("");
     try {
-      const updated = await toggleJob(job.id, !Boolean(job.enabled));
+      const updated = await toggleJob(job.id, !job.enabled);
       setActionMessage(updated.enabled ? "已启用" : "已停用");
       if (selectedJob?.id === job.id) {
         setSelectedJob(updated);
@@ -914,7 +620,6 @@ export function JobsPage() {
     try {
       const imported = await readImportedTaskPack(file);
       setCurrentTaskPack(null);
-      setDraftSource("file");
       setForm((prev) => ({
         ...prev,
         pack_name: null,
@@ -961,7 +666,6 @@ export function JobsPage() {
       };
       const saved = await createTaskPack({ pack_name: targetName, ...payload });
       setCurrentTaskPack(saved);
-      setDraftSource("pack");
       setForm((prev) => ({
         ...prev,
         pack_name: saved.pack_name,
@@ -1090,111 +794,50 @@ export function JobsPage() {
         className={`jobs-layout${isResizing ? " dragging" : ""}`}
         data-testid="jobs-layout"
       >
-        <section className="jobs-list-pane">
-          <div className="card jobs-list-tools workbench-layer">
-            <div
-              className="jobs-list-filterbar flat-actions"
-              data-testid="jobs-filter-bar"
-            >
-              <div className="jobs-filter-query-group" data-testid="jobs-filter-query-group">
-                <label className="field jobs-filter-field">
-                  <span>{"搜索任务"}</span>
-                  <input value={queryInput} onChange={(e) => setQueryInput(e.target.value)} placeholder={"按任务名称搜索"} aria-label="搜索任务" />
-                </label>
-                <div className="jobs-filter-actions">
-                  <button type="button" className="workbench-secondary-action" data-testid="jobs-search-button" onClick={submitQuery}>{"搜索"}</button>
-                </div>
-                <label className="field jobs-filter-field jobs-filter-status">
-                  <span>{"状态"}</span>
-                  <select
-                    value={status}
-                    onChange={(e) => {
-                      const nextStatus = e.target.value as JobStatusFilter;
-                      setStatus(nextStatus);
-                      clearSelection();
-                      refreshJobs({ page: 1, status: nextStatus }).catch(() => undefined);
-                    }}
-                    aria-label="任务状态"
-                  >
-                    <option value="active">{"启用中"}</option>
-                    <option value="all">{"全部"}</option>
-                    <option value="deleted">{"已删除"}</option>
-                  </select>
-                </label>
-              </div>
-            </div>
-
-            <div className="jobs-managebar" data-testid="jobs-manage-bar">
-              <div className="jobs-managebar-copy">
-                <div className="collector-subtitle">{"表格管理"}</div>
-                <div className="kv">{manageSelectionSummary}</div>
-              </div>
-              <div className="jobs-managebar-actions">
-                {showSelectAllMatching && (
-                  <button
-                    type="button"
-                    className="workbench-secondary-action"
-                    aria-label="select-all-matching-jobs"
-                    onClick={selectAllMatchingJobs}
-                  >
-                    {`已选中本页 ${jobs.length} 条。选择全部 ${total} 条匹配结果`}
-                  </button>
-                )}
-                {selectedCount > 0 && (
-                  <button
-                    type="button"
-                    className="workbench-secondary-action"
-                    aria-label="clear-job-selection"
-                    onClick={clearSelection}
-                  >
-                    {"清空选择"}
-                  </button>
-                )}
-                {batchActionSpecs.map((item) => (
-                  <button
-                    key={item.action}
-                    type="button"
-                    className={
-                      item.tone === "danger"
-                        ? "workbench-danger-action"
-                        : "workbench-secondary-action"
-                    }
-                    disabled={!isBatchActionEnabled(item.action)}
-                    onClick={() => handleBatchAction(item.action).catch(() => undefined)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {selectionWarning && <div className="alert error jobs-list-alert">{selectionWarning}</div>}
-
-          <JobsTable
-            total={total}
-            page={page}
-            totalPages={totalPages}
-            loading={loading}
-            jobsTableMinWidth={jobsTableMinWidth}
-            isResizingColumn={isResizingColumn}
-            selectColumnWidth={JOBS_SELECT_COLUMN_WIDTH}
-            columns={resolvedJobColumns}
-            allPageSelected={allPageSelected}
-            resizingColumnId={resizingColumnId}
-            jobs={jobs}
-            activeRunsByJobId={activeRunsByJobId}
-            selectedJobId={selectedJob?.id ?? null}
-            allMatchingSelected={allMatchingSelected}
-            selectedIds={selectedIds}
-            status={status}
-            onPageChange={(nextPage) => { void refreshJobs({ page: nextPage }); }}
-            onTogglePageSelection={togglePageSelection}
-            onStartColumnResize={startColumnResize}
-            onOpenJobWorkspace={openJobWorkspace}
-            onToggleRowSelection={toggleRowSelection}
-          />
-        </section>
+        <JobsListPane
+          total={total}
+          page={page}
+          totalPages={totalPages}
+          loading={loading}
+          queryInput={queryInput}
+          status={status}
+          manageSelectionSummary={manageSelectionSummary}
+          showSelectAllMatching={showSelectAllMatching}
+          selectedCount={selectedCount}
+          batchActionSpecs={batchActionSpecs}
+          selectionWarning={selectionWarning}
+          jobsTableMinWidth={jobsTableMinWidth}
+          isResizingColumn={isResizingColumn}
+          selectColumnWidth={JOBS_SELECT_COLUMN_WIDTH}
+          columns={resolvedJobColumns}
+          allPageSelected={allPageSelected}
+          resizingColumnId={resizingColumnId}
+          jobs={jobs}
+          activeRunsByJobId={activeRunsByJobId}
+          selectedJobId={selectedJob?.id ?? null}
+          allMatchingSelected={allMatchingSelected}
+          selectedIds={selectedIds}
+          onQueryInputChange={setQueryInput}
+          onSubmitQuery={submitQuery}
+          onStatusChange={(nextStatus) => {
+            setStatus(nextStatus);
+            clearSelection();
+            void refreshJobs({ page: 1, status: nextStatus });
+          }}
+          onSelectAllMatching={selectAllMatchingJobs}
+          onClearSelection={clearSelection}
+          onBatchAction={(action) => {
+            void handleBatchAction(action);
+          }}
+          isBatchActionEnabled={isBatchActionEnabled}
+          onPageChange={(nextPage) => {
+            void refreshJobs({ page: nextPage });
+          }}
+          onTogglePageSelection={togglePageSelection}
+          onStartColumnResize={startColumnResize}
+          onOpenJobWorkspace={openJobWorkspace}
+          onToggleRowSelection={toggleRowSelection}
+        />
 
         {isSplitLayout && (
           <div

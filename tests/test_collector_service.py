@@ -470,7 +470,56 @@ class DesktopServiceTests(unittest.TestCase):
             result = self.service.tick()
 
         self.assertEqual(called, [int(job_one["id"]), int(job_three["id"])])
-        self.assertEqual(result, {"triggered": 1, "failed": 1})
+        self.assertEqual(result["triggered"], 1)
+        self.assertEqual(result["failed"], 1)
+        self.assertEqual(
+            result["failed_items"],
+            [{"id": int(job_three["id"]), "name": "tick-three", "error": "boom"}],
+        )
+
+    def test_background_runs_are_non_daemon_and_tracked_for_shutdown(self) -> None:
+        release = threading.Event()
+
+        def fake_execute(*args, **kwargs):
+            release.wait(timeout=2)
+            return {"status": "success"}
+
+        with patch.object(self.service, "_execute_manual_run", side_effect=fake_execute):
+            result = self.service.start_manual_run({"search_spec": {"all_keywords": ["alpha"]}})
+
+        self.assertEqual(result["status"], "running")
+        self.assertEqual(len(self.service._background_run_threads), 1)
+        for thread in self.service._background_run_threads.values():
+            self.assertFalse(thread.daemon)
+        release.set()
+        self.service.join_background_runs(timeout=2)
+        self.assertEqual(self.service._background_run_threads, {})
+
+    def test_structured_filters_use_sql_when_supported_instead_of_full_memory_scan(self) -> None:
+        self._seed_curated_items(
+            [
+                {"title": "low", "score": 10},
+                {"title": "mid", "score": 50},
+                {"title": "high", "score": 90},
+            ]
+        )
+        filter_tree = {
+            "type": "group",
+            "relation": "AND",
+            "children": [{"type": "condition", "field": "score", "operator": "gte", "value": 50}],
+        }
+
+        with patch("backend.collector_service_parts.items.MAX_FILTER_TREE_ROWS", 1):
+            page = self.service.list_items(
+                page=1,
+                page_size=10,
+                sort_by="score",
+                sort_dir="asc",
+                filter_tree=filter_tree,
+            )
+
+        self.assertEqual(page["total"], 2)
+        self.assertEqual([item["title"] for item in page["items"]], ["mid", "high"])
 
     def test_job_group_name_round_trips_and_is_searchable(self) -> None:
         default_rule_set_id = self.service.list_rule_sets()["items"][0]["id"]

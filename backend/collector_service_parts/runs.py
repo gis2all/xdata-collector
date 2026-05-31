@@ -34,6 +34,43 @@ class RunMixin:
         with self._run_cancel_lock:
             return self._run_cancel_events.get(int(run_id))
 
+    def _track_background_run_thread(self, run_id: int, thread: threading.Thread) -> None:
+        with self._background_run_threads_lock:
+            self._background_run_threads[int(run_id)] = thread
+
+    def _untrack_background_run_thread(self, run_id: int) -> None:
+        with self._background_run_threads_lock:
+            self._background_run_threads.pop(int(run_id), None)
+
+    def request_background_shutdown(self) -> dict[str, int]:
+        with self._run_cancel_lock:
+            events = list(self._run_cancel_events.values())
+        for event in events:
+            event.set()
+        return {"cancel_requested": len(events)}
+
+    def join_background_runs(self, timeout: float | None = None) -> dict[str, int]:
+        deadline = None if timeout is None else time.time() + max(0.0, float(timeout))
+        joined = 0
+        while True:
+            with self._background_run_threads_lock:
+                threads = list(self._background_run_threads.items())
+            if not threads:
+                return {"joined": joined, "running": 0}
+
+            still_running = 0
+            for run_id, thread in threads:
+                remaining = None if deadline is None else max(0.0, deadline - time.time())
+                thread.join(timeout=remaining)
+                if thread.is_alive():
+                    still_running += 1
+                    continue
+                self._untrack_background_run_thread(run_id)
+                joined += 1
+
+            if still_running and deadline is not None and time.time() >= deadline:
+                return {"joined": joined, "running": still_running}
+
     def _owner_pid_alive(self, owner_pid: Any) -> bool:
         try:
             pid = int(owner_pid or 0)
@@ -95,6 +132,7 @@ class RunMixin:
             self._record_background_run_failure(run_id, exc)
         finally:
             self._pop_run_cancel_event(run_id)
+            self._untrack_background_run_thread(run_id)
             if release_run_slot:
                 self._release_run_slot()
 
@@ -118,10 +156,12 @@ class RunMixin:
             thread = threading.Thread(
                 target=self._run_auto_job_in_background,
                 args=(run_id, copy.deepcopy(payload), int(job_id), int(job["interval_minutes"]), True),
-                daemon=True,
+                name=f"xdata-auto-run-{run_id}",
             )
+            self._track_background_run_thread(run_id, thread)
             thread.start()
         except Exception as exc:
+            self._untrack_background_run_thread(run_id)
             self._record_background_run_failure(run_id, exc)
             self._release_run_slot()
             raise
@@ -136,10 +176,12 @@ class RunMixin:
             thread = threading.Thread(
                 target=self._run_manual_in_background,
                 args=(run_id, copy.deepcopy(payload), trigger_type, job_id, True),
-                daemon=True,
+                name=f"xdata-manual-run-{run_id}",
             )
+            self._track_background_run_thread(run_id, thread)
             thread.start()
         except Exception as exc:
+            self._untrack_background_run_thread(run_id)
             self._record_background_run_failure(run_id, exc)
             self._release_run_slot()
             raise
@@ -164,6 +206,7 @@ class RunMixin:
             self._record_background_run_failure(run_id, exc)
         finally:
             self._pop_run_cancel_event(run_id)
+            self._untrack_background_run_thread(run_id)
             if release_run_slot:
                 self._release_run_slot()
 

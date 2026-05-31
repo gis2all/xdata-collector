@@ -90,6 +90,16 @@ function makePage(items: ReturnType<typeof makeItem>[], total = items.length, pa
   };
 }
 
+function deferredPage<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
 async function switchToCuratedTable() {
   fireEvent.click(screen.getByRole("button", { name: "筛选结果" }));
   await waitFor(() => {
@@ -212,6 +222,41 @@ describe("ResultsPage", () => {
     expect(loadingState).toHaveTextContent("加载中...");
     expect(tableWrap).not.toContainElement(loadingState);
     expect(loadingState.compareDocumentPosition(tableWrap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("cancels stale result loads so late responses cannot overwrite the active table", async () => {
+    const rawDeferred = deferredPage<any>();
+    const curatedDeferred = deferredPage<any>();
+    const callParams: Array<{ signal?: AbortSignal } | undefined> = [];
+    listItemsMock.mockImplementation(((params: { signal?: AbortSignal }) => {
+      callParams.push(params);
+      return callParams.length === 1 ? rawDeferred.promise : curatedDeferred.promise;
+    }) as any);
+
+    render(<ResultsPage />);
+
+    await waitFor(() => {
+      expect(listItemsMock).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /\u7b5b\u9009\u7ed3\u679c/ }));
+
+    await waitFor(() => {
+      expect(listItemsMock).toHaveBeenCalledTimes(2);
+    });
+    expect(callParams[0]?.signal?.aborted).toBe(true);
+    expect(callParams[1]?.signal?.aborted).toBe(false);
+
+    curatedDeferred.resolve(makePage([makeItem(2, { title: "Curated latest" })]));
+    await waitFor(() => {
+      expect(screen.getAllByText("Curated latest").length).toBeGreaterThan(0);
+    });
+
+    rawDeferred.resolve(makePage([makeRawItem(1, { text: "Raw stale" })]));
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+    expect(screen.getAllByText("Curated latest").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Raw stale")).not.toBeInTheDocument();
   });
 
   it("merges new default curated fields into legacy stored column preferences", async () => {
@@ -1258,6 +1303,16 @@ it("renders default business columns and utc+8 timestamps", async () => {
     });
 
     expect(await screen.findByText("已删除记录 #7")).toBeInTheDocument();
+  });
+
+  it("does not render the detail rail delete action when no record is active", async () => {
+    listItemsMock.mockResolvedValueOnce(makePage([], 0));
+
+    render(<ResultsPage />);
+
+    const detailRail = await screen.findByTestId("results-detail-rail");
+
+    expect(within(detailRail).queryByRole("button", { name: /^delete-detail-item-/ })).not.toBeInTheDocument();
   });
 
   it("runs full-table dedupe and shows the summary", async () => {

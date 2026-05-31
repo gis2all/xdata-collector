@@ -51,6 +51,21 @@ class ItemMixin:
         where_sql = f"WHERE {' AND '.join(where)}" if where else ""
         return where_sql, params
 
+    def _merge_item_where_clause(
+        self,
+        where_sql: str,
+        params: list[Any],
+        extra_sql: str,
+        extra_params: list[Any],
+    ) -> tuple[str, list[Any]]:
+        clauses: list[str] = []
+        if where_sql:
+            clauses.append(where_sql.removeprefix("WHERE ").strip())
+        if extra_sql:
+            clauses.append(f"({extra_sql})")
+        merged_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        return merged_sql, [*params, *extra_params]
+
     def _list_curated_items(
         self,
         page: int,
@@ -64,7 +79,10 @@ class ItemMixin:
         offset = max(0, (page - 1) * page_size)
         where_sql, params = self._item_where_clause("curated", level=level, keyword=keyword)
         normalized_filter_tree = _normalize_results_filter_tree(filter_tree, "curated")
-        if _results_filter_tree_has_conditions(normalized_filter_tree):
+        filter_sql = _results_filter_tree_to_sql(normalized_filter_tree, "curated") if _results_filter_tree_has_conditions(normalized_filter_tree) else None
+        if filter_sql is not None:
+            where_sql, params = self._merge_item_where_clause(where_sql, params, filter_sql[0], filter_sql[1])
+        elif _results_filter_tree_has_conditions(normalized_filter_tree):
             selected_fields = ", ".join(CURATED_ITEM_DB_FIELDS)
             with connect(self.db_path) as conn:
                 rows = conn.execute(
@@ -136,7 +154,10 @@ class ItemMixin:
         offset = max(0, (page - 1) * page_size)
         where_sql, params = self._item_where_clause("raw", keyword=keyword)
         normalized_filter_tree = _normalize_results_filter_tree(filter_tree, "raw")
-        if _results_filter_tree_has_conditions(normalized_filter_tree):
+        filter_sql = _results_filter_tree_to_sql(normalized_filter_tree, "raw") if _results_filter_tree_has_conditions(normalized_filter_tree) else None
+        if filter_sql is not None:
+            where_sql, params = self._merge_item_where_clause(where_sql, params, filter_sql[0], filter_sql[1])
+        elif _results_filter_tree_has_conditions(normalized_filter_tree):
             selected_fields = ", ".join(RAW_ITEM_DB_FIELDS)
             with connect(self.db_path) as conn:
                 rows = conn.execute(
@@ -278,7 +299,26 @@ class ItemMixin:
         where_sql, params = self._item_where_clause(normalized_table, level=level, keyword=keyword)
         normalized_filter_tree = _normalize_results_filter_tree(filter_tree, normalized_table)
         delete_ids: list[int]
-        if _results_filter_tree_has_conditions(normalized_filter_tree):
+        filter_sql = (
+            _results_filter_tree_to_sql(normalized_filter_tree, normalized_table)
+            if _results_filter_tree_has_conditions(normalized_filter_tree)
+            else None
+        )
+        if filter_sql is not None:
+            where_sql, params = self._merge_item_where_clause(where_sql, params, filter_sql[0], filter_sql[1])
+            with connect(self.db_path) as conn:
+                rows = conn.execute(
+                    f"SELECT id FROM {table_name} {where_sql} ORDER BY id ASC",
+                    tuple(params),
+                ).fetchall()
+                delete_ids = [int(row["id"]) for row in rows]
+                if delete_ids:
+                    placeholders = ", ".join("?" for _ in delete_ids)
+                    conn.execute(
+                        f"DELETE FROM {table_name} WHERE id IN ({placeholders})",
+                        tuple(delete_ids),
+                    )
+        elif _results_filter_tree_has_conditions(normalized_filter_tree):
             selected_fields = ", ".join(RAW_ITEM_DB_FIELDS if normalized_table == "raw" else CURATED_ITEM_DB_FIELDS)
             with connect(self.db_path) as conn:
                 rows = conn.execute(

@@ -77,7 +77,7 @@ export function JobsTable({
 
       <div className={`jobs-table-wrap${isResizingColumn ? " dragging" : ""}`} data-testid="jobs-table-wrap">
         {loading ? (
-          <div className="searching"><span className="spinner" /> {"??????..."}</div>
+          <div className="searching"><span className="spinner" /> {"\u52a0\u8f7d\u4e2d..."}</div>
         ) : (
           <table className="table jobs-table" style={{ minWidth: jobsTableMinWidth, tableLayout: "fixed" }}>
             <colgroup>
@@ -155,7 +155,9 @@ export function JobsTable({
               })}
               {!jobs.length && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: "center", color: "#64748b" }}>{status === "deleted" ? "???????" : "????"}</td>
+                  <td colSpan={8} style={{ textAlign: "center", color: "#64748b" }}>
+                    {status === "deleted" ? "\u6682\u65e0\u5df2\u5220\u9664\u4efb\u52a1" : "\u6682\u65e0\u4efb\u52a1"}
+                  </td>
                 </tr>
               )}
             </tbody>

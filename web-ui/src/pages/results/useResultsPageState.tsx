@@ -4,21 +4,17 @@ import {
   dedupeItems,
   deleteItem,
   deleteItems,
+  isAbortError,
   listItems,
   type ItemSortField,
   type ItemTable,
   type ResultsFilterConditionNode,
   type ResultsFilterGroupNode,
-  type ResultsFilterNode,
   type ResultsFilterRelation,
   type ResultItemRecord,
   type SortDirection,
-} from "../api";
-import { ResultsDetailRail } from "./results/ResultsDetailRail";
-import { ResultsFilterBuilder } from "./results/ResultsFilterBuilder";
-import { ResultsDataTable } from "./results/ResultsDataTable";
-import { ResultsPageHeader } from "./results/ResultsPageHeader";
-import { ResultsTableManager } from "./results/ResultsTableManager";
+} from "../../api";
+import { usePagination } from "../../hooks/usePagination";
 import {
   COLUMN_DEFINITIONS_BY_TABLE,
   DEFAULT_VISIBLE_COLUMNS_BY_TABLE,
@@ -30,7 +26,7 @@ import {
   type ColumnDefinition,
   type ColumnResizeState,
   type ColumnWidthsByTable,
-} from "./results/resultsTableConfig";
+} from "./resultsTableConfig";
 import {
   RESULTS_FILTER_FIELD_OPTIONS,
   cloneResultsFilterTree,
@@ -44,40 +40,37 @@ import {
   sanitizeFilterTreeForSubmit,
   writeResultsFilterState,
   type ResultsFilterState,
-} from "./results/resultsFilterState";
+} from "./resultsFilterState";
 
-const RESULTS_COLUMN_WIDTHS_KEY = "results.columnWidths.v1";
 const PAGE_SIZE = 100;
-const RESULTS_SELECT_COLUMN_WIDTH = 48;
+export const RESULTS_SELECT_COLUMN_WIDTH = 48;
 const RESULTS_SPLIT_LAYOUT_BREAKPOINT = 1180;
 const RESULTS_MIN_TABLE_PANE_WIDTH = 720;
 const RESULTS_MIN_DETAIL_PANE_WIDTH = 380;
 const RESULTS_RESIZER_WIDTH = 20;
 
 const TEXT = {
-  title: "\u7ed3\u679c\u67e5\u8be2",
-  subtitle: "\u7b5b\u9009\u3001\u67e5\u770b\u3001\u6279\u91cf\u5904\u7406\u7ed3\u679c\u3002",
-  curatedTab: "\u7b5b\u9009\u7ed3\u679c",
-  rawTab: "\u539f\u59cb\u7ed3\u679c",
-  keywordLabel: "\u5173\u952e\u8bcd",
-  keywordPlaceholder: "\u5173\u952e\u8bcd",
-  refresh: "\u5237\u65b0\u5217\u8868",
-  fields: "\u5b57\u6bb5",
-  resetColumns: "\u6062\u590d\u9ed8\u8ba4",
-  batchDelete: "\u6279\u91cf\u5220\u9664",
-  dedupe: "\u5168\u8868\u53bb\u91cd",
-  loading: "\u52a0\u8f7d\u4e2d...",
-  empty: "\u6682\u65e0\u7ed3\u679c\u8bb0\u5f55",
-  selectPage: "\u672c\u9875\u5168\u9009",
-  operation: "\u64cd\u4f5c",
-  delete: "\u5220\u9664",
-  chooseFirst: "\u8bf7\u5148\u52fe\u9009\u8981\u5220\u9664\u7684\u8bb0\u5f55",
-  selectAllMatchingPrefix: "\u5df2\u9009\u4e2d\u672c\u9875",
-  selectAllMatching: "\u9009\u62e9\u5168\u90e8\u5339\u914d\u7ed3\u679c",
-  allMatchingSelected: "\u5df2\u9009\u4e2d\u5168\u90e8\u5339\u914d\u7ed3\u679c",
-  clearSelection: "\u6e05\u7a7a\u9009\u62e9",
-  prevPage: "\u4e0a\u4e00\u9875",
-  nextPage: "\u4e0b\u4e00\u9875",
+  title: "结果查询",
+  subtitle: "筛选、查看、批量处理结果。",
+  curatedTab: "筛选结果",
+  rawTab: "原始结果",
+  keywordLabel: "关键词",
+  keywordPlaceholder: "关键词",
+  refresh: "刷新列表",
+  fields: "字段",
+  resetColumns: "恢复默认",
+  batchDelete: "批量删除",
+  dedupe: "全表去重",
+  loading: "加载中...",
+  empty: "暂无结果记录",
+  selectPage: "本页全选",
+  chooseFirst: "请先勾选要删除的记录",
+  selectAllMatchingPrefix: "已选中本页",
+  selectAllMatching: "选择全部匹配结果",
+  allMatchingSelected: "已选中全部匹配结果",
+  clearSelection: "清空选择",
+  prevPage: "上一页",
+  nextPage: "下一页",
 } as const;
 
 const TABLE_NAMES: Record<ItemTable, string> = {
@@ -90,7 +83,7 @@ const TABLE_LABELS: Record<ItemTable, string> = {
   raw: "原始结果",
 };
 
-export function ResultsPage() {
+export function useResultsPageState() {
   const [table, setTable] = useState<ItemTable>("raw");
   const [items, setItems] = useState<ResultItemRecord[]>([]);
   const [activeRowId, setActiveRowId] = useState<number | null>(null);
@@ -113,11 +106,13 @@ export function ResultsPage() {
   const [isResizingColumn, setIsResizingColumn] = useState(false);
   const [resizingColumnId, setResizingColumnId] = useState<string | null>(null);
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? RESULTS_SPLIT_LAYOUT_BREAKPOINT : window.innerWidth));
-  const [leftPaneWidth, setLeftPaneWidth] = useState<number | null>(null);
+  const [, setLeftPaneWidth] = useState<number | null>(null);
   const [isResizingWorkspace, setIsResizingWorkspace] = useState(false);
   const resizeStateRef = useRef<ColumnResizeState | null>(null);
   const workspaceLayoutRef = useRef<HTMLElement | null>(null);
   const workspaceDragBoundsRef = useRef<{ left: number; width: number } | null>(null);
+  const loadAbortRef = useRef<AbortController | null>(null);
+  const loadRequestIdRef = useRef(0);
 
   const currentFilterState = filterStateByTable[table];
   const keywordInput = currentFilterState.keywordInput;
@@ -138,28 +133,27 @@ export function ResultsPage() {
     [currentColumnWidths, visibleColumnDefinitions],
   );
   const sortFieldSet = useMemo(() => new Set(columnDefinitions.map((column) => column.key)), [columnDefinitions]);
-  const pageSize = PAGE_SIZE;
-  const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
+  const { totalPages } = usePagination(total, PAGE_SIZE);
   const selectedOnPage = allMatchingSelected ? items.length : items.filter((item) => selectedIds.includes(item.id)).length;
   const selectedCount = allMatchingSelected ? total : selectedIds.length;
   const activeItem = useMemo(() => items.find((item) => item.id === activeRowId) ?? null, [activeRowId, items]);
   const allSelectedOnPage = items.length > 0 && selectedOnPage === items.length;
   const showSelectAllMatching = !hasAdvancedFilter && !allMatchingSelected && allSelectedOnPage && total > items.length;
-  const sortDirectionLabel = sortDir === "asc" ? "\u5347\u5e8f" : "\u964d\u5e8f";
+  const sortDirectionLabel = sortDir === "asc" ? "升序" : "降序";
   const tableMinWidth = Math.max(
     960,
     RESULTS_SELECT_COLUMN_WIDTH + resolvedVisibleColumnDefinitions.reduce((sum, column) => sum + column.currentWidth, 0),
   );
   const tableName = TABLE_NAMES[table];
   const tableLabel = TABLE_LABELS[table];
-  const activeKeywordLabel = appliedKeyword || "\u5168\u90e8";
+  const activeKeywordLabel = appliedKeyword || "全部";
   const isSplitLayout = viewportWidth > RESULTS_SPLIT_LAYOUT_BREAKPOINT;
-  const dedupeConfirmText = `\u786e\u5b9a\u5bf9\u6574\u4e2a ${tableName} \u8868\u6267\u884c\u53bb\u91cd\u5417\uff1f\u6b64\u64cd\u4f5c\u4f1a\u5220\u9664\u91cd\u590d\u884c\u3002`;
+  const dedupeConfirmText = `确定对整个 ${tableName} 表执行去重吗？此操作会删除重复行。`;
   const batchDeleteConfirm = hasAdvancedFilter
     ? `确定硬删除当前筛选命中的 ${total} 条记录吗？此操作无法恢复。`
     : allMatchingSelected
-      ? "\u786e\u5b9a\u786c\u5220\u9664\u5f53\u524d\u7b5b\u9009\u7ed3\u679c\u7684\u5168\u90e8\u8bb0\u5f55\u5417\uff1f\u6b64\u64cd\u4f5c\u65e0\u6cd5\u6062\u590d\u3002"
-      : "\u786e\u5b9a\u786c\u5220\u9664\u5df2\u52fe\u9009\u7684\u8bb0\u5f55\u5417\uff1f\u6b64\u64cd\u4f5c\u65e0\u6cd5\u6062\u590d\u3002";
+      ? "确定硬删除当前筛选结果的全部记录吗？此操作无法恢复。"
+      : "确定硬删除已勾选的记录吗？此操作无法恢复。";
 
   useEffect(() => {
     writeColumnWidths(columnWidthsByTable);
@@ -410,6 +404,11 @@ export function ResultsPage() {
     const nextSortBy = options?.sortBy ?? sortBy;
     const nextSortDir = options?.sortDir ?? sortDir;
     const shouldClearSelection = Boolean(options?.clearSelection);
+    loadAbortRef.current?.abort();
+    const controller = new AbortController();
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
+    loadAbortRef.current = controller;
     setLoading(true);
     setError("");
     if (!options?.preserveMessage) {
@@ -419,28 +418,36 @@ export function ResultsPage() {
       const data = await listItems({
         table: nextTable,
         page: nextPage,
-        page_size: pageSize,
+        page_size: PAGE_SIZE,
         keyword: nextKeyword || undefined,
         sort_by: nextSortBy,
         sort_dir: nextSortDir,
         filter_tree: useStructuredFilter ? nextFilterTree : undefined,
+        signal: controller.signal,
       });
+      if (controller.signal.aborted || requestId !== loadRequestIdRef.current) {
+        return;
+      }
       let nextItems = data.items || [];
       let totalItems = data.total || 0;
       let currentPage = data.page || nextPage;
 
       if (options?.allowPageFallback && currentPage > 1 && nextItems.length === 0 && totalItems > 0) {
-        const fallbackPage = Math.min(currentPage - 1, Math.max(1, Math.ceil(totalItems / pageSize)));
+        const fallbackPage = Math.min(currentPage - 1, Math.max(1, Math.ceil(totalItems / PAGE_SIZE)));
         if (fallbackPage !== currentPage) {
           const fallback = await listItems({
             table: nextTable,
             page: fallbackPage,
-            page_size: pageSize,
+            page_size: PAGE_SIZE,
             keyword: nextKeyword || undefined,
             sort_by: nextSortBy,
             sort_dir: nextSortDir,
             filter_tree: useStructuredFilter ? nextFilterTree : undefined,
+            signal: controller.signal,
           });
+          if (controller.signal.aborted || requestId !== loadRequestIdRef.current) {
+            return;
+          }
           nextItems = fallback.items || [];
           totalItems = fallback.total || 0;
           currentPage = fallback.page || fallbackPage;
@@ -466,6 +473,9 @@ export function ResultsPage() {
         setAllMatchingSelected(false);
       }
     } catch (err) {
+      if (isAbortError(err) || controller.signal.aborted || requestId !== loadRequestIdRef.current) {
+        return;
+      }
       setItems([]);
       setTotal(0);
       setPage(1);
@@ -473,9 +483,20 @@ export function ResultsPage() {
       setAllMatchingSelected(false);
       setError(err instanceof Error ? err.message : "request failed");
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) {
+        setLoading(false);
+        if (loadAbortRef.current === controller) {
+          loadAbortRef.current = null;
+        }
+      }
     }
   }
+
+  useEffect(() => {
+    return () => {
+      loadAbortRef.current?.abort();
+    };
+  }, []);
 
   useEffect(() => {
     void load({
@@ -487,13 +508,16 @@ export function ResultsPage() {
       sortDir,
     });
     // initial page load only; refresh and sorting are explicit actions
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleSort(field: ItemSortField, direction: SortDirection) {
     setSortBy(field);
     setSortDir(direction);
     await load({ table, page, sortBy: field, sortDir: direction, filterTree: appliedFilterTree });
+  }
+
+  async function handlePageChange(nextPage: number) {
+    await load({ table, page: nextPage, filterTree: appliedFilterTree });
   }
 
   async function handleRefresh() {
@@ -563,13 +587,13 @@ export function ResultsPage() {
   }
 
   async function handleDeleteOne(item: ResultItemRecord) {
-    if (!window.confirm(`\u786e\u5b9a\u786c\u5220\u9664\u8bb0\u5f55 #${item.id} \u5417\uff1f\u6b64\u64cd\u4f5c\u65e0\u6cd5\u6062\u590d\u3002`)) {
+    if (!window.confirm(`确定硬删除记录 #${item.id} 吗？此操作无法恢复。`)) {
       return;
     }
     setError("");
     try {
       const result = await deleteItem(item.id, table);
-      setMessage(`\u5df2\u5220\u9664\u8bb0\u5f55 #${result.id}`);
+      setMessage(`已删除记录 #${result.id}`);
       setSelectedIds((current) => current.filter((id) => id !== item.id));
       if (allMatchingSelected) {
         setAllMatchingSelected(false);
@@ -611,7 +635,7 @@ export function ResultsPage() {
         : allMatchingSelected
           ? await deleteItems({ mode: "all_matching", keyword: appliedKeyword || undefined, table })
           : await deleteItems({ ids: [...selectedIds], table });
-      setMessage(`\u5df2\u5220\u9664 ${result.deleted} \u6761\u8bb0\u5f55`);
+      setMessage(`已删除 ${result.deleted} 条记录`);
       await load({
         table,
         keyword: appliedKeyword,
@@ -632,7 +656,7 @@ export function ResultsPage() {
     setError("");
     try {
       const summary = await dedupeItems({ table });
-      setMessage(`\u53bb\u91cd\u5b8c\u6210\uff1a${summary.groups} \u7ec4\u91cd\u590d\uff0c\u5220\u9664 ${summary.deleted} \u6761\uff0c\u4fdd\u7559 ${summary.kept} \u6761`);
+      setMessage(`去重完成：${summary.groups} 组重复，删除 ${summary.deleted} 条，保留 ${summary.kept} 条`);
       await load({
         table,
         keyword: appliedKeyword,
@@ -704,6 +728,14 @@ export function ResultsPage() {
     }));
   }
 
+  function handleToggleFieldMenu() {
+    setFieldMenuOpen((current) => !current);
+  }
+
+  function handleActivateRow(id: number) {
+    setActiveRowId(id);
+  }
+
   function startColumnResize(
     leftColumn: ColumnDefinition & { currentWidth: number },
     rightColumn: ColumnDefinition & { currentWidth: number } | undefined,
@@ -747,227 +779,116 @@ export function ResultsPage() {
     event.preventDefault();
   }
 
-
-  return (
-    <div className="results-page" data-testid="results-page">
-      <ResultsPageHeader title={TEXT.title} subtitle={TEXT.subtitle} />
-
-      <section className="results-control-layer workbench-layer" data-testid="results-control-layer">
-        <div className="results-control-summary flat-meta-strip" data-testid="results-control-summary">
-          <div className="results-filter-copy workbench-section-copy">
-            <div className="results-filter-title workbench-section-title">当前结果表</div>
-          </div>
-          <div className="results-filter-summary workbench-pill-row" data-testid="results-filter-summary">
-            <div className="results-summary-pill workbench-pill">{`\u5f53\u524d\u8868\uff1a${tableLabel}`}</div>
-            <div className="results-summary-pill workbench-pill">{`\u5173\u952e\u8bcd\uff1a${activeKeywordLabel}`}</div>
-          </div>
+  const fieldMenu = (
+    <div className="results-field-menu" data-testid="results-field-menu">
+      <div className="results-field-menu-header">
+        <div className="results-field-menu-copy">
+          <div className="results-field-menu-title">列显示</div>
+          <div className="kv">隐藏列会保留宽度设置，重新显示时会恢复。</div>
         </div>
-        <div
-          className="results-filter-toolbar-shell flat-actions"
-          data-testid="results-filter-toolbar-shell"
-        >
-          <div className="results-filter-controls results-filter-toolbar" data-testid="results-filter-toolbar">
-            <div className="results-filter-browse" data-testid="results-filter-browse">
-              <div className="segmented-control" role="tablist" aria-label="results-table-switcher">
-                <button
-                  type="button"
-                  className={table === "curated" ? "active" : "ghost"}
-                  onClick={() => void handleTableSwitch("curated")}
-                >
-                  {TEXT.curatedTab}
-                </button>
-                <button
-                  type="button"
-                  className={table === "raw" ? "active" : "ghost"}
-                  onClick={() => void handleTableSwitch("raw")}
-                >
-                  {TEXT.rawTab}
-                </button>
-              </div>
-              <label className="field results-filter-keyword-field">
-                <input
-                  placeholder={TEXT.keywordPlaceholder}
-                  value={keywordInput}
-                  onChange={(event) => handleKeywordInputChange(event.target.value)}
-                  aria-label={TEXT.keywordLabel}
-                />
-              </label>
-            </div>
-            <div className="results-filter-primary" data-testid="results-filter-primary">
-              <div className="results-filter-primary-actions">
-                <button
-                  type="button"
-                  className={`workbench-secondary-action${currentFilterState.advancedOpen ? " active" : ""}`}
-                  onClick={handleToggleAdvancedFilters}
-                  disabled={loading}
-                >
-                  高级筛选
-                </button>
-                <button
-                  type="button"
-                  className="workbench-secondary-action"
-                  onClick={() => void handleRefresh()}
-                  disabled={loading}
-                >
-                  应用筛选
-                </button>
-                <button
-                  type="button"
-                  className="workbench-secondary-action"
-                  onClick={() => void handleResetFilters()}
-                  disabled={loading}
-                >
-                  重置筛选
-                </button>
-                <button
-                  type="button"
-                  className="workbench-primary-action"
-                  onClick={() => void handleRefresh()}
-                  disabled={loading}
-                >
-                  {TEXT.refresh}
-                </button>
-              </div>
-            </div>
-            <ResultsTableManager
-              selectedCount={selectedCount}
-              allMatchingSelected={allMatchingSelected}
-              showSelectAllMatching={showSelectAllMatching}
-              fieldsLabel={TEXT.fields}
-              resetColumnsLabel={TEXT.resetColumns}
-              batchDeleteLabel={TEXT.batchDelete}
-              dedupeLabel={TEXT.dedupe}
-              clearSelectionLabel={TEXT.clearSelection}
-              loading={loading}
-              allowBatchDeleteWithoutSelection={hasAdvancedFilter && total > 0}
-              fieldMenuOpen={fieldMenuOpen}
-              fieldMenu={fieldMenuOpen ? (
-                <div className="results-field-menu" data-testid="results-field-menu">
-                  <div className="results-field-menu-header">
-                    <div className="results-field-menu-copy">
-                      <div className="results-field-menu-title">列显示</div>
-                      <div className="kv">隐藏列会保留宽度设置，重新显示时会恢复。</div>
-                    </div>
-                    <span className="results-summary-pill workbench-pill">{`已选 ${visibleColumnDefinitions.length} 列`}</span>
-                  </div>
-                  <div className="results-field-list">
-                    {columnDefinitions.map((column) => (
-                      <label key={column.key} className="results-field-option">
-                        <input
-                          type="checkbox"
-                          aria-label={`toggle-column-${column.key}`}
-                          checked={visibleColumns.includes(column.key)}
-                          onChange={() => toggleColumnVisibility(column.key)}
-                        />
-                        <span>{column.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              onSelectAllMatching={handleSelectAllMatching}
-              onClearSelection={handleClearSelection}
-              onToggleFields={() => setFieldMenuOpen((current) => !current)}
-              onRestoreDefaultColumns={handleRestoreDefaultColumns}
-              onBatchDelete={() => void handleBatchDelete()}
-              onDedupe={() => void handleDedupe()}
+        <span className="results-summary-pill workbench-pill">{`已选 ${visibleColumnDefinitions.length} 列`}</span>
+      </div>
+      <div className="results-field-list">
+        {columnDefinitions.map((column) => (
+          <label key={column.key} className="results-field-option">
+            <input
+              type="checkbox"
+              aria-label={`toggle-column-${column.key}`}
+              checked={visibleColumns.includes(column.key)}
+              onChange={() => toggleColumnVisibility(column.key)}
             />
-          </div>
-          {currentFilterState.advancedOpen ? (
-            <div
-              className="results-advanced-filter-panel"
-              data-testid="results-advanced-filter-panel"
-            >
-              <div className="results-advanced-filter-panel-head">
-                <div className="results-advanced-filter-panel-copy">
-                  <div className="results-filter-title workbench-section-title">高级筛选</div>
-                  <div className="kv">后端会先按整表筛选，再返回当前分页结果。</div>
-                </div>
-              </div>
-              <ResultsFilterBuilder
-                table={table}
-                draftFilterTree={draftFilterTree}
-                updateCondition={updateCondition}
-                updateGroupRelation={updateGroupRelation}
-                addConditionToGroup={addConditionToGroup}
-                addGroupToGroup={addGroupToGroup}
-                removeDraftNode={removeDraftNode}
-              />
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-      <section
-        ref={workspaceLayoutRef}
-        className={`results-main-workspace results-main-workspace-aligned${isResizingWorkspace ? " dragging" : ""}`}
-        data-testid="results-main-workspace"
-      >
-        <ResultsDataTable
-          table={table}
-          tableLabel={tableLabel}
-          visibleColumnCount={visibleColumnDefinitions.length}
-          error={error}
-          message={message}
-          showSelectAllMatching={showSelectAllMatching}
-          selectAllMatchingPrefix={TEXT.selectAllMatchingPrefix}
-          allMatchingSelected={allMatchingSelected}
-          allMatchingSelectedLabel={TEXT.allMatchingSelected}
-          items={items}
-          total={total}
-          selectedCount={selectedCount}
-          totalPages={totalPages}
-          page={page}
-          selectedOnPage={selectedOnPage}
-          sortBy={sortBy}
-          sortDir={sortDir}
-          sortDirectionLabel={sortDirectionLabel}
-          pageSize={pageSize}
-          loading={loading}
-          loadingLabel={TEXT.loading}
-          prevPageLabel={TEXT.prevPage}
-          nextPageLabel={TEXT.nextPage}
-          selectPageLabel={TEXT.selectPage}
-          emptyLabel={TEXT.empty}
-          tableMinWidth={tableMinWidth}
-          isResizingColumn={isResizingColumn}
-          selectColumnWidth={RESULTS_SELECT_COLUMN_WIDTH}
-          columns={resolvedVisibleColumnDefinitions}
-          allSelectedOnPage={allSelectedOnPage}
-          resizingColumnId={resizingColumnId}
-          activeRowId={activeRowId}
-          selectedIds={selectedIds}
-          onPageChange={(nextPage) => load({ table, page: nextPage })}
-          onSort={handleSort}
-          onStartColumnResize={startColumnResize}
-          onSetActiveRowId={setActiveRowId}
-          onToggleSelectAll={toggleSelectAll}
-          onToggleSelected={toggleSelected}
-        />
-
-        {isSplitLayout && (
-          <div
-            className={`results-resizer${isResizingWorkspace ? " dragging" : ""}`}
-            data-testid="results-resizer"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="调整结果区域宽度"
-            onPointerDown={handleWorkspaceResizerPointerDown}
-            onMouseDown={handleWorkspaceResizerMouseDown}
-          />
-        )}
-
-        <aside className="results-detail-rail workbench-layer" data-testid="results-detail-rail">
-          <ResultsDetailRail
-            item={activeItem}
-            table={table}
-            tableLabel={tableLabel}
-            total={total}
-            onDelete={activeItem ? () => void handleDeleteOne(activeItem) : undefined}
-            deleteDisabled={loading}
-          />
-        </aside>
-      </section>
+            <span>{column.label}</span>
+          </label>
+        ))}
+      </div>
     </div>
   );
+
+  return {
+    table,
+    tableLabel,
+    activeKeywordLabel,
+    keywordInput,
+    appliedKeyword,
+    draftFilterTree,
+    appliedFilterTree,
+    currentFilterState,
+    hasAdvancedFilter,
+    fieldMenuOpen,
+    tableName,
+    visibleColumns,
+    columnDefinitions,
+    visibleColumnDefinitions,
+    currentColumnWidths,
+    resolvedVisibleColumnDefinitions,
+    sortFieldSet,
+    items,
+    total,
+    page,
+    totalPages,
+    selectedIds,
+    allMatchingSelected,
+    selectedCount,
+    selectedOnPage,
+    allPageSelected: allSelectedOnPage,
+    showSelectAllMatching,
+    activeRowId,
+    activeItem,
+    sortBy,
+    sortDir,
+    sortDirectionLabel,
+    pageSize: PAGE_SIZE,
+    loading,
+    error,
+    message,
+    visibleColumnCount: visibleColumnDefinitions.length,
+    tableMinWidth,
+    isResizingColumn,
+    resizingColumnId,
+    isSplitLayout,
+    isResizingWorkspace,
+    selectedItemCountLabel: selectedCount > 0 ? `当前已选 ${selectedCount} 项` : "请先在表格中勾选任务，再执行批量操作。",
+    dedupeConfirmText,
+    batchDeleteConfirm,
+    currentFilterStateSummaryLabel: `当前表：${tableLabel}`,
+    currentTableSummaryLabel: `关键词：${activeKeywordLabel}`,
+    currentColumnWidthCount: visibleColumnDefinitions.length,
+    tableNameLabel: tableName,
+    TEXT,
+    fieldMenu,
+    handleKeywordInputChange,
+    handleToggleAdvancedFilters,
+    addConditionToGroup,
+    addGroupToGroup,
+    removeDraftNode,
+    updateGroupRelation,
+    updateCondition,
+    handleSort,
+    handlePageChange,
+    handleRefresh,
+    handleResetFilters,
+    handleTableSwitch,
+    handleDeleteOne,
+    handleBatchDelete,
+    handleDedupe,
+    handleSelectAllMatching,
+    handleClearSelection,
+    toggleSelected,
+    toggleSelectAll,
+    toggleColumnVisibility,
+    handleToggleFieldMenu,
+    handleActivateRow,
+    handleRestoreDefaultColumns,
+    startColumnResize,
+    handleWorkspaceResizerPointerDown,
+    handleWorkspaceResizerMouseDown,
+    workspaceLayoutRef,
+    setFieldMenuOpen,
+    setActiveRowId,
+    setTable,
+    setSelectedIds,
+    setAllMatchingSelected,
+  } as const;
 }
+
+export type UseResultsPageState = ReturnType<typeof useResultsPageState>;
