@@ -11,7 +11,7 @@ import type { JobFormState } from "./jobDraft";
 
 type PendingFileAction = "draft" | "save_new";
 
-type JobWorkspaceProps = {
+export type JobWorkspaceProps = {
   drawerOpen: boolean;
   isCreateWorkspace: boolean;
   selectedJob: JobRecord | null;
