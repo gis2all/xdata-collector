@@ -408,16 +408,21 @@ class WorkspaceStore:
         self.pack_store = TaskPackStore(packs_dir=self.packs_dir, project_root=self.project_root)
         self._cache_lock = threading.RLock()
         self._cache: dict[str, Any] | None = None
-        self._mtime: float | None = None
+        self._cache_signature: tuple[int, int] | None = None
+
+    def _workspace_cache_signature(self) -> tuple[int, int]:
+        stat = self.workspace_path.stat()
+        mtime_ns = int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000)))
+        return (mtime_ns, int(stat.st_size))
 
     def get_workspace(self) -> dict[str, Any]:
         if not self.workspace_path.exists():
             workspace = self._bootstrap_workspace()
             self._write_workspace(workspace)
             return copy.deepcopy(workspace)
-        mtime = self.workspace_path.stat().st_mtime
+        signature = self._workspace_cache_signature()
         with self._cache_lock:
-            if self._cache is not None and self._mtime == mtime:
+            if self._cache is not None and self._cache_signature == signature:
                 return copy.deepcopy(self._cache)
         payload = _read_json_file(self.workspace_path)
         if self._is_legacy_workspace(payload):
@@ -427,7 +432,7 @@ class WorkspaceStore:
         workspace = self._normalize_workspace(payload)
         with self._cache_lock:
             self._cache = workspace
-            self._mtime = self.workspace_path.stat().st_mtime
+            self._cache_signature = self._workspace_cache_signature()
         return copy.deepcopy(workspace)
 
     def update_workspace(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -446,7 +451,7 @@ class WorkspaceStore:
         _atomic_write_text(self.workspace_path, json.dumps(normalized, ensure_ascii=False, indent=2) + "\n")
         with self._cache_lock:
             self._cache = normalized
-            self._mtime = self.workspace_path.stat().st_mtime
+            self._cache_signature = self._workspace_cache_signature()
 
     def _is_legacy_workspace(self, payload: Any) -> bool:
         if not isinstance(payload, dict):

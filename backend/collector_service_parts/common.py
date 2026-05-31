@@ -174,6 +174,28 @@ BOOLEAN_FILTER_OPERATORS = {"is_true", "is_false"}
 MAX_FILTER_TREE_ROWS = 50000
 TAG_FILTER_OPERATORS = {"has_any", "has_all", "is_empty", "is_not_empty"}
 
+RAW_ITEM_SQL_FIELDS = {
+    "id": "id",
+    "run_id": "run_id",
+    "tweet_id": "tweet_id",
+    "canonical_url": "canonical_url",
+    "author_name": "author_name",
+    "author": "author",
+    "text": "text",
+    "created_at_x": "created_at_x",
+    "views": "CAST(COALESCE(json_extract(metrics_json, '$.views'), 0) AS INTEGER)",
+    "likes": "CAST(COALESCE(json_extract(metrics_json, '$.likes'), 0) AS INTEGER)",
+    "replies": "CAST(COALESCE(json_extract(metrics_json, '$.replies'), 0) AS INTEGER)",
+    "retweets": "CAST(COALESCE(json_extract(metrics_json, '$.retweets'), 0) AS INTEGER)",
+    "query_name": "query_name",
+    "fetched_at": "fetched_at",
+    "tags": "tags_json",
+}
+CURATED_ITEM_SQL_FIELDS = {
+    field: ("tags_json" if field == "tags" else field)
+    for field in CURATED_ITEM_FIELDS
+}
+
 
 def _parse_item_created_at(value: Any) -> datetime | None:
     return parse_created_at("" if value is None else str(value))
@@ -575,6 +597,114 @@ def _filter_items_in_memory(items: list[dict[str, Any]], table: str, filter_tree
     if not _results_filter_tree_has_conditions(normalized_tree):
         return items
     return [item for item in items if _evaluate_results_filter_tree(normalized_tree, item, table)]
+
+
+def _escape_sql_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _results_filter_condition_to_sql(condition: dict[str, Any], table: str) -> tuple[str, list[Any]] | None:
+    field = str(condition.get("field") or "").strip()
+    kind = RESULTS_FIELD_KINDS_BY_TABLE[table].get(field)
+    if not kind:
+        return None
+    column_map = RAW_ITEM_SQL_FIELDS if table == "raw" else CURATED_ITEM_SQL_FIELDS
+    column = column_map.get(field)
+    if not column:
+        return None
+    operator = str(condition.get("operator") or "").strip().lower()
+
+    if kind == "text":
+        text_expr = f"COALESCE({column}, '')"
+        lowered_expr = f"LOWER({text_expr})"
+        if operator == "is_empty":
+            return f"TRIM({text_expr}) = ''", []
+        if operator == "is_not_empty":
+            return f"TRIM({text_expr}) <> ''", []
+        if operator == "length_between":
+            return f"LENGTH({text_expr}) BETWEEN ? AND ?", [condition["min"], condition["max"]]
+        if operator.startswith("length_"):
+            op = {"length_gt": ">", "length_gte": ">=", "length_lt": "<", "length_lte": "<="}.get(operator)
+            if not op:
+                return None
+            return f"LENGTH({text_expr}) {op} ?", [condition["value"]]
+        value = str(condition.get("value") or "").lower()
+        if operator == "contains":
+            return f"{lowered_expr} LIKE ? ESCAPE '\\'", [f"%{_escape_sql_like(value)}%"]
+        if operator == "not_contains":
+            return f"{lowered_expr} NOT LIKE ? ESCAPE '\\'", [f"%{_escape_sql_like(value)}%"]
+        if operator == "starts_with":
+            return f"{lowered_expr} LIKE ? ESCAPE '\\'", [f"{_escape_sql_like(value)}%"]
+        if operator == "ends_with":
+            return f"{lowered_expr} LIKE ? ESCAPE '\\'", [f"%{_escape_sql_like(value)}"]
+        if operator == "equals":
+            return f"{lowered_expr} = ?", [value]
+        if operator == "not_equals":
+            return f"{lowered_expr} <> ?", [value]
+        return None
+
+    if kind == "number":
+        if operator == "is_empty":
+            return f"{column} IS NULL", []
+        if operator == "is_not_empty":
+            return f"{column} IS NOT NULL", []
+        if operator == "between":
+            return f"{column} BETWEEN ? AND ?", [condition["min"], condition["max"]]
+        op = {"eq": "=", "neq": "<>", "gt": ">", "gte": ">=", "lt": "<", "lte": "<="}.get(operator)
+        if not op:
+            return None
+        return f"{column} {op} ?", [condition["value"]]
+
+    if kind == "datetime":
+        if operator == "is_empty":
+            return f"TRIM(COALESCE({column}, '')) = ''", []
+        if operator == "is_not_empty":
+            return f"TRIM(COALESCE({column}, '')) <> ''", []
+        if operator == "between":
+            return f"{column} BETWEEN ? AND ?", [condition["min"], condition["max"]]
+        if operator == "on_or_after":
+            return f"{column} >= ?", [condition["value"]]
+        if operator == "on_or_before":
+            return f"{column} <= ?", [condition["value"]]
+        return None
+
+    if kind == "boolean":
+        return (f"{column} = ?", [1 if operator == "is_true" else 0])
+
+    if kind == "tags":
+        if operator == "is_empty":
+            return f"TRIM(COALESCE({column}, '[]')) IN ('', '[]')", []
+        if operator == "is_not_empty":
+            return f"TRIM(COALESCE({column}, '[]')) NOT IN ('', '[]')", []
+        values = [str(value).lower() for value in condition.get("values", [])]
+        if not values:
+            return None
+        clauses = [f"{column} LIKE ? ESCAPE '\\'" for _ in values]
+        params = [f"%\"{_escape_sql_like(value)}\"%" for value in values]
+        joiner = " AND " if operator == "has_all" else " OR "
+        return f"({joiner.join(clauses)})", params
+
+    return None
+
+
+def _results_filter_tree_to_sql(node: dict[str, Any], table: str) -> tuple[str, list[Any]] | None:
+    if node.get("type") == "condition":
+        return _results_filter_condition_to_sql(node, table)
+    children_sql: list[str] = []
+    params: list[Any] = []
+    for child in node.get("children", []):
+        if not isinstance(child, dict):
+            continue
+        child_sql = _results_filter_tree_to_sql(child, table)
+        if child_sql is None:
+            return None
+        sql, child_params = child_sql
+        children_sql.append(f"({sql})")
+        params.extend(child_params)
+    if not children_sql:
+        return "1 = 1", []
+    joiner = " OR " if str(node.get("relation") or "AND").upper() == "OR" else " AND "
+    return joiner.join(children_sql), params
 
 
 def _sort_items_in_memory(items: list[dict[str, Any]], table: str, sort_by: str | None, sort_dir: str | None) -> list[dict[str, Any]]:

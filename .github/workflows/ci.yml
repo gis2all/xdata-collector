@@ -25,7 +25,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install test tooling
-        run: python -m pip install --upgrade pip pytest pytest-cov ruff pre-commit psutil
+        run: python -m pip install --upgrade pip -r requirements-dev.txt
 
       - name: Compile key Python entrypoints
         run: python -c "import py_compile, tempfile; from pathlib import Path; files=[Path('doctor.py'),Path('install.py'),Path('services.py'),Path('run/api.py'),Path('run/bootstrap.py'),Path('run/scheduler.py'),Path('run/static_web_server.py'),Path('.github/scripts/generate_coverage_badge.py')]+sorted(Path('backend').glob('*.py'))+sorted(Path('backend/collector_service_parts').glob('*.py')); td=tempfile.TemporaryDirectory(); root=Path(td.name); [py_compile.compile(str(f), cfile=str(root / (str(i)+'_'+f.name+'.pyc')), doraise=True) for i,f in enumerate(files)]; print(f'compiled {len(files)} files')"
@@ -61,9 +61,21 @@ jobs:
         working-directory: web-ui
         run: npm exec tsc -- -p tsconfig.app.json --noEmit
 
+      - name: Run web lint
+        working-directory: web-ui
+        run: npm run lint
+
       - name: Run web tests
         working-directory: web-ui
         run: npm test
+
+      - name: Install Playwright browser
+        working-directory: web-ui
+        run: npm exec playwright install chromium --with-deps
+
+      - name: Run web browser smoke
+        working-directory: web-ui
+        run: npm run test:e2e
 
       - name: Build web app
         working-directory: web-ui
@@ -183,7 +195,7 @@ jobs:
           cache-dependency-path: web-ui/package-lock.json
 
       - name: Install test tooling
-        run: python -m pip install --upgrade pip psutil
+        run: python -m pip install --upgrade pip -r requirements.txt
 
       - name: Seed CI .env
         run: python -c "from pathlib import Path; Path('.env').write_text('TWITTER_AUTH_TOKEN=dummy\nTWITTER_CT0=dummy\n', encoding='utf-8')"

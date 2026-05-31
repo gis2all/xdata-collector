@@ -370,7 +370,7 @@ task pack 是手动搜索页和自动任务页的正文真相。每个 pack 当�
 
 ### 本地 HTTP API
 
-`run/api.py` 仍是裸 `BaseHTTPRequestHandler` + 手写路由。优点是轻量，代价是扩展和参数校验要格外小心。
+`run/api.py` 现在用 Flask 承载本地 HTTP API。路由仍然是显式的，参数校验、CORS 和错误格式都保持统一，便于继续扩展。
 
 配置与 task pack：
 

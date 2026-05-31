@@ -40,12 +40,16 @@ def main() -> int:
         while not shutdown:
             result = service.tick()
             print(f"[scheduler] triggered={result['triggered']} failed={result['failed']}")
+            for item in result.get("failed_items", []):
+                print(f"[scheduler] job failed id={item.get('id')} name={item.get('name')} error={item.get('error')}")
             if shutdown:
                 break
             time.sleep(max(1, args.tick_seconds))
     except KeyboardInterrupt:
         pass
     finally:
+        service.request_background_shutdown()
+        service.join_background_runs(timeout=10)
         print("[scheduler] stopped")
 
     return 0

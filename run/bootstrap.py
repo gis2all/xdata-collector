@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+RUNTIME_REQUIREMENTS = PROJECT_ROOT / "requirements.txt"
 TWITTER_CLI_SOURCE = "git+https://github.com/public-clis/twitter-cli.git@7c634e0d396b1e7af9f63315b414925fe4f29ae7"
 XREACH_CLI_PACKAGE = "xreach-cli@0.3.0"
 
@@ -46,7 +47,7 @@ def ensure_pipx() -> None:
 
 def install_python_runtime_dependencies() -> None:
     _print_step("Installing shared Python runtime dependencies...")
-    _run([sys.executable, "-m", "pip", "install", "--upgrade", "psutil"])
+    _run([sys.executable, "-m", "pip", "install", "--upgrade", "-r", str(RUNTIME_REQUIREMENTS)])
 
 
 def install_twitter_cli() -> None:

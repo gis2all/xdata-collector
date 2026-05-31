@@ -31,12 +31,15 @@ def test_dockerfile_installs_backend_and_frontend_runtime_dependencies() -> None
     assert dockerfile_path.exists()
 
     content = dockerfile_path.read_text(encoding="utf-8")
+    assert "AS web-builder" in content
+    assert "AS runtime" in content
+    assert "COPY --from=web-builder /build/web-ui/node_modules ./web-ui/node_modules" in content
+    assert "COPY --from=web-builder /build/web-ui/dist ./web-ui/dist" in content
     assert "python:3.13-slim" in content
     assert "nodejs" in content
     assert " git " in content or " git \\" in content
-    assert "psutil" in content
+    assert "-r requirements.txt" in content
     assert "npm ci" in content
-    assert "psutil" in content
     assert "git+https://github.com/public-clis/twitter-cli.git@7c634e0d396b1e7af9f63315b414925fe4f29ae7" in content
     assert "xreach-cli@0.3.0" in content
     assert "pipx install git+https://github.com/public-clis/twitter-cli.git\n" not in content

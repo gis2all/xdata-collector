@@ -40,6 +40,8 @@ class DesktopService(RuleTaskPackMixin, JobMixin, RunMixin, ItemMixin, HealthMix
         )
         self._run_cancel_events: dict[int, threading.Event] = {}
         self._run_cancel_lock = threading.RLock()
+        self._background_run_threads: dict[int, threading.Thread] = {}
+        self._background_run_threads_lock = threading.RLock()
         self._run_slot_limit = threading.BoundedSemaphore(MAX_BACKGROUND_RUNS)
         self._health_x_last_probe_at: float = 0.0
         self._health_x_cached: tuple[bool, bool, dict[str, Any], str] | None = None

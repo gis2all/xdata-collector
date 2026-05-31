@@ -1,11 +1,10 @@
-import http.client
 import json
-import threading
 import unittest
 from contextlib import contextmanager
-from http.server import ThreadingHTTPServer
 
-from run.api import ApiHandler
+from flask.testing import FlaskClient
+
+from run.api import create_app
 
 
 class FakeService:
@@ -197,36 +196,23 @@ class FakeService:
 
 
 @contextmanager
-def serve(service: FakeService):
-    ApiHandler.service = service
-    server = ThreadingHTTPServer(("127.0.0.1", 0), ApiHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield server
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
+def serve(service: FakeService, *, api_token: str | None = None):
+    app = create_app(service=service, api_token=api_token)
+    with app.test_client() as client:
+        yield client
 
 
 class ApiHandlerTests(unittest.TestCase):
     def request(
         self,
-        server: ThreadingHTTPServer,
+        client: FlaskClient,
         method: str,
         path: str,
         body: bytes | None = None,
         headers: dict[str, str] | None = None,
     ) -> tuple[int, dict[str, str], bytes]:
-        conn = http.client.HTTPConnection(server.server_address[0], server.server_address[1], timeout=5)
-        try:
-            conn.request(method, path, body=body, headers=headers or {})
-            response = conn.getresponse()
-            data = response.read()
-            return response.status, dict(response.getheaders()), data
-        finally:
-            conn.close()
+        response = client.open(path, method=method, data=body, headers=headers or {})
+        return response.status_code, dict(response.headers), response.get_data()
 
     def test_get_health_returns_json_and_cors_headers(self) -> None:
         service = FakeService()
@@ -235,7 +221,7 @@ class ApiHandlerTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertEqual(headers["Content-Type"], "application/json; charset=utf-8")
-        self.assertEqual(headers["Access-Control-Allow-Origin"], "*")
+        self.assertNotIn("Access-Control-Allow-Origin", headers)
         self.assertEqual(json.loads(body.decode("utf-8"))["summary"]["source"], "backend_snapshot")
         self.assertEqual(service.calls[0][0], "health")
 
@@ -273,18 +259,57 @@ class ApiHandlerTests(unittest.TestCase):
 
         self.assertEqual(status, 200)
         self.assertEqual(headers["Content-Type"], "application/json; charset=utf-8")
-        self.assertEqual(headers["Access-Control-Allow-Origin"], "*")
+        self.assertNotIn("Access-Control-Allow-Origin", headers)
         self.assertEqual(json.loads(body.decode("utf-8"))["summary"]["source"], "runtime_snapshot")
         self.assertEqual(service.calls[0][0], "health_snapshot")
 
     def test_options_allows_put_for_workspace_save(self) -> None:
         service = FakeService()
         with serve(service) as server:
-            status, headers, _ = self.request(server, "OPTIONS", "/workspace")
+            status, headers, _ = self.request(
+                server,
+                "OPTIONS",
+                "/workspace",
+                headers={"Origin": "http://localhost:5177"},
+            )
 
         self.assertEqual(status, 204)
-        self.assertEqual(headers["Access-Control-Allow-Origin"], "*")
+        self.assertEqual(headers["Access-Control-Allow-Origin"], "http://localhost:5177")
         self.assertIn("PUT", headers["Access-Control-Allow-Methods"])
+
+    def test_rejects_requests_when_api_token_is_configured_and_missing(self) -> None:
+        service = FakeService()
+        with serve(service, api_token="secret-token") as server:
+            status, _, body = self.request(server, "GET", "/health")
+
+        payload = json.loads(body.decode("utf-8"))
+        self.assertEqual(status, 401)
+        self.assertEqual(payload, {"error": {"code": "unauthorized", "message": "unauthorized"}})
+        self.assertEqual(service.calls, [])
+
+    def test_accepts_bearer_token_when_api_token_is_configured(self) -> None:
+        service = FakeService()
+        with serve(service, api_token="secret-token") as server:
+            status, _, body = self.request(
+                server,
+                "GET",
+                "/health",
+                headers={"Authorization": "Bearer secret-token"},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body.decode("utf-8"))["summary"]["source"], "backend_snapshot")
+        self.assertEqual(service.calls[0][0], "health")
+
+    def test_invalid_query_params_return_structured_bad_request(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(server, "GET", "/jobs?page=abc")
+
+        payload = json.loads(body.decode("utf-8"))
+        self.assertEqual(status, 400)
+        self.assertEqual(payload["error"]["code"], "invalid_request")
+        self.assertIn("page", payload["error"]["message"])
 
     def test_get_jobs_passes_query_params_to_service(self) -> None:
         service = FakeService()
@@ -457,7 +482,7 @@ class ApiHandlerTests(unittest.TestCase):
             status, _, body = self.request(server, "GET", "/missing")
 
         self.assertEqual(status, 404)
-        self.assertEqual(json.loads(body.decode("utf-8"))["error"], "not found")
+        self.assertEqual(json.loads(body.decode("utf-8"))["error"], {"code": "not_found", "message": "not found"})
 
 
     def test_get_workspace_returns_workspace_payload(self) -> None:
