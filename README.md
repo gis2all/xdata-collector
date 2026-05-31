@@ -4,13 +4,13 @@
 [![Backend Coverage](https://img.shields.io/endpoint?url=https://gis2all.github.io/xdata-collector/backend-coverage.json)](https://github.com/gis2all/xdata-collector/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-跨平台运行的 `X` 数据采集与规则筛选工作台，用于定义任务、采集 `X` 数据、按规则筛选结果，并将数据沉淀到本地 `SQLite`，再通过 `Web UI` 进行浏览、复盘与调度。
+跨平台运行的 `X` 数据采集与规则筛选工作台，用于定义任务、采集 `X` 数据、按规则筛选结果，并将数据沉淀至数据库，再通过 `Web UI` 进行浏览、复盘与调度。
 
 ![Workbench Screenshot](artifacts/diagrams/readme-workbench.png)
 
 ## 产品概览
 
-该项目覆盖一条完整的本地工作流程：
+该项目覆盖一条完整数据采集工作流程：
 
 1. 定义任务：维护关键词、时间范围、过滤条件、规则和标签
 2. 采集数据：手动运行，或者按自动任务定时执行
@@ -23,7 +23,7 @@
 - 想把搜索和筛选逻辑固化成可重复执行的任务
 - 想在本地保留一份可查询、可复盘的结果库
 
-该仓库定位为**本地工作台**，不负责下游投递平台或远端服务化部署。
+该仓库定位为数据采集工作台，不负责下游投递平台。
 
 ## 快速开始
 
@@ -38,13 +38,11 @@ TWITTER_AUTH_TOKEN=你的 auth_token
 TWITTER_CT0=你的 ct0
 ```
 
-`.env` 里的 `TWITTER_AUTH_TOKEN` / `TWITTER_CT0` 是当前正式支持的认证入口。浏览器 Cookie 自动提取只作为本机便利能力，不作为跨平台承诺路径。Cookie 过期、账号风控或浏览器 Cookie 解密失败都会影响采集稳定性。
+Cookie 过期、账号风控或浏览器 Cookie 解密失败都会影响采集稳定性。
 
 ### 2. 选择启动方式
 
 #### 本机启动
-
-适用于希望直接在当前机器上运行服务、查看本地日志并进行调试的场景。
 
 准备条件：
 
@@ -53,13 +51,11 @@ TWITTER_CT0=你的 ct0
 
 执行：
 
-```powershell
+```
 python doctor.py
 python install.py
 python services.py start
 ```
-
-建议先运行 `python doctor.py` 检查 Python、Node/npm、`pipx`、CLI、`.env`、Docker 和端口状态，再运行 `python install.py`。`python install.py` 会先调用 `run/bootstrap.py` 准备本机依赖，包括安装/更新 `pipx`、安装 `psutil`、通过 `pipx` 安装 `twitter-cli`，以及通过 `npm` 安装 `xreach-cli`。如果安装过程提示 PATH 已变更，请重新打开终端后再运行 `python services.py start`。
 
 该路径会启动以下三个服务：
 
@@ -74,9 +70,7 @@ python services.py start
 
 #### Docker 启动
 
-适用于希望将运行环境隔离到容器中的场景。执行前请先确认 `.env` 已写入 `TWITTER_AUTH_TOKEN` / `TWITTER_CT0`。
-
-```powershell
+```
 docker compose up --build
 ```
 
@@ -100,7 +94,7 @@ docker compose up --build
 
 停止容器：
 
-```powershell
+```
 docker compose down
 ```
 
@@ -126,15 +120,6 @@ Docker 注意事项：
 - API：`127.0.0.1:8765`
 - 开发态 Web UI：`127.0.0.1:5177`
 - 静态预览：`127.0.0.1:5178`
-
-如需要预览前端构建产物，可执行：
-
-```powershell
-cd web-ui
-npm.cmd run build
-cd ..
-python run/static_web_server.py --root web-ui/dist
-```
 
 ## 更多文档
 
