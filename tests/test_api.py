@@ -868,7 +868,7 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(json.loads(body.decode("utf-8"))["rows_after"], 7)
         self.assertEqual(service.calls[0], ("dedupe_items", "raw"))
 
-    def test_invalid_json_returns_bad_request(self) -> None:
+    def test_invalid_json_on_jobs_route_returns_400(self) -> None:
         service = FakeService()
         with serve(service) as server:
             status, _, body = self.request(server, "POST", "/jobs", b"not-json")
