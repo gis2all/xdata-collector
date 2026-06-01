@@ -418,6 +418,13 @@ class ServicesMainTests(unittest.TestCase):
             with patch("services.ensure_npm_for_dev_ui", side_effect=SystemExit("npm")):
                 with self.assertRaises(SystemExit):
                     services.main(["start"])
+    def test_main_restart_calls_stop_then_start(self) -> None:
+        with patch("services.ensure_runtime_dirs"), patch("services.warn_if_env_missing"), patch("services.ensure_npm_for_dev_ui"), patch("services.print_statuses"):
+            with patch("services.stop_all") as mock_stop, patch("services.start_all", return_value=[]) as mock_start:
+                services.main(["restart"])
+            mock_stop.assert_called_once()
+            mock_start.assert_called_once()
+
 
 
 if __name__ == "__main__":

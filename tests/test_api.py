@@ -894,6 +894,14 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(status, 200)
 
 
+class ApiMainTests(unittest.TestCase):
+    def test_create_app_method_not_allowed(self) -> None:
+        app = create_app(service=FakeService(), api_token=None)
+        with app.test_client() as client:
+            response = client.delete("/health")
+        self.assertEqual(response.status_code, 405)
+
+
 
 if __name__ == "__main__":
     unittest.main()
