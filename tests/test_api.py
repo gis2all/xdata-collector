@@ -323,7 +323,7 @@ class ApiHandlerTests(unittest.TestCase):
             ("list_jobs", {"page": 2, "page_size": 5, "query": "alpha", "status": "deleted"}),
         )
 
-    def test_post_manual_run_dispatches_payload(self) -> None:
+    def test_post_manual_run_returns_not_found(self) -> None:
         service = FakeService()
         payload = {"search_spec": {"all_keywords": ["btc"]}}
         with serve(service) as server:
@@ -335,9 +335,9 @@ class ApiHandlerTests(unittest.TestCase):
                 headers={"Content-Type": "application/json"},
             )
 
-        self.assertEqual(status, 200)
-        self.assertEqual(json.loads(body.decode("utf-8"))["status"], "success")
-        self.assertEqual(service.calls[0], ("run_manual", payload))
+        self.assertEqual(status, 404)
+        self.assertEqual(json.loads(body.decode("utf-8"))["error"], {"code": "not_found", "message": "not found"})
+        self.assertEqual(service.calls, [])
 
     def test_post_manual_run_start_dispatches_payload(self) -> None:
         service = FakeService()
@@ -468,7 +468,7 @@ class ApiHandlerTests(unittest.TestCase):
             status, _, body = self.request(
                 server,
                 "POST",
-                "/manual/run",
+                "/manual/run/start",
                 body=b"{bad",
                 headers={"Content-Type": "application/json"},
             )

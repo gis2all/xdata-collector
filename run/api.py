@@ -54,6 +54,7 @@ API_ROUTES: tuple[tuple[str, str], ...] = (
     ("GET", "/runs/{run_id}"),
     ("POST", "/runs/{run_id}/cancel"),
     ("GET", "/logs/runtime"),
+    ("POST", "/manual/run/start"),
     ("GET", "/items"),
     ("POST", "/items/query"),
     ("POST", "/items/delete"),
@@ -236,8 +237,6 @@ def _dispatch_post(service: DesktopService, path: str, payload: dict[str, Any]) 
     if path.startswith("/task-packs/") and path.endswith("/delete"):
         pack_name = _path_segment(path, 1)
         return _json_response(service.delete_task_pack(pack_name))
-    if path == "/manual/run":
-        return _json_response(service.run_manual(payload))
     if path == "/manual/run/start":
         return _json_response(service.start_manual_run(payload))
     if path in {"/jobs", "/jobs/create"}:
