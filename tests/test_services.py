@@ -2,6 +2,7 @@
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
+import json
 from urllib.error import URLError
 
 import services
@@ -325,6 +326,98 @@ class ServicesHelpersTests(unittest.TestCase):
             services.terminate_pid_tree(1234)
 
         child.kill.assert_called_once_with()
+
+
+
+    def test_terminate_pid_tree_catches_nosuchprocess(self) -> None:
+        import psutil
+        with patch("services.psutil.Process", side_effect=psutil.NoSuchProcess(1234)):
+            services.terminate_pid_tree(1234)
+
+    def test_write_pid_and_port_state(self) -> None:
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "api.pid"
+            services.write_pid(path, 99999)
+            self.assertEqual(path.read_text(encoding="utf-8").strip(), "99999")
+
+        svc_no_port = services.ManagedService(key="t", label="t", pid_file=path, out_log=path, err_log=path, cwd=Path("."), command=("x",))
+        self.assertIsNone(services.port_state(svc_no_port))
+
+    def test_pid_exists_falls_back_to_os_kill(self) -> None:
+        import psutil
+        with patch("services.psutil.pid_exists", side_effect=psutil.Error):
+            with patch("os.kill", return_value=None):
+                self.assertTrue(services.pid_exists(1234))
+            with patch("os.kill", side_effect=OSError):
+                self.assertFalse(services.pid_exists(1234))
+
+    def test_list_processes_falls_back_to_powershell(self) -> None:
+        with patch("services.psutil.process_iter", return_value=[]):
+            with patch("services.os.name", "nt"):
+                output = json.dumps([{"ProcessId": 1, "CommandLine": "python run/scheduler.py"}])
+                completed = Mock(stdout=output)
+                with patch("services.subprocess.run", return_value=completed):
+                    result = services.list_processes()
+                self.assertEqual(result, [(1, "python run/scheduler.py")])
+
+    def test_list_processes_falls_back_to_ps(self) -> None:
+        with patch("services.psutil.process_iter", return_value=[]):
+            with patch("services.os.name", "posix"):
+                completed = Mock(stdout="  1 python run/api.py\n  2 bash\n")
+                with patch("services.subprocess.run", return_value=completed):
+                    result = services.list_processes()
+                self.assertEqual(result, [(1, "python run/api.py"), (2, "bash")])
+
+    def test_list_processes_handles_empty_powershell_output(self) -> None:
+        with patch("services.psutil.process_iter", return_value=[]):
+            with patch("services.os.name", "nt"):
+                completed = Mock(stdout="")
+                with patch("services.subprocess.run", return_value=completed):
+                    self.assertEqual(services.list_processes(), [])
+
+    def test_find_pids_by_port_handles_psutil_access_denied(self) -> None:
+        import psutil
+        with patch("services.psutil.net_connections", side_effect=psutil.AccessDenied):
+            with patch("services.os.name", "nt"):
+                output = "  TCP    127.0.0.1:8765    0.0.0.0:0    LISTENING    111\n"
+                completed = Mock(stdout=output)
+                with patch("services.subprocess.run", return_value=completed):
+                    self.assertEqual(services.find_pids_by_port(8765), [111])
+
+    def test_find_pids_by_port_uses_lsof_on_unix(self) -> None:
+        with patch("services.psutil.net_connections", return_value=[]):
+            with patch("services.os.name", "posix"):
+                completed = Mock(stdout="123\n456\n")
+                with patch("services.shutil.which", side_effect=["lsof", None]):
+                    with patch("services.subprocess.run", return_value=completed):
+                        self.assertEqual(services.find_pids_by_port(8765), [123, 456])
+
+
+class ServicesMainTests(unittest.TestCase):
+    def test_main_start_and_stop(self) -> None:
+        with patch("services.ensure_runtime_dirs"), patch("services.warn_if_env_missing"), patch("services.ensure_npm_for_dev_ui"), patch("services.print_statuses"):
+            with patch("services.start_all") as mock_start_all:
+                services.main(["start"])
+            mock_start_all.assert_called_once()
+
+            with patch("services.stop_all") as mock_stop_all:
+                services.main(["stop"])
+            mock_stop_all.assert_called_once()
+
+            with patch("services.start_all", return_value=[]), patch("services.stop_all"):
+                services.main(["restart"])
+
+    def test_main_status_resolves_all(self) -> None:
+        with patch("services.ensure_runtime_dirs"), patch("services.warn_if_env_missing"), patch("services.print_statuses"):
+            with patch("services.resolve_status") as mock_resolve:
+                services.main(["status"])
+            self.assertEqual(mock_resolve.call_count, len(services.SERVICES))
+
+    def test_main_start_exits_when_npm_missing(self) -> None:
+        with patch("services.ensure_runtime_dirs"), patch("services.warn_if_env_missing"):
+            with patch("services.ensure_npm_for_dev_ui", side_effect=SystemExit("npm")):
+                with self.assertRaises(SystemExit):
+                    services.main(["start"])
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import json
 import unittest
 from contextlib import contextmanager
+from unittest.mock import Mock
 
 from flask.testing import FlaskClient
 
@@ -238,6 +239,27 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(headers["Access-Control-Allow-Origin"], "http://127.0.0.1:5177")
         self.assertEqual(json.loads(body.decode("utf-8"))["summary"]["source"], "backend_snapshot")
+
+    def test_not_found_route_returns_404(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, _ = self.request(server, "GET", "/nonexistent")
+        self.assertEqual(status, 404)
+
+    def test_internal_error_returns_500(self) -> None:
+        service = FakeService()
+        service.health = Mock(side_effect=RuntimeError("boom"))
+        with serve(service) as server:
+            status, _, body = self.request(server, "GET", "/health")
+        self.assertEqual(status, 500)
+        self.assertIn(b"internal_server_error", body)
+
+    def test_file_not_found_returns_404(self) -> None:
+        service = FakeService()
+        service.get_task_pack = Mock(side_effect=FileNotFoundError("missing"))
+        with serve(service) as server:
+            status, _, _ = self.request(server, "GET", "/task-packs/missing-pack")
+        self.assertEqual(status, 404)
 
     def test_get_health_does_not_echo_non_local_origin(self) -> None:
         service = FakeService()
@@ -845,6 +867,32 @@ class ApiHandlerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body.decode("utf-8"))["rows_after"], 7)
         self.assertEqual(service.calls[0], ("dedupe_items", "raw"))
+
+    def test_invalid_json_returns_bad_request(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(server, "POST", "/jobs", b"not-json")
+        self.assertEqual(status, 400)
+
+    def test_unknown_method_returns_method_not_allowed(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(server, "PATCH", "/health")
+        self.assertEqual(status, 405)
+
+    def test_put_non_workspace_returns_not_found(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(server, "PUT", "/jobs", b"{}")
+        self.assertEqual(status, 404)
+
+    def test_items_query_missing_table_falls_back_to_curated(self) -> None:
+        service = FakeService()
+        with serve(service) as server:
+            status, _, body = self.request(server, "POST", "/items/query",
+                json.dumps({}).encode("utf-8"))
+        self.assertEqual(status, 200)
+
 
 
 if __name__ == "__main__":
