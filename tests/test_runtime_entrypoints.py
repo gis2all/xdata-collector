@@ -24,10 +24,47 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(resolved, "C:/node/npm.cmd")
         self.assertEqual(mock_which.call_count, 2)
 
+    def test_resolve_command_returns_none_when_all_candidates_missing(self) -> None:
+        with patch("run.bootstrap.shutil.which", return_value=None):
+            self.assertIsNone(bootstrap._resolve_command("missing", "also-missing"))
+
+    def test_run_prints_command_and_executes_from_project_root(self) -> None:
+        with patch("run.bootstrap._print_step") as mock_print_step, patch("run.bootstrap.subprocess.run") as mock_run:
+            bootstrap._run(["python", "--version"])
+
+        mock_print_step.assert_called_once_with("run: python --version")
+        mock_run.assert_called_once_with(["python", "--version"], check=True, cwd=str(bootstrap.PROJECT_ROOT))
+
+    def test_bootstrap_install_steps_use_pinned_commands(self) -> None:
+        with patch("run.bootstrap._run") as mock_run, patch("run.bootstrap._print_step"):
+            bootstrap.ensure_pipx()
+            bootstrap.install_python_runtime_dependencies()
+            bootstrap.install_twitter_cli()
+
+        self.assertEqual(
+            [call.args[0] for call in mock_run.call_args_list],
+            [
+                [sys.executable, "-m", "pip", "install", "--upgrade", "pipx"],
+                [sys.executable, "-m", "pipx", "ensurepath"],
+                [sys.executable, "-m", "pip", "install", "--upgrade", "-r", str(bootstrap.RUNTIME_REQUIREMENTS)],
+                [sys.executable, "-m", "pipx", "install", "--force", bootstrap.TWITTER_CLI_SOURCE],
+            ],
+        )
+
     def test_install_xreach_cli_requires_npm(self) -> None:
         with patch("run.bootstrap._resolve_command", return_value=None):
             with self.assertRaisesRegex(RuntimeError, "npm not found"):
                 bootstrap.install_xreach_cli()
+
+    def test_install_xreach_cli_uses_resolved_npm(self) -> None:
+        with (
+            patch("run.bootstrap._resolve_command", return_value="C:/node/npm.cmd"),
+            patch("run.bootstrap._run") as mock_run,
+            patch("run.bootstrap._print_step"),
+        ):
+            bootstrap.install_xreach_cli()
+
+        mock_run.assert_called_once_with(["C:/node/npm.cmd", "install", "-g", bootstrap.XREACH_CLI_PACKAGE])
 
     def test_main_runs_pinned_bootstrap_steps(self) -> None:
         with (
@@ -165,6 +202,97 @@ class StaticWebServerTests(unittest.TestCase):
         handler.send_response.assert_called_once_with(static_web_server.HTTPStatus.NOT_FOUND.value)
         handler.end_headers.assert_called_once_with()
         self.assertEqual(handler.wfile.getvalue(), b"not found")
+
+    def test_static_handler_serves_index_for_root_path(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "index.html").write_text("<h1>ok</h1>", encoding="utf-8")
+            handler = static_web_server.StaticHandler.__new__(static_web_server.StaticHandler)
+            handler.path = "/"
+            handler.root = root
+            handler.wfile = io.BytesIO()
+            handler.send_response = Mock()
+            handler.send_header = Mock()
+            handler.end_headers = Mock()
+
+            handler.do_GET()
+
+        handler.send_response.assert_called_once_with(static_web_server.HTTPStatus.OK.value)
+        handler.send_header.assert_any_call("Content-Type", "text/html")
+        handler.send_header.assert_any_call("Cache-Control", "no-store")
+        self.assertEqual(handler.wfile.getvalue(), b"<h1>ok</h1>")
+
+    def test_static_handler_serves_nested_index_for_directory(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            nested = root / "assets"
+            nested.mkdir()
+            (nested / "index.html").write_text("nested", encoding="utf-8")
+            handler = static_web_server.StaticHandler.__new__(static_web_server.StaticHandler)
+            handler.path = "/assets"
+            handler.root = root
+            handler.wfile = io.BytesIO()
+            handler.send_response = Mock()
+            handler.send_header = Mock()
+            handler.end_headers = Mock()
+
+            handler.do_GET()
+
+        handler.send_response.assert_called_once_with(static_web_server.HTTPStatus.OK.value)
+        self.assertEqual(handler.wfile.getvalue(), b"nested")
+
+    def test_static_handler_rejects_path_traversal(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp) / "dist"
+            root.mkdir()
+            outside = Path(tmp) / "secret.txt"
+            outside.write_text("secret", encoding="utf-8")
+            handler = static_web_server.StaticHandler.__new__(static_web_server.StaticHandler)
+            handler.path = "/../secret.txt"
+            handler.root = root
+            handler.wfile = io.BytesIO()
+            handler.send_response = Mock()
+            handler.send_header = Mock()
+            handler.end_headers = Mock()
+
+            handler.do_GET()
+
+        handler.send_response.assert_called_once_with(static_web_server.HTTPStatus.FORBIDDEN.value)
+        self.assertEqual(handler.wfile.getvalue(), b"forbidden")
+
+    def test_static_handler_returns_not_found_for_missing_file(self) -> None:
+        with TemporaryDirectory() as tmp:
+            handler = static_web_server.StaticHandler.__new__(static_web_server.StaticHandler)
+            handler.path = "/missing.js"
+            handler.root = Path(tmp)
+            handler.wfile = io.BytesIO()
+            handler.send_response = Mock()
+            handler.send_header = Mock()
+            handler.end_headers = Mock()
+
+            handler.do_GET()
+
+        handler.send_response.assert_called_once_with(static_web_server.HTTPStatus.NOT_FOUND.value)
+        self.assertEqual(handler.wfile.getvalue(), b"not found")
+
+    def test_static_handler_returns_internal_server_error_for_read_failure(self) -> None:
+        handler = static_web_server.StaticHandler.__new__(static_web_server.StaticHandler)
+        handler.path = "/"
+        handler.root = Mock()
+        handler.root.__truediv__ = Mock(side_effect=RuntimeError("boom"))
+        handler.wfile = io.BytesIO()
+        handler.send_response = Mock()
+        handler.send_header = Mock()
+        handler.end_headers = Mock()
+
+        handler.do_GET()
+
+        handler.send_response.assert_called_once_with(static_web_server.HTTPStatus.INTERNAL_SERVER_ERROR.value)
+        self.assertIn(b"boom", handler.wfile.getvalue())
+
+    def test_static_handler_suppresses_request_logs(self) -> None:
+        handler = static_web_server.StaticHandler.__new__(static_web_server.StaticHandler)
+        self.assertIsNone(handler.log_message("ignored %s", "value"))
 
 
 if __name__ == "__main__":

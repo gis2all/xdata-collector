@@ -1,4 +1,5 @@
 import type { ItemTable } from "../../api";
+import { ResultsFieldMenu } from "./ResultsFieldMenu";
 import { ResultsFilterBuilder } from "./ResultsFilterBuilder";
 import { ResultsTableManager } from "./ResultsTableManager";
 import type { UseResultsPageState } from "./useResultsPageState";
@@ -93,7 +94,14 @@ export function ResultsControlLayer({ state }: ResultsControlLayerProps) {
             loading={state.loading}
             allowBatchDeleteWithoutSelection={state.hasAdvancedFilter && state.total > 0}
             fieldMenuOpen={state.fieldMenuOpen}
-            fieldMenu={state.fieldMenuOpen ? state.fieldMenu : null}
+            fieldMenu={state.fieldMenuOpen ? (
+              <ResultsFieldMenu
+                columnDefinitions={state.columnDefinitions}
+                visibleColumns={state.visibleColumns}
+                visibleColumnCount={state.visibleColumnCount}
+                onToggleColumn={state.toggleColumnVisibility}
+              />
+            ) : null}
             onSelectAllMatching={state.handleSelectAllMatching}
             onClearSelection={state.handleClearSelection}
             onToggleFields={state.handleToggleFieldMenu}

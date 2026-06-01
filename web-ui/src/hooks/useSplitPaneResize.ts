@@ -7,11 +7,11 @@ type SplitPaneResizeOptions = {
   resizerWidth: number;
 };
 
-export function useSplitPaneResize(options: SplitPaneResizeOptions) {
+export function useSplitPaneResize<TElement extends HTMLElement = HTMLDivElement>(options: SplitPaneResizeOptions) {
   const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? options.breakpoint : window.innerWidth));
   const [, setLeftPaneWidth] = useState<number | null>(null);
   const [isResizing, setIsResizing] = useState(false);
-  const layoutRef = useRef<HTMLDivElement | null>(null);
+  const layoutRef = useRef<TElement | null>(null);
   const dragBoundsRef = useRef<{ left: number; width: number } | null>(null);
   const isSplitLayout = viewportWidth > options.breakpoint;
 

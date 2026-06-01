@@ -19,7 +19,12 @@ def test_openapi_document_covers_declared_api_routes() -> None:
         for method in methods
     }
 
-    assert set(API_ROUTES).issubset(documented)
+    assert set(API_ROUTES) == documented
+
+
+def test_manual_run_routes_are_declared_in_api_routes() -> None:
+    assert ("POST", "/manual/run") not in API_ROUTES
+    assert ("POST", "/manual/run/start") in API_ROUTES
 
 
 def test_api_runtime_uses_flask_instead_of_stdlib_route_handler() -> None:

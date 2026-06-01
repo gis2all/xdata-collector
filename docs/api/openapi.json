@@ -690,6 +690,37 @@
         }
       }
     },
+    "/manual/run/start": {
+      "post": {
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "JSON response"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized when XDATA_API_TOKEN is configured"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "operationId": "postManualRunStart"
+      }
+    },
     "/rule-sets": {
       "get": {
         "operationId": "getRuleSets",

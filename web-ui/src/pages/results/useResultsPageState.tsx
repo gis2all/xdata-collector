@@ -8,39 +8,31 @@ import {
   listItems,
   type ItemSortField,
   type ItemTable,
-  type ResultsFilterConditionNode,
   type ResultsFilterGroupNode,
-  type ResultsFilterRelation,
   type ResultItemRecord,
   type SortDirection,
 } from "../../api";
 import { usePagination } from "../../hooks/usePagination";
+import { useSplitPaneResize } from "../../hooks/useSplitPaneResize";
 import {
   COLUMN_DEFINITIONS_BY_TABLE,
-  DEFAULT_VISIBLE_COLUMNS_BY_TABLE,
-  getColumnMinWidth,
-  orderVisibleColumns,
   readColumnWidths,
-  resolveColumnWidth,
   writeColumnWidths,
-  type ColumnDefinition,
-  type ColumnResizeState,
   type ColumnWidthsByTable,
 } from "./resultsTableConfig";
 import {
-  RESULTS_FILTER_FIELD_OPTIONS,
   cloneResultsFilterTree,
   createDefaultResultsFilterState,
-  createEmptyResultsFilterTree,
-  createFilterCondition,
   filterTreeHasConditions,
-  getFilterGroupAtPath,
-  getFilterParentAtPath,
   readResultsFilterState,
   sanitizeFilterTreeForSubmit,
   writeResultsFilterState,
   type ResultsFilterState,
 } from "./resultsFilterState";
+import { useResultsColumnResize } from "./useResultsColumnResize";
+import { useResultsColumns } from "./useResultsColumns";
+import { useResultsFilterDraft } from "./useResultsFilterDraft";
+import { useResultsSelection } from "./useResultsSelection";
 
 const PAGE_SIZE = 100;
 export const RESULTS_SELECT_COLUMN_WIDTH = 48;
@@ -90,29 +82,54 @@ export function useResultsPageState() {
   const [filterStateByTable, setFilterStateByTable] = useState<Record<ItemTable, ResultsFilterState>>(() => readResultsFilterState());
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [allMatchingSelected, setAllMatchingSelected] = useState(false);
-  const [visibleColumnsByTable, setVisibleColumnsByTable] = useState<Record<ItemTable, ItemSortField[]>>({
-    curated: [...DEFAULT_VISIBLE_COLUMNS_BY_TABLE.curated],
-    raw: [...DEFAULT_VISIBLE_COLUMNS_BY_TABLE.raw],
-  });
   const [columnWidthsByTable, setColumnWidthsByTable] = useState<ColumnWidthsByTable>(() => readColumnWidths());
-  const [fieldMenuOpen, setFieldMenuOpen] = useState(false);
   const [sortBy, setSortBy] = useState<ItemSortField>("id");
   const [sortDir, setSortDir] = useState<SortDirection>("desc");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [isResizingColumn, setIsResizingColumn] = useState(false);
-  const [resizingColumnId, setResizingColumnId] = useState<string | null>(null);
-  const [viewportWidth, setViewportWidth] = useState(() => (typeof window === "undefined" ? RESULTS_SPLIT_LAYOUT_BREAKPOINT : window.innerWidth));
-  const [, setLeftPaneWidth] = useState<number | null>(null);
-  const [isResizingWorkspace, setIsResizingWorkspace] = useState(false);
-  const resizeStateRef = useRef<ColumnResizeState | null>(null);
-  const workspaceLayoutRef = useRef<HTMLElement | null>(null);
-  const workspaceDragBoundsRef = useRef<{ left: number; width: number } | null>(null);
   const loadAbortRef = useRef<AbortController | null>(null);
   const loadRequestIdRef = useRef(0);
+  const { isResizingColumn, resizingColumnId, startColumnResize } = useResultsColumnResize({
+    table,
+    setColumnWidthsByTable,
+  });
+  const {
+    isSplitLayout,
+    isResizing: isResizingWorkspace,
+    layoutRef: workspaceLayoutRef,
+    startResizing: startWorkspaceResizing,
+  } = useSplitPaneResize<HTMLElement>({
+    breakpoint: RESULTS_SPLIT_LAYOUT_BREAKPOINT,
+    minLeftPaneWidth: RESULTS_MIN_TABLE_PANE_WIDTH,
+    minRightPaneWidth: RESULTS_MIN_DETAIL_PANE_WIDTH,
+    resizerWidth: RESULTS_RESIZER_WIDTH,
+  });
+  const {
+    updateFilterState,
+    handleKeywordInputChange,
+    handleToggleAdvancedFilters,
+    addConditionToGroup,
+    addGroupToGroup,
+    removeDraftNode,
+    updateGroupRelation,
+    updateCondition,
+  } = useResultsFilterDraft({ table, setFilterStateByTable });
+  const {
+    visibleColumnsByTable,
+    setVisibleColumnsByTable,
+    fieldMenuOpen,
+    setFieldMenuOpen,
+    visibleColumns,
+    columnDefinitions,
+    visibleColumnDefinitions,
+    currentColumnWidths,
+    resolvedVisibleColumnDefinitions,
+    sortFieldSet,
+    toggleColumnVisibility,
+    handleRestoreDefaultColumns,
+    handleToggleFieldMenu,
+  } = useResultsColumns({ table, columnWidthsByTable });
 
   const currentFilterState = filterStateByTable[table];
   const keywordInput = currentFilterState.keywordInput;
@@ -120,25 +137,22 @@ export function useResultsPageState() {
   const draftFilterTree = currentFilterState.draftTree;
   const appliedFilterTree = currentFilterState.appliedTree;
   const hasAdvancedFilter = filterTreeHasConditions(appliedFilterTree);
-  const visibleColumns = visibleColumnsByTable[table];
-  const columnDefinitions = COLUMN_DEFINITIONS_BY_TABLE[table];
-  const visibleColumnDefinitions = columnDefinitions.filter((column) => visibleColumns.includes(column.key));
-  const currentColumnWidths = columnWidthsByTable[table];
-  const resolvedVisibleColumnDefinitions = useMemo(
-    () =>
-      visibleColumnDefinitions.map((column) => ({
-        ...column,
-        currentWidth: resolveColumnWidth(column, currentColumnWidths?.[column.key]),
-      })),
-    [currentColumnWidths, visibleColumnDefinitions],
-  );
-  const sortFieldSet = useMemo(() => new Set(columnDefinitions.map((column) => column.key)), [columnDefinitions]);
+  const {
+    selectedIds,
+    setSelectedIds,
+    allMatchingSelected,
+    setAllMatchingSelected,
+    selectedOnPage,
+    selectedCount,
+    allSelectedOnPage,
+    showSelectAllMatching,
+    handleSelectAllMatching,
+    handleClearSelection,
+    toggleSelected,
+    toggleSelectAll,
+  } = useResultsSelection({ items, total, hasAdvancedFilter });
   const { totalPages } = usePagination(total, PAGE_SIZE);
-  const selectedOnPage = allMatchingSelected ? items.length : items.filter((item) => selectedIds.includes(item.id)).length;
-  const selectedCount = allMatchingSelected ? total : selectedIds.length;
   const activeItem = useMemo(() => items.find((item) => item.id === activeRowId) ?? null, [activeRowId, items]);
-  const allSelectedOnPage = items.length > 0 && selectedOnPage === items.length;
-  const showSelectAllMatching = !hasAdvancedFilter && !allMatchingSelected && allSelectedOnPage && total > items.length;
   const sortDirectionLabel = sortDir === "asc" ? "升序" : "降序";
   const tableMinWidth = Math.max(
     960,
@@ -147,7 +161,6 @@ export function useResultsPageState() {
   const tableName = TABLE_NAMES[table];
   const tableLabel = TABLE_LABELS[table];
   const activeKeywordLabel = appliedKeyword || "全部";
-  const isSplitLayout = viewportWidth > RESULTS_SPLIT_LAYOUT_BREAKPOINT;
   const dedupeConfirmText = `确定对整个 ${tableName} 表执行去重吗？此操作会删除重复行。`;
   const batchDeleteConfirm = hasAdvancedFilter
     ? `确定硬删除当前筛选命中的 ${total} 条记录吗？此操作无法恢复。`
@@ -162,228 +175,6 @@ export function useResultsPageState() {
   useEffect(() => {
     writeResultsFilterState(filterStateByTable);
   }, [filterStateByTable]);
-
-  function applyWorkspacePaneWidth(nextWidth: number | null) {
-    setLeftPaneWidth(nextWidth);
-    if (!workspaceLayoutRef.current) return;
-    workspaceLayoutRef.current.style.gridTemplateColumns = nextWidth === null
-      ? ""
-      : `${nextWidth}px ${RESULTS_RESIZER_WIDTH}px minmax(${RESULTS_MIN_DETAIL_PANE_WIDTH}px, 1fr)`;
-  }
-
-  function updateDraggedWorkspaceWidth(clientX: number | undefined) {
-    const bounds = workspaceDragBoundsRef.current;
-    if (!bounds || typeof clientX !== "number" || Number.isNaN(clientX)) return;
-    const maxWidth = Math.max(RESULTS_MIN_TABLE_PANE_WIDTH, bounds.width - RESULTS_MIN_DETAIL_PANE_WIDTH - RESULTS_RESIZER_WIDTH);
-    const nextWidth = Math.min(Math.max(clientX - bounds.left, RESULTS_MIN_TABLE_PANE_WIDTH), maxWidth);
-    applyWorkspacePaneWidth(nextWidth);
-  }
-
-  useEffect(() => {
-    function updateResizedColumnWidth(clientX: number | undefined) {
-      const resizeState = resizeStateRef.current;
-      if (!resizeState || typeof clientX !== "number" || Number.isNaN(clientX)) {
-        return;
-      }
-      const delta = clientX - resizeState.startX;
-      const pairTotal = resizeState.leftStartWidth + resizeState.rightStartWidth;
-      const nextLeftWidth = Math.min(
-        Math.max(Math.round(resizeState.leftStartWidth + delta), resizeState.leftMinWidth),
-        pairTotal - resizeState.rightMinWidth,
-      );
-      const nextRightWidth = pairTotal - nextLeftWidth;
-      setColumnWidthsByTable((current) => {
-        const tableWidths = current[resizeState.table];
-        if (
-          tableWidths?.[resizeState.leftKey] === nextLeftWidth &&
-          tableWidths?.[resizeState.rightKey] === nextRightWidth
-        ) {
-          return current;
-        }
-        return {
-          ...current,
-          [resizeState.table]: {
-            ...tableWidths,
-            [resizeState.leftKey]: nextLeftWidth,
-            [resizeState.rightKey]: nextRightWidth,
-          },
-        };
-      });
-    }
-
-    function handlePointerMove(event: PointerEvent) {
-      updateResizedColumnWidth(event.clientX);
-    }
-
-    function handleMouseMove(event: MouseEvent) {
-      updateResizedColumnWidth(event.clientX);
-    }
-
-    function stopResizingColumn() {
-      resizeStateRef.current = null;
-      setIsResizingColumn(false);
-      setResizingColumnId(null);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    }
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", stopResizingColumn);
-    window.addEventListener("pointercancel", stopResizingColumn);
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", stopResizingColumn);
-
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", stopResizingColumn);
-      window.removeEventListener("pointercancel", stopResizingColumn);
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", stopResizingColumn);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    };
-  }, []);
-
-  useEffect(() => {
-    function handleWindowResize() {
-      setViewportWidth(window.innerWidth);
-    }
-
-    function handleWorkspacePointerMove(event: PointerEvent) {
-      updateDraggedWorkspaceWidth(event.clientX);
-    }
-
-    function handleWorkspaceMouseMove(event: MouseEvent) {
-      updateDraggedWorkspaceWidth(event.clientX);
-    }
-
-    function stopWorkspaceResizing() {
-      workspaceDragBoundsRef.current = null;
-      setIsResizingWorkspace(false);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    }
-
-    window.addEventListener("resize", handleWindowResize);
-    window.addEventListener("pointermove", handleWorkspacePointerMove);
-    window.addEventListener("pointerup", stopWorkspaceResizing);
-    window.addEventListener("pointercancel", stopWorkspaceResizing);
-    window.addEventListener("mousemove", handleWorkspaceMouseMove);
-    window.addEventListener("mouseup", stopWorkspaceResizing);
-
-    return () => {
-      window.removeEventListener("resize", handleWindowResize);
-      window.removeEventListener("pointermove", handleWorkspacePointerMove);
-      window.removeEventListener("pointerup", stopWorkspaceResizing);
-      window.removeEventListener("pointercancel", stopWorkspaceResizing);
-      window.removeEventListener("mousemove", handleWorkspaceMouseMove);
-      window.removeEventListener("mouseup", stopWorkspaceResizing);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    };
-  }, []);
-
-  useEffect(() => {
-    if (isSplitLayout) return;
-    setIsResizingWorkspace(false);
-    applyWorkspacePaneWidth(null);
-    workspaceDragBoundsRef.current = null;
-    document.body.style.userSelect = "";
-    document.body.style.cursor = "";
-  }, [isSplitLayout]);
-
-  function updateFilterState(targetTable: ItemTable, updater: (current: ResultsFilterState) => ResultsFilterState) {
-    setFilterStateByTable((current) => ({
-      ...current,
-      [targetTable]: updater(current[targetTable]),
-    }));
-  }
-
-  function updateDraftTree(updater: (current: ResultsFilterGroupNode) => ResultsFilterGroupNode) {
-    updateFilterState(table, (current) => ({
-      ...current,
-      draftTree: updater(current.draftTree),
-    }));
-  }
-
-  function handleKeywordInputChange(value: string) {
-    updateFilterState(table, (current) => ({
-      ...current,
-      keywordInput: value,
-    }));
-  }
-
-  function handleToggleAdvancedFilters() {
-    updateFilterState(table, (current) => ({
-      ...current,
-      advancedOpen: !current.advancedOpen,
-    }));
-  }
-
-  function addConditionToGroup(path: number[]) {
-    updateDraftTree((current) => {
-      const next = cloneResultsFilterTree(current);
-      const group = getFilterGroupAtPath(next, path);
-      if (!group) {
-        return current;
-      }
-      const defaultField = RESULTS_FILTER_FIELD_OPTIONS[table][0];
-      group.children.push(createFilterCondition(defaultField.field, defaultField.kind));
-      return next;
-    });
-  }
-
-  function addGroupToGroup(path: number[]) {
-    updateDraftTree((current) => {
-      const next = cloneResultsFilterTree(current);
-      const group = getFilterGroupAtPath(next, path);
-      if (!group) {
-        return current;
-      }
-      group.children.push(createEmptyResultsFilterTree());
-      return next;
-    });
-  }
-
-  function removeDraftNode(path: number[]) {
-    updateDraftTree((current) => {
-      const next = cloneResultsFilterTree(current);
-      const parentRef = getFilterParentAtPath(next, path);
-      if (!parentRef) {
-        return current;
-      }
-      parentRef.parent.children.splice(parentRef.index, 1);
-      return next;
-    });
-  }
-
-  function updateGroupRelation(path: number[], relation: ResultsFilterRelation) {
-    updateDraftTree((current) => {
-      const next = cloneResultsFilterTree(current);
-      const group = getFilterGroupAtPath(next, path);
-      if (!group) {
-        return current;
-      }
-      group.relation = relation === "OR" ? "OR" : "AND";
-      return next;
-    });
-  }
-
-  function updateCondition(path: number[], updater: (current: ResultsFilterConditionNode) => ResultsFilterConditionNode) {
-    updateDraftTree((current) => {
-      const next = cloneResultsFilterTree(current);
-      const parentRef = getFilterParentAtPath(next, path);
-      if (!parentRef) {
-        return current;
-      }
-      const target = parentRef.parent.children[parentRef.index];
-      if (!target || target.type !== "condition") {
-        return current;
-      }
-      parentRef.parent.children[parentRef.index] = updater(target);
-      return next;
-    });
-  }
 
   async function load(options?: {
     table?: ItemTable;
@@ -670,103 +461,8 @@ export function useResultsPageState() {
     }
   }
 
-  function handleSelectAllMatching() {
-    if (hasAdvancedFilter) {
-      return;
-    }
-    setAllMatchingSelected(true);
-  }
-
-  function handleClearSelection() {
-    setAllMatchingSelected(false);
-    setSelectedIds([]);
-  }
-
-  function toggleSelected(id: number) {
-    if (allMatchingSelected) {
-      handleClearSelection();
-      return;
-    }
-    setSelectedIds((current) =>
-      current.includes(id) ? current.filter((itemId) => itemId !== id) : [...current, id],
-    );
-  }
-
-  function toggleSelectAll() {
-    if (allMatchingSelected) {
-      handleClearSelection();
-      return;
-    }
-    if (allSelectedOnPage) {
-      setSelectedIds((current) => current.filter((id) => !items.some((item) => item.id === id)));
-      return;
-    }
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      items.forEach((item) => next.add(item.id));
-      return Array.from(next);
-    });
-  }
-
-  function toggleColumnVisibility(key: ItemSortField) {
-    setVisibleColumnsByTable((current) => {
-      const tableColumns = current[table];
-      const nextColumns = tableColumns.includes(key)
-        ? tableColumns.filter((field) => field !== key)
-        : orderVisibleColumns(table, [...tableColumns, key]);
-      return {
-        ...current,
-        [table]: nextColumns,
-      };
-    });
-  }
-
-  function handleRestoreDefaultColumns() {
-    setVisibleColumnsByTable((current) => ({
-      ...current,
-      [table]: [...DEFAULT_VISIBLE_COLUMNS_BY_TABLE[table]],
-    }));
-  }
-
-  function handleToggleFieldMenu() {
-    setFieldMenuOpen((current) => !current);
-  }
-
   function handleActivateRow(id: number) {
     setActiveRowId(id);
-  }
-
-  function startColumnResize(
-    leftColumn: ColumnDefinition & { currentWidth: number },
-    rightColumn: ColumnDefinition & { currentWidth: number } | undefined,
-    clientX: number | undefined,
-  ) {
-    if (typeof clientX !== "number" || Number.isNaN(clientX) || !rightColumn) {
-      return;
-    }
-    resizeStateRef.current = {
-      table,
-      leftKey: leftColumn.key,
-      rightKey: rightColumn.key,
-      startX: clientX,
-      leftStartWidth: leftColumn.currentWidth,
-      rightStartWidth: rightColumn.currentWidth,
-      leftMinWidth: getColumnMinWidth(leftColumn),
-      rightMinWidth: getColumnMinWidth(rightColumn),
-    };
-    setIsResizingColumn(true);
-    setResizingColumnId(`${table}:${leftColumn.key}`);
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
-  }
-
-  function startWorkspaceResizing() {
-    if (!isSplitLayout || !workspaceLayoutRef.current) return;
-    const bounds = workspaceLayoutRef.current.getBoundingClientRect();
-    workspaceDragBoundsRef.current = { left: bounds.left, width: bounds.width };
-    setIsResizingWorkspace(true);
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
   }
 
   function handleWorkspaceResizerPointerDown(event: React.PointerEvent<HTMLDivElement>) {
@@ -778,31 +474,6 @@ export function useResultsPageState() {
     startWorkspaceResizing();
     event.preventDefault();
   }
-
-  const fieldMenu = (
-    <div className="results-field-menu" data-testid="results-field-menu">
-      <div className="results-field-menu-header">
-        <div className="results-field-menu-copy">
-          <div className="results-field-menu-title">列显示</div>
-          <div className="kv">隐藏列会保留宽度设置，重新显示时会恢复。</div>
-        </div>
-        <span className="results-summary-pill workbench-pill">{`已选 ${visibleColumnDefinitions.length} 列`}</span>
-      </div>
-      <div className="results-field-list">
-        {columnDefinitions.map((column) => (
-          <label key={column.key} className="results-field-option">
-            <input
-              type="checkbox"
-              aria-label={`toggle-column-${column.key}`}
-              checked={visibleColumns.includes(column.key)}
-              onChange={() => toggleColumnVisibility(column.key)}
-            />
-            <span>{column.label}</span>
-          </label>
-        ))}
-      </div>
-    </div>
-  );
 
   return {
     table,
@@ -855,7 +526,6 @@ export function useResultsPageState() {
     currentColumnWidthCount: visibleColumnDefinitions.length,
     tableNameLabel: tableName,
     TEXT,
-    fieldMenu,
     handleKeywordInputChange,
     handleToggleAdvancedFilters,
     addConditionToGroup,
