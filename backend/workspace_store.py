@@ -9,7 +9,7 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from backend.collector_rules import (
     default_rule_set_definition,
@@ -29,44 +29,120 @@ WORKSPACE_VERSION = 2
 TASK_PACK_VERSION = 1
 TASK_PACK_KIND = "task_pack"
 _RUNS_LOCK = threading.RLock()
+_FILE_LOCKS_GUARD = threading.Lock()
+_FILE_LOCKS: dict[str, Any] = {}
+_FILE_LOCK_STATE = threading.local()
+_FILE_TRANSACTION_STATE = threading.local()
 _FILE_LOCK_TIMEOUT_SECONDS = 10.0
 _FILE_LOCK_POLL_SECONDS = 0.05
+
+
+class _FileTransaction:
+    def __init__(self) -> None:
+        self._snapshots: dict[str, tuple[Path, bool, bytes]] = {}
+        self._order: list[str] = []
+
+    def record(self, path: Path) -> None:
+        resolved = path.resolve()
+        key = str(resolved)
+        if key in self._snapshots:
+            return
+        exists = resolved.exists()
+        payload = resolved.read_bytes() if exists else b""
+        self._snapshots[key] = (resolved, exists, payload)
+        self._order.append(key)
+
+    def rollback(self) -> None:
+        for key in reversed(self._order):
+            path, existed, payload = self._snapshots[key]
+            if existed:
+                _ensure_parent(path)
+                tmp_path = path.with_suffix(path.suffix + ".rollback")
+                tmp_path.write_bytes(payload)
+                tmp_path.replace(path)
+                continue
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+
+
+@contextmanager
+def _file_transaction():
+    active = getattr(_FILE_TRANSACTION_STATE, "current", None)
+    if active is not None:
+        yield active
+        return
+
+    transaction = _FileTransaction()
+    _FILE_TRANSACTION_STATE.current = transaction
+    try:
+        yield transaction
+    except Exception:
+        transaction.rollback()
+        raise
+    finally:
+        _FILE_TRANSACTION_STATE.current = None
+
+
+def _record_transaction_file_change(path: Path) -> None:
+    transaction = getattr(_FILE_TRANSACTION_STATE, "current", None)
+    if transaction is not None:
+        transaction.record(path)
+
+
+def _thread_lock_for_path(lock_path: Path):
+    key = str(lock_path.resolve())
+    with _FILE_LOCKS_GUARD:
+        return key, _FILE_LOCKS.setdefault(key, threading.RLock())
 
 
 @contextmanager
 def _exclusive_lock(path: Path):
     lock_path = path.with_name(path.name + ".lock")
     _ensure_parent(lock_path)
-    with lock_path.open("a+b") as handle:
-        deadline = time.time() + _FILE_LOCK_TIMEOUT_SECONDS
-        while True:
+    key, thread_lock = _thread_lock_for_path(lock_path)
+    with thread_lock:
+        held_paths = getattr(_FILE_LOCK_STATE, "held_paths", None)
+        if held_paths is None:
+            held_paths = set()
+            _FILE_LOCK_STATE.held_paths = held_paths
+        if key in held_paths:
+            yield
+            return
+
+        with lock_path.open("a+b") as handle:
+            deadline = time.time() + _FILE_LOCK_TIMEOUT_SECONDS
+            while True:
+                try:
+                    handle.seek(0)
+                    if os.name == "nt":
+                        import msvcrt
+
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    else:
+                        import fcntl
+
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except OSError as exc:
+                    if time.time() >= deadline:
+                        raise TimeoutError(f"timed out waiting for lock: {path}") from exc
+                    time.sleep(_FILE_LOCK_POLL_SECONDS)
+            held_paths.add(key)
             try:
+                yield
+            finally:
+                held_paths.remove(key)
                 handle.seek(0)
                 if os.name == "nt":
                     import msvcrt
 
-                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
                 else:
                     import fcntl
 
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except OSError as exc:
-                if time.time() >= deadline:
-                    raise TimeoutError(f"timed out waiting for lock: {path}") from exc
-                time.sleep(_FILE_LOCK_POLL_SECONDS)
-        try:
-            yield
-        finally:
-            handle.seek(0)
-            if os.name == "nt":
-                import msvcrt
-
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _ensure_parent(path: Path) -> None:
@@ -75,6 +151,7 @@ def _ensure_parent(path: Path) -> None:
 
 def _atomic_write_text(path: Path, content: str) -> None:
     _ensure_parent(path)
+    _record_transaction_file_change(path)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
     tmp_path.write_text(content, encoding="utf-8")
     tmp_path.replace(path)
@@ -307,9 +384,18 @@ def _normalize_job_registry_entry(payload: dict[str, Any], *, fallback_id: int) 
 
 
 class TaskPackStore:
-    def __init__(self, *, packs_dir: str | Path = DEFAULT_PACKS_DIR, project_root: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        packs_dir: str | Path = DEFAULT_PACKS_DIR,
+        project_root: str | Path | None = None,
+        configuration_lock_path: str | Path | None = None,
+    ) -> None:
         self.packs_dir = Path(packs_dir)
         self.project_root = Path(project_root) if project_root is not None else self._infer_project_root(self.packs_dir)
+        self.configuration_lock_path = (
+            Path(configuration_lock_path) if configuration_lock_path is not None else self.packs_dir.parent / "workspace.json"
+        )
 
     def _infer_project_root(self, packs_dir: Path) -> Path:
         if packs_dir.parent.name == "config":
@@ -349,43 +435,53 @@ class TaskPackStore:
         }
 
     def list_packs(self) -> list[dict[str, Any]]:
-        if not self.packs_dir.exists():
-            return []
-        items = [self._pack_summary(path) for path in sorted(self.packs_dir.glob("*.json"))]
-        items.sort(key=lambda item: item.get("name", "").lower())
-        items.sort(key=lambda item: item.get("updated_at", ""), reverse=True)
-        return items
+        with _exclusive_lock(self.configuration_lock_path):
+            if not self.packs_dir.exists():
+                return []
+            items = [self._pack_summary(path) for path in sorted(self.packs_dir.glob("*.json"))]
+            items.sort(key=lambda item: item.get("name", "").lower())
+            items.sort(key=lambda item: item.get("updated_at", ""), reverse=True)
+            return items
 
     def get_pack(self, pack_name_or_path: str | Path) -> dict[str, Any]:
-        path = self._resolve_pack_path(pack_name_or_path)
-        if not path.exists():
-            raise ValueError(f"task pack {path.name} not found")
-        return _normalize_task_pack(_read_json_file(path), fallback_name=path.stem)
+        with _exclusive_lock(self.configuration_lock_path):
+            path = self._resolve_pack_path(pack_name_or_path)
+            if not path.exists():
+                raise ValueError(f"task pack {path.name} not found")
+            return _normalize_task_pack(_read_json_file(path), fallback_name=path.stem)
 
-    def create_pack(self, pack_name: str, payload: dict[str, Any]) -> dict[str, Any]:
-        path = self._resolve_pack_path(pack_name)
-        if path.exists():
-            raise ValueError(f"task pack {path.name} already exists")
-        return self.upsert_pack(pack_name, payload)
-
-    def update_pack(self, pack_name: str, payload: dict[str, Any]) -> dict[str, Any]:
-        path = self._resolve_pack_path(pack_name)
-        if not path.exists():
-            raise ValueError(f"task pack {path.name} not found")
-        return self.upsert_pack(pack_name, payload)
-
-    def upsert_pack(self, pack_name: str, payload: dict[str, Any]) -> dict[str, Any]:
-        path = self._resolve_pack_path(pack_name)
+    def _write_pack_unlocked(self, path: Path, payload: dict[str, Any]) -> dict[str, Any]:
         normalized = _normalize_task_pack(payload, fallback_name=path.stem)
         _atomic_write_text(path, json.dumps(normalized, ensure_ascii=False, indent=2) + "\n")
         return copy.deepcopy(normalized)
 
+    def create_pack(self, pack_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        with _exclusive_lock(self.configuration_lock_path):
+            path = self._resolve_pack_path(pack_name)
+            if path.exists():
+                raise ValueError(f"task pack {path.name} already exists")
+            return self._write_pack_unlocked(path, payload)
+
+    def update_pack(self, pack_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        with _exclusive_lock(self.configuration_lock_path):
+            path = self._resolve_pack_path(pack_name)
+            if not path.exists():
+                raise ValueError(f"task pack {path.name} not found")
+            return self._write_pack_unlocked(path, payload)
+
+    def upsert_pack(self, pack_name: str, payload: dict[str, Any]) -> dict[str, Any]:
+        with _exclusive_lock(self.configuration_lock_path):
+            path = self._resolve_pack_path(pack_name)
+            return self._write_pack_unlocked(path, payload)
+
     def delete_pack(self, pack_name_or_path: str | Path) -> str:
-        path = self._resolve_pack_path(pack_name_or_path)
-        if not path.exists():
-            raise ValueError(f"task pack {path.name} not found")
-        path.unlink()
-        return self._pack_name(path)
+        with _exclusive_lock(self.configuration_lock_path):
+            path = self._resolve_pack_path(pack_name_or_path)
+            if not path.exists():
+                raise ValueError(f"task pack {path.name} not found")
+            _record_transaction_file_change(path)
+            path.unlink()
+            return self._pack_name(path)
 
     def relative_pack_path(self, pack_name_or_path: str | Path) -> str:
         return _relative_path(self._resolve_pack_path(pack_name_or_path), self.project_root)
@@ -405,7 +501,11 @@ class WorkspaceStore:
         self.packs_dir = Path(packs_dir) if packs_dir is not None else self.workspace_path.parent / "packs"
         self.legacy_config_dir = Path(legacy_config_dir) if legacy_config_dir is not None else self.workspace_path.parent
         self.legacy_db_path = Path(legacy_db_path) if legacy_db_path is not None else PROJECT_ROOT / "data" / "app.db"
-        self.pack_store = TaskPackStore(packs_dir=self.packs_dir, project_root=self.project_root)
+        self.pack_store = TaskPackStore(
+            packs_dir=self.packs_dir,
+            project_root=self.project_root,
+            configuration_lock_path=self.workspace_path,
+        )
         self._cache_lock = threading.RLock()
         self._cache: dict[str, Any] | None = None
         self._cache_signature: tuple[int, int] | None = None
@@ -415,30 +515,45 @@ class WorkspaceStore:
         mtime_ns = int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000)))
         return (mtime_ns, int(stat.st_size))
 
-    def get_workspace(self) -> dict[str, Any]:
-        if not self.workspace_path.exists():
-            workspace = self._bootstrap_workspace()
-            self._write_workspace(workspace)
-            return copy.deepcopy(workspace)
-        signature = self._workspace_cache_signature()
-        with self._cache_lock:
-            if self._cache is not None and self._cache_signature == signature:
-                return copy.deepcopy(self._cache)
-        payload = _read_json_file(self.workspace_path)
-        if self._is_legacy_workspace(payload):
-            workspace = self._migrate_legacy_workspace(payload)
-            self._write_workspace(workspace)
-            return copy.deepcopy(workspace)
-        workspace = self._normalize_workspace(payload)
+    def _cache_workspace(self, workspace: dict[str, Any]) -> None:
         with self._cache_lock:
             self._cache = workspace
             self._cache_signature = self._workspace_cache_signature()
+
+    def _load_workspace_unlocked(self, *, allow_cache: bool) -> dict[str, Any]:
+        if not self.workspace_path.exists():
+            workspace = self._bootstrap_workspace()
+            self._write_workspace_unlocked(workspace)
+            return copy.deepcopy(workspace)
+        signature = self._workspace_cache_signature()
+        if allow_cache:
+            with self._cache_lock:
+                if self._cache is not None and self._cache_signature == signature:
+                    return copy.deepcopy(self._cache)
+        payload = _read_json_file(self.workspace_path)
+        if self._is_legacy_workspace(payload):
+            workspace = self._migrate_legacy_workspace(payload)
+            self._write_workspace_unlocked(workspace)
+            return copy.deepcopy(workspace)
+        workspace = self._normalize_workspace(payload)
+        self._cache_workspace(workspace)
         return copy.deepcopy(workspace)
 
+    def get_workspace(self) -> dict[str, Any]:
+        with _exclusive_lock(self.workspace_path), _file_transaction():
+            return self._load_workspace_unlocked(allow_cache=True)
+
     def update_workspace(self, payload: dict[str, Any]) -> dict[str, Any]:
-        workspace = self._normalize_workspace(payload)
-        self._write_workspace(workspace)
-        return copy.deepcopy(workspace)
+        with _exclusive_lock(self.workspace_path), _file_transaction():
+            workspace = self._write_workspace_unlocked(payload)
+            return copy.deepcopy(workspace)
+
+    def mutate_workspace(self, callback: Callable[[dict[str, Any]], Any]) -> dict[str, Any]:
+        with _exclusive_lock(self.workspace_path), _file_transaction():
+            workspace = self._load_workspace_unlocked(allow_cache=False)
+            callback(workspace)
+            committed = self._write_workspace_unlocked(workspace)
+            return copy.deepcopy(committed)
 
     def import_workspace(self, payload: dict[str, Any]) -> dict[str, Any]:
         return self.update_workspace(payload)
@@ -446,12 +561,15 @@ class WorkspaceStore:
     def export_workspace(self) -> dict[str, Any]:
         return self.get_workspace()
 
-    def _write_workspace(self, workspace: dict[str, Any]) -> None:
+    def _write_workspace_unlocked(self, workspace: dict[str, Any]) -> dict[str, Any]:
         normalized = self._normalize_workspace(workspace)
         _atomic_write_text(self.workspace_path, json.dumps(normalized, ensure_ascii=False, indent=2) + "\n")
-        with self._cache_lock:
-            self._cache = normalized
-            self._cache_signature = self._workspace_cache_signature()
+        self._cache_workspace(normalized)
+        return normalized
+
+    def _write_workspace(self, workspace: dict[str, Any]) -> None:
+        with _exclusive_lock(self.workspace_path):
+            self._write_workspace_unlocked(workspace)
 
     def _is_legacy_workspace(self, payload: Any) -> bool:
         if not isinstance(payload, dict):

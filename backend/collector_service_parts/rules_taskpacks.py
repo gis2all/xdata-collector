@@ -1,6 +1,17 @@
 from __future__ import annotations
 
-from .common import *  # noqa: F401,F403
+import copy
+from typing import Any
+
+from backend.collector_rules import (
+    build_query_plan_from_search_spec,
+    default_rule_set_definition,
+    default_search_spec,
+    normalize_rule_set_definition,
+    normalize_search_spec,
+)
+from backend.collector_store import utc_now_iso
+from backend.workspace_store import default_builtin_rule_set, normalize_tags
 
 class RuleTaskPackMixin:
     def _sorted_rule_sets(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -159,78 +170,119 @@ class RuleTaskPackMixin:
         resolved_name = resolved_path.stem
         if resolved_name == "default-rule-set":
             raise ValueError("default task pack cannot be deleted")
-        referenced_by = [
-            copy.deepcopy(item)
-            for item in self._ensure_builtin_rule_set().get("jobs", [])
-            if str(item.get("pack_name") or "").strip() == resolved_name
-            or str(item.get("pack_path") or "").replace("\\", "/").strip() == self.task_pack_store.relative_pack_path(resolved_name)
-        ]
-        if referenced_by:
-            raise ValueError("task pack is referenced by existing jobs")
-        deleted_name = self.task_pack_store.delete_pack(resolved_name)
+        deleted_name = ""
+
+        def delete_in_configuration(workspace: dict[str, Any]) -> None:
+            nonlocal deleted_name
+            referenced_by = [
+                copy.deepcopy(item)
+                for item in workspace.get("jobs", [])
+                if str(item.get("pack_name") or "").strip() == resolved_name
+                or str(item.get("pack_path") or "").replace("\\", "/").strip()
+                == self.task_pack_store.relative_pack_path(resolved_name)
+            ]
+            if referenced_by:
+                raise ValueError("task pack is referenced by existing jobs")
+            deleted_name = self.task_pack_store.delete_pack(resolved_name)
+
+        self.workspace_store.mutate_workspace(delete_in_configuration)
         return {"pack_name": deleted_name, "deleted": 1}
 
     def create_rule_set(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = utc_now_iso()
-        next_rule_set_id = max((int(item.get("id") or 0) for item in self._rule_set_catalog()), default=0) + 1
-        pack_name = f"rule-set-{next_rule_set_id:03d}-{str(payload.get('name') or next_rule_set_id)}"
-        self.task_pack_store.create_pack(
-            pack_name,
-            self._task_pack_payload(
-                name=str(payload.get("name") or f"Rule Set {next_rule_set_id}").strip(),
-                description=str(payload.get("description") or "").strip(),
-                search_spec=default_search_spec(),
-                rule_set={
-                    "id": next_rule_set_id,
-                    "name": str(payload.get("name") or f"Rule Set {next_rule_set_id}").strip(),
-                    "description": str(payload.get("description") or "").strip(),
-                    "version": int(payload.get("version", 1) or 1),
-                    "definition_json": normalize_rule_set_definition(payload.get("definition") or payload.get("definition_json") or default_rule_set_definition()),
-                },
-                updated_at=now,
-                tags=[],
-            ),
-        )
+        next_rule_set_id = 0
+
+        def create_in_configuration(_workspace: dict[str, Any]) -> None:
+            nonlocal next_rule_set_id
+            next_rule_set_id = max((int(item.get("id") or 0) for item in self._rule_set_catalog()), default=0) + 1
+            pack_name = f"rule-set-{next_rule_set_id:03d}-{str(payload.get('name') or next_rule_set_id)}"
+            self.task_pack_store.create_pack(
+                pack_name,
+                self._task_pack_payload(
+                    name=str(payload.get("name") or f"Rule Set {next_rule_set_id}").strip(),
+                    description=str(payload.get("description") or "").strip(),
+                    search_spec=default_search_spec(),
+                    rule_set={
+                        "id": next_rule_set_id,
+                        "name": str(payload.get("name") or f"Rule Set {next_rule_set_id}").strip(),
+                        "description": str(payload.get("description") or "").strip(),
+                        "version": int(payload.get("version", 1) or 1),
+                        "definition_json": normalize_rule_set_definition(
+                            payload.get("definition")
+                            or payload.get("definition_json")
+                            or default_rule_set_definition()
+                        ),
+                    },
+                    updated_at=now,
+                    tags=[],
+                ),
+            )
+
+        self.workspace_store.mutate_workspace(create_in_configuration)
         return self.get_rule_set(next_rule_set_id)
 
     def update_rule_set(self, rule_set_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         if int(rule_set_id) == 1:
             raise ValueError("builtin rule set cannot be updated")
-        pack_name = self._rule_set_pack_name(rule_set_id)
-        if pack_name is None:
-            raise ValueError(f"rule_set {rule_set_id} not found")
-        current = self.task_pack_store.get_pack(pack_name)
-        current_rule_set = self._resolve_rule_set(inline_rule_set=current.get("rule_set"))
-        self.task_pack_store.update_pack(
-            pack_name,
-            self._task_pack_payload(
-                name=str((current.get("meta") or {}).get("name") or current_rule_set.get("name") or f"Rule Set {rule_set_id}").strip(),
-                description=str((current.get("meta") or {}).get("description") or "").strip(),
-                search_spec=current.get("search_spec") or default_search_spec(),
-                rule_set={
-                    **current_rule_set,
-                    "name": str(payload.get("name") or current_rule_set.get("name") or "").strip(),
-                    "description": str(payload.get("description") or current_rule_set.get("description") or "").strip(),
-                    "version": int(payload.get("version", current_rule_set.get("version", 1)) or 1),
-                    "definition_json": normalize_rule_set_definition(payload.get("definition") or payload.get("definition_json") or current_rule_set.get("definition_json")),
-                },
-                updated_at=utc_now_iso(),
-                tags=current.get("tags") or [],
-            ),
-        )
+        def update_in_configuration(_workspace: dict[str, Any]) -> None:
+            pack_name = self._rule_set_pack_name(rule_set_id)
+            if pack_name is None:
+                raise ValueError(f"rule_set {rule_set_id} not found")
+            current = self.task_pack_store.get_pack(pack_name)
+            current_rule_set = self._resolve_rule_set(inline_rule_set=current.get("rule_set"))
+            self.task_pack_store.update_pack(
+                pack_name,
+                self._task_pack_payload(
+                    name=str(
+                        (current.get("meta") or {}).get("name")
+                        or current_rule_set.get("name")
+                        or f"Rule Set {rule_set_id}"
+                    ).strip(),
+                    description=str((current.get("meta") or {}).get("description") or "").strip(),
+                    search_spec=current.get("search_spec") or default_search_spec(),
+                    rule_set={
+                        **current_rule_set,
+                        "name": str(payload.get("name") or current_rule_set.get("name") or "").strip(),
+                        "description": str(
+                            payload.get("description") or current_rule_set.get("description") or ""
+                        ).strip(),
+                        "version": int(payload.get("version", current_rule_set.get("version", 1)) or 1),
+                        "definition_json": normalize_rule_set_definition(
+                            payload.get("definition")
+                            or payload.get("definition_json")
+                            or current_rule_set.get("definition_json")
+                        ),
+                    },
+                    updated_at=utc_now_iso(),
+                    tags=current.get("tags") or [],
+                ),
+            )
+
+        self.workspace_store.mutate_workspace(update_in_configuration)
         return self.get_rule_set(rule_set_id)
 
     def delete_rule_set(self, rule_set_id: int) -> dict[str, Any]:
-        row = self.get_rule_set(rule_set_id)
-        if bool(row.get("is_builtin")):
-            raise ValueError("builtin rule set cannot be deleted")
-        in_use = any(int(self._job_rule_set(item, allow_missing=True).get("id") or 0) == int(rule_set_id) for item in self._ensure_builtin_rule_set().get("jobs", []))
-        if in_use:
-            raise ValueError("rule set is referenced by existing jobs")
-        pack_name = self._rule_set_pack_name(rule_set_id)
-        if pack_name is None:
-            raise ValueError(f"rule_set {rule_set_id} not found")
-        self.task_pack_store._resolve_pack_path(pack_name).unlink(missing_ok=False)
+        row: dict[str, Any] | None = None
+
+        def delete_in_configuration(workspace: dict[str, Any]) -> None:
+            nonlocal row
+            row = self.get_rule_set(rule_set_id)
+            if bool(row.get("is_builtin")):
+                raise ValueError("builtin rule set cannot be deleted")
+            in_use = any(
+                int(self._job_rule_set(item, allow_missing=True).get("id") or 0) == int(rule_set_id)
+                for item in workspace.get("jobs", [])
+            )
+            if in_use:
+                raise ValueError("rule set is referenced by existing jobs")
+            pack_name = self._rule_set_pack_name(rule_set_id)
+            if pack_name is None:
+                raise ValueError(f"rule_set {rule_set_id} not found")
+            self.task_pack_store.delete_pack(pack_name)
+
+        self.workspace_store.mutate_workspace(delete_in_configuration)
+        if row is None:
+            raise RuntimeError(f"rule_set {rule_set_id} deletion did not produce a response")
         return row
 
     def clone_rule_set(self, rule_set_id: int) -> dict[str, Any]:

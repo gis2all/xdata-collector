@@ -4,8 +4,9 @@ import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
-from backend.workspace_store import RuntimeStateStore, TaskPackStore, WorkspaceStore
+from backend.workspace_store import RuntimeStateStore, TaskPackStore, WorkspaceStore, _exclusive_lock
 
 
 def _rule_set_payload(rule_set_id: int, name: str) -> dict:
@@ -23,6 +24,108 @@ def _rule_set_payload(rule_set_id: int, name: str) -> dict:
 
 
 class WorkspaceStoreTests(unittest.TestCase):
+    def test_workspace_mutations_are_serialized_across_store_instances(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace_path = root / "config" / "workspace.json"
+            legacy_db_path = root / "data" / "app.db"
+            store_a = WorkspaceStore(
+                workspace_path=workspace_path,
+                legacy_config_dir=workspace_path.parent,
+                legacy_db_path=legacy_db_path,
+            )
+            store_b = WorkspaceStore(
+                workspace_path=workspace_path,
+                legacy_config_dir=workspace_path.parent,
+                legacy_db_path=legacy_db_path,
+            )
+            store_a.get_workspace()
+            self.assertTrue(hasattr(store_a, "mutate_workspace"))
+
+            first_entered = threading.Event()
+            release_first = threading.Event()
+            second_entered = threading.Event()
+            errors: list[BaseException] = []
+
+            def append_job(workspace: dict, job_id: int, name: str) -> None:
+                workspace.setdefault("jobs", []).append(
+                    {
+                        "id": job_id,
+                        "name": name,
+                        "enabled": False,
+                        "interval_minutes": 30,
+                        "next_run_at": None,
+                    }
+                )
+                workspace.setdefault("meta", {})["next_job_id"] = job_id + 1
+
+            def first_mutation() -> None:
+                try:
+                    store_a.mutate_workspace(
+                        lambda workspace: (
+                            append_job(workspace, 1, "alpha"),
+                            first_entered.set(),
+                            release_first.wait(timeout=5),
+                        )
+                    )
+                except BaseException as exc:  # noqa: BLE001
+                    errors.append(exc)
+
+            def second_mutation() -> None:
+                try:
+                    store_b.mutate_workspace(
+                        lambda workspace: (
+                            second_entered.set(),
+                            append_job(workspace, 2, "beta"),
+                        )
+                    )
+                except BaseException as exc:  # noqa: BLE001
+                    errors.append(exc)
+
+            first = threading.Thread(target=first_mutation)
+            second = threading.Thread(target=second_mutation)
+            first.start()
+            self.assertTrue(first_entered.wait(timeout=5))
+            second.start()
+            self.assertFalse(second_entered.wait(timeout=0.1))
+            release_first.set()
+            first.join(timeout=5)
+            second.join(timeout=5)
+
+            self.assertFalse(first.is_alive())
+            self.assertFalse(second.is_alive())
+            self.assertEqual(errors, [])
+            names = {item["name"] for item in store_a.get_workspace()["jobs"]}
+            self.assertEqual(names, {"alpha", "beta"})
+
+    def test_workspace_mutation_failure_does_not_write_partial_state(self) -> None:
+        with TemporaryDirectory() as tmp:
+            workspace_path = Path(tmp) / "config" / "workspace.json"
+            store = WorkspaceStore(
+                workspace_path=workspace_path,
+                legacy_config_dir=workspace_path.parent,
+                legacy_db_path=Path(tmp) / "data" / "app.db",
+            )
+            store.get_workspace()
+            original = workspace_path.read_bytes()
+
+            def fail_after_mutation(workspace: dict) -> None:
+                workspace.setdefault("meta", {})["next_job_id"] = 999
+                raise RuntimeError("stop mutation")
+
+            with self.assertRaisesRegex(RuntimeError, "stop mutation"):
+                store.mutate_workspace(fail_after_mutation)
+
+            self.assertEqual(workspace_path.read_bytes(), original)
+
+    def test_exclusive_lock_is_reentrant_for_the_same_thread_and_path(self) -> None:
+        with TemporaryDirectory() as tmp:
+            target = Path(tmp) / "config" / "workspace.json"
+            with patch("backend.workspace_store._FILE_LOCK_TIMEOUT_SECONDS", 0.05):
+                with _exclusive_lock(target):
+                    with _exclusive_lock(target):
+                        self.assertTrue(target.parent.exists())
+
     def test_bootstrap_workspace_does_not_migrate_repo_search_preset_files(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -347,6 +450,65 @@ class WorkspaceStoreTests(unittest.TestCase):
             self.assertEqual(loaded["meta"]["updated_at"], "2026-04-15T00:00:00+00:00")
             self.assertEqual(loaded["search_spec"]["all_keywords"], ["alpha", "beta"])
             self.assertEqual(loaded["tags"], ["defi", "wallet"])
+
+    def test_concurrent_task_pack_writers_share_one_configuration_lock(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            packs_dir = root / "config" / "packs"
+            store_a = TaskPackStore(packs_dir=packs_dir)
+            store_b = TaskPackStore(packs_dir=packs_dir)
+            first_writer_entered = threading.Event()
+            release_first_writer = threading.Event()
+            second_writer_entered = threading.Event()
+            errors: list[BaseException] = []
+
+            from backend import workspace_store as workspace_store_module
+
+            original_atomic_write = workspace_store_module._atomic_write_text
+            call_count = 0
+            call_count_lock = threading.Lock()
+
+            def coordinated_atomic_write(path: Path, content: str) -> None:
+                nonlocal call_count
+                with call_count_lock:
+                    call_count += 1
+                    current_call = call_count
+                if current_call == 1:
+                    first_writer_entered.set()
+                    release_first_writer.wait(timeout=5)
+                else:
+                    second_writer_entered.set()
+                original_atomic_write(path, content)
+
+            def write(store: TaskPackStore, pack_name: str) -> None:
+                try:
+                    store.upsert_pack(
+                        pack_name,
+                        {
+                            "meta": {"name": pack_name},
+                            "search_spec": {"all_keywords": [pack_name]},
+                        },
+                    )
+                except BaseException as exc:  # noqa: BLE001
+                    errors.append(exc)
+
+            with patch("backend.workspace_store._atomic_write_text", side_effect=coordinated_atomic_write):
+                first = threading.Thread(target=write, args=(store_a, "alpha"))
+                second = threading.Thread(target=write, args=(store_b, "beta"))
+                first.start()
+                self.assertTrue(first_writer_entered.wait(timeout=5))
+                second.start()
+                self.assertFalse(second_writer_entered.wait(timeout=0.1))
+                release_first_writer.set()
+                first.join(timeout=5)
+                second.join(timeout=5)
+
+            self.assertFalse(first.is_alive())
+            self.assertFalse(second.is_alive())
+            self.assertEqual(errors, [])
+            self.assertEqual(json.loads((packs_dir / "alpha.json").read_text(encoding="utf-8"))["meta"]["name"], "alpha")
+            self.assertEqual(json.loads((packs_dir / "beta.json").read_text(encoding="utf-8"))["meta"]["name"], "beta")
+            self.assertEqual(list(packs_dir.glob("*.tmp")), [])
 
 
 class RuntimeStateStoreTests(unittest.TestCase):

@@ -27,6 +27,7 @@ runtime/tmp/tests/
 
 # Local dynamic config
 config/workspace.json
+config/workspace.json.lock
 config/packs/*.json
 !config/packs/default-rule-set.json
 docs/
@@ -43,3 +44,5 @@ data/*.db
 # System noise
 .DS_Store
 Thumbs.db
+
+web-ui/test-results/

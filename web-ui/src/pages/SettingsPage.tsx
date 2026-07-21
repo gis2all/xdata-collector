@@ -1,5 +1,14 @@
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
-import { exportWorkspace, getWorkspace, importWorkspace, updateWorkspace, WorkspaceConfig } from "../api";
+import {
+  clearApiToken,
+  exportWorkspace,
+  getWorkspace,
+  hasApiToken,
+  importWorkspace,
+  setApiToken,
+  updateWorkspace,
+  WorkspaceConfig,
+} from "../api";
 import { formatUtcPlus8Time } from "../time";
 
 function prettyWorkspace(payload: WorkspaceConfig) {
@@ -39,6 +48,8 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [apiTokenDraft, setApiTokenDraft] = useState("");
+  const [apiTokenConfigured, setApiTokenConfigured] = useState(() => hasApiToken());
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
   async function loadWorkspace() {
@@ -107,6 +118,35 @@ export function SettingsPage() {
     } finally {
       event.target.value = "";
     }
+  }
+
+  function handleApplyApiToken() {
+    setError("");
+    setMessage("");
+    const normalized = apiTokenDraft.trim();
+    if (!normalized) {
+      setError("API token \u4e0d\u80fd\u4e3a\u7a7a");
+      return;
+    }
+    if (!setApiToken(normalized)) {
+      setError("\u5f53\u524d\u6d4f\u89c8\u5668\u4f1a\u8bdd\u65e0\u6cd5\u4fdd\u5b58 API token");
+      return;
+    }
+    setApiTokenDraft("");
+    setApiTokenConfigured(true);
+    setMessage("API token \u5df2\u5e94\u7528\u5230\u5f53\u524d\u4f1a\u8bdd");
+  }
+
+  function handleClearApiToken() {
+    setError("");
+    setMessage("");
+    if (!clearApiToken()) {
+      setError("\u5f53\u524d\u6d4f\u89c8\u5668\u4f1a\u8bdd\u65e0\u6cd5\u6e05\u9664 API token");
+      return;
+    }
+    setApiTokenDraft("");
+    setApiTokenConfigured(false);
+    setMessage("\u5f53\u524d\u4f1a\u8bdd\u7684 API token \u5df2\u6e05\u9664");
   }
 
   return (
@@ -260,6 +300,41 @@ export function SettingsPage() {
               accept="application/json,.json"
               onChange={handleImportFile}
             />
+          </div>
+
+          <div className="settings-action-group">
+            <div className="settings-card-title">API {"\u9274\u6743"}</div>
+            <span className="kv" data-testid="api-token-session-status">
+              {apiTokenConfigured ? "\u5f53\u524d\u4f1a\u8bdd\uff1a\u5df2\u8bbe\u7f6e" : "\u5f53\u524d\u4f1a\u8bdd\uff1a\u672a\u8bbe\u7f6e"}
+            </span>
+            <label className="field">
+              <span>API token</span>
+              <input
+                type="password"
+                aria-label="api-token-input"
+                value={apiTokenDraft}
+                onChange={(event) => setApiTokenDraft(event.target.value)}
+                autoComplete="off"
+              />
+            </label>
+            <div className="collector-toolbar settings-card-actions">
+              <button
+                type="button"
+                className="workbench-primary-action"
+                aria-label="apply-api-token"
+                onClick={handleApplyApiToken}
+              >
+                {"\u5e94\u7528"}
+              </button>
+              <button
+                type="button"
+                className="workbench-secondary-action"
+                aria-label="clear-api-token"
+                onClick={handleClearApiToken}
+              >
+                {"\u6e05\u9664"}
+              </button>
+            </div>
           </div>
         </div>
       </section>

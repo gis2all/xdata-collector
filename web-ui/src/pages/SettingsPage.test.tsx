@@ -4,18 +4,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsPage } from "./SettingsPage";
 
 vi.mock("../api", () => ({
+  clearApiToken: vi.fn(),
   getWorkspace: vi.fn(),
+  hasApiToken: vi.fn(),
   updateWorkspace: vi.fn(),
   exportWorkspace: vi.fn(),
   importWorkspace: vi.fn(),
+  setApiToken: vi.fn(),
 }));
 
-import { exportWorkspace, getWorkspace, importWorkspace, updateWorkspace } from "../api";
+import { clearApiToken, exportWorkspace, getWorkspace, hasApiToken, importWorkspace, setApiToken, updateWorkspace } from "../api";
 
+const clearApiTokenMock = vi.mocked(clearApiToken);
 const getWorkspaceMock = vi.mocked(getWorkspace);
+const hasApiTokenMock = vi.mocked(hasApiToken);
 const updateWorkspaceMock = vi.mocked(updateWorkspace);
 const exportWorkspaceMock = vi.mocked(exportWorkspace);
 const importWorkspaceMock = vi.mocked(importWorkspace);
+const setApiTokenMock = vi.mocked(setApiToken);
 
 const workspacePayload = {
   version: 2,
@@ -39,6 +45,9 @@ describe("SettingsPage", () => {
     exportWorkspaceMock.mockResolvedValue(workspacePayload as any);
     importWorkspaceMock.mockResolvedValue(workspacePayload as any);
     updateWorkspaceMock.mockResolvedValue(workspacePayload as any);
+    hasApiTokenMock.mockReturnValue(false);
+    setApiTokenMock.mockReturnValue(true);
+    clearApiTokenMock.mockReturnValue(true);
   });
 
   it("renders the settings workbench structure and workspace summary", async () => {
@@ -118,5 +127,32 @@ describe("SettingsPage", () => {
     await waitFor(() => {
       expect(importWorkspaceMock).toHaveBeenCalled();
     });
+  });
+
+  it("applies an API token for the current session without displaying it", async () => {
+    render(<SettingsPage />);
+
+    await screen.findByLabelText("workspace-json");
+    const tokenInput = screen.getByLabelText("api-token-input");
+    expect(tokenInput).toHaveAttribute("type", "password");
+
+    fireEvent.change(tokenInput, { target: { value: "secret-token" } });
+    fireEvent.click(screen.getByLabelText("apply-api-token"));
+
+    expect(setApiTokenMock).toHaveBeenCalledWith("secret-token");
+    expect(tokenInput).toHaveValue("");
+    expect(screen.queryByText("secret-token")).not.toBeInTheDocument();
+    expect(screen.getByTestId("api-token-session-status")).toHaveTextContent("已设置");
+  });
+
+  it("clears the API token for the current session", async () => {
+    hasApiTokenMock.mockReturnValue(true);
+    render(<SettingsPage />);
+
+    await screen.findByLabelText("workspace-json");
+    fireEvent.click(screen.getByLabelText("clear-api-token"));
+
+    expect(clearApiTokenMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("api-token-session-status")).toHaveTextContent("未设置");
   });
 });

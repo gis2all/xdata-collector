@@ -6,6 +6,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 def test_ci_workflow_preserves_required_jobs_and_adds_cross_platform_smoke() -> None:
     workflow = (PROJECT_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    dump_logs_script = (PROJECT_ROOT / ".github" / "scripts" / "dump_service_logs.py").read_text(encoding="utf-8")
 
     assert "backend:" in workflow
     assert "web-ui:" in workflow
@@ -22,7 +23,8 @@ def test_ci_workflow_preserves_required_jobs_and_adds_cross_platform_smoke() -> 
     assert "shutil.rmtree('runtime', ignore_errors=True)" in workflow
     assert 'XDATA_SERVICE_WAIT_SECONDS: "45"' in workflow
     assert "Dump service logs on failure" in workflow
-    assert "runtime/logs" in workflow
+    assert "python .github/scripts/dump_service_logs.py" in workflow
+    assert "runtime/logs" in dump_logs_script
     assert "python install.py" in workflow
     assert "docker compose up --build -d" in workflow
     assert "docker compose ps" in workflow

@@ -514,6 +514,47 @@ export type DedupeItemsResponse = {
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8765";
+export const API_TOKEN_STORAGE_KEY = "xdata.api-token";
+
+export function getApiToken() {
+  try {
+    return window.sessionStorage.getItem(API_TOKEN_STORAGE_KEY)?.trim() || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setApiToken(token: string) {
+  const normalized = token.trim();
+  if (!normalized) return clearApiToken();
+  try {
+    window.sessionStorage.setItem(API_TOKEN_STORAGE_KEY, normalized);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function clearApiToken() {
+  try {
+    window.sessionStorage.removeItem(API_TOKEN_STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function hasApiToken() {
+  return Boolean(getApiToken());
+}
+
+function requestHeaders() {
+  const token = getApiToken();
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
 
 export type ApiRequestOptions = {
   signal?: AbortSignal;
@@ -539,8 +580,8 @@ function apiErrorMessage(payload: unknown, fallback: string) {
 
 async function req<T>(path: string, init?: RequestInit, options?: ApiRequestOptions): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    headers: requestHeaders(),
     ...(options?.signal ? { signal: options.signal } : {}),
   });
   if (!res.ok) {
@@ -556,9 +597,7 @@ export function health(options?: ApiRequestOptions) {
 
 export async function healthSnapshot(options?: ApiRequestOptions) {
   const res = await fetch(`${API_BASE}/health/snapshot`, {
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: requestHeaders(),
     ...(options?.signal ? { signal: options.signal } : {}),
   });
   if (res.status === 404) return null;

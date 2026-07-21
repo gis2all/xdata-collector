@@ -1,6 +1,5 @@
-import json
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime
 from unittest.mock import Mock, patch
 
 from backend.collector_service_parts import common
@@ -562,7 +561,6 @@ class SortAndMetricsTests(unittest.TestCase):
         self.assertNotIn("tags_json", result)
 
     def test_raw_row_to_item(self) -> None:
-        import sqlite3
         with patch("backend.collector_service_parts.common.row_to_dict") as mock_row:
             mock_row.return_value = {
                 "id": 1, "run_id": 2, "tweet_id": "123", "canonical_url": "http://x",

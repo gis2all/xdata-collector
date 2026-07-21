@@ -28,10 +28,10 @@ jobs:
         run: python -m pip install --upgrade pip -r requirements-dev.txt
 
       - name: Compile key Python entrypoints
-        run: python -c "import py_compile, tempfile; from pathlib import Path; files=[Path('doctor.py'),Path('install.py'),Path('services.py'),Path('run/api.py'),Path('run/bootstrap.py'),Path('run/scheduler.py'),Path('run/static_web_server.py'),Path('.github/scripts/generate_coverage_badge.py')]+sorted(Path('backend').glob('*.py'))+sorted(Path('backend/collector_service_parts').glob('*.py')); td=tempfile.TemporaryDirectory(); root=Path(td.name); [py_compile.compile(str(f), cfile=str(root / (str(i)+'_'+f.name+'.pyc')), doraise=True) for i,f in enumerate(files)]; print(f'compiled {len(files)} files')"
+        run: python -c "import py_compile, tempfile; from pathlib import Path; files=[Path('doctor.py'),Path('install.py'),Path('services.py'),Path('run/api.py'),Path('run/bootstrap.py'),Path('run/scheduler.py'),Path('run/static_web_server.py')]+sorted(Path('.github/scripts').glob('*.py'))+sorted(Path('backend').glob('*.py'))+sorted(Path('backend/collector_service_parts').glob('*.py')); td=tempfile.TemporaryDirectory(); root=Path(td.name); [py_compile.compile(str(f), cfile=str(root / (str(i)+'_'+f.name+'.pyc')), doraise=True) for i,f in enumerate(files)]; print(f'compiled {len(files)} files')"
 
       - name: Run Python lint
-        run: python -m ruff check doctor.py backend run tests services.py install.py --select F --extend-select B904 --ignore F401,F403,F405
+        run: python -m ruff check doctor.py backend run tests services.py install.py .github/scripts
 
       - name: Validate pre-commit config
         run: python -m pre_commit validate-config
@@ -216,7 +216,7 @@ jobs:
 
       - name: Dump service logs on failure
         if: failure()
-        run: python -c "import sys; from pathlib import Path; sys.stdout.reconfigure(encoding='utf-8', errors='replace'); root=Path('runtime/logs'); print('[logs] runtime/logs missing') if not root.exists() else None; [print(f'===== {path} =====\\n{path.read_text(encoding='utf-8', errors='replace')}') for path in sorted(root.glob('*.log'))]"
+        run: python .github/scripts/dump_service_logs.py
 
       - name: Check services status
         run: python services.py status
