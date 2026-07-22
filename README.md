@@ -127,4 +127,7 @@ Docker 注意事项：
 ## 更多文档
 
 - [`CLAUDE.md`](CLAUDE.md)：项目真相、架构、搜索链路、页面行为、维护手册
+- [`run/README.md`](run/README.md)：运行入口、端口和本机服务边界
+- [`web-ui/README.md`](web-ui/README.md)：前端启动、测试和页面结构
 - [`config/README.md`](config/README.md)：`workspace.json`、task pack 和配置边界
+- [`docs/api/README.md`](docs/api/README.md)：本地 API、OpenAPI 和鉴权约定
