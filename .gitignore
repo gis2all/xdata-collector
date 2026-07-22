@@ -24,6 +24,7 @@ runtime/pids/
 runtime/tmp/
 runtime/tmp/tests/
 .superpowers/
+.code-review-graph/
 
 # Local dynamic config
 config/workspace.json

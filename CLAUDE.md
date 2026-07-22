@@ -263,9 +263,9 @@ Don't：
 - 没有明确允许时，不要 push 远端。
 - 用户只说“提交至本地”时，只做本地 commit。
 
-通常应提交：`backend/`、`run/`、`tests/`、`web-ui/src/`、`config/README.md`、`config/packs/default-rule-set.json`、`.env.example`、`.learnings/`。
+通常应提交：`backend/`、`run/`、`tests/`、`web-ui/src/`、`config/README.md`、`config/packs/default-rule-set.json`、`.env.example`。
 
-通常不应提交：`.env`、`data/*.db`、`runtime/history/`、`runtime/state/`、`runtime/logs/`、`runtime/pids/`、`runtime/tmp/`、`web-ui/node_modules/`、`web-ui/dist/`、本地动态 task pack。
+通常不应提交：`.env`、`data/*.db`、`runtime/history/`、`runtime/state/`、`runtime/logs/`、`runtime/pids/`、`runtime/tmp/`、`web-ui/node_modules/`、`web-ui/dist/`、`.learnings/`、`docs/` 下除 `docs/api/` 以外的本地文档、本地动态 task pack。
 
 ## 13. 默认验证
 
