@@ -141,7 +141,7 @@ class DesktopServiceTests(unittest.TestCase):
             "search_spec": {
                 "all_keywords": ["Alpha"],
                 "language_mode": "en",
-                "days_filter": {"mode": "lte", "max": 100},
+                "days_filter": {"mode": "any"},
                 "metric_filters": {
                     "views": {"mode": "any"},
                     "likes": {"mode": "any"},
