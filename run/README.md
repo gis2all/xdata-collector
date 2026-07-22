@@ -17,6 +17,8 @@
 - `scheduler.py`：不监听端口，默认每 30 秒执行一次 `tick()`
 - `web-ui` dev server：默认监听 `127.0.0.1:5177`
 
+本机启动和 Docker 发布都以 loopback 为边界，不提供局域网访问。API 鉴权默认关闭；在 `.env` 设置可选的 `XDATA_API_TOKEN` 后，请在 Web UI `Settings` 中为当前浏览器会话输入同一 token。
+
 ## 根目录 `services.py`
 
 推荐命令：

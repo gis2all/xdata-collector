@@ -1,38 +1,16 @@
 from __future__ import annotations
 
-import copy
 import json
-import os
-import threading
-import time
 from dataclasses import asdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from backend.collector_rules import (
-    build_query_from_search_spec,
-    build_execution_query_plan_from_search_spec,
-    build_query_plan_from_search_spec,
-    default_rule_set_definition,
-    default_search_spec,
-    evaluate_rule_set,
-    normalize_rule_set_definition,
-    normalize_search_spec,
-    parse_created_at,
-    passes_search_filters,
-    serialize_search_result,
-)
-from backend.config import load_env_file
-from backend.collector_store import connect, row_to_dict, utc_now_iso
-from backend.models import RunCancelled, SearchResult
-from backend.source_identity import (
-    build_source_dedupe_key,
-    build_source_dedupe_key_with_fallback,
-    canonicalize_source_url,
-)
-from backend.twitter_cli import find_twitter_cli, get_twitter_cli_version, normalize_search_payload, run_twitter_search
-from backend.workspace_store import RuntimeStateStore, WorkspaceStore, default_builtin_rule_set, normalize_group_name, normalize_tags
+from backend.collector_rules import parse_created_at
+from backend.collector_store import row_to_dict
+from backend.models import SearchResult
+from backend.source_identity import build_source_dedupe_key_with_fallback
+from backend.workspace_store import normalize_tags
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SQLITE_DEFAULT = Path("data") / "app.db"
@@ -783,5 +761,3 @@ def _dedupe_search_results(items: list[SearchResult]) -> list[SearchResult]:
         seen.add(key)
         deduped.append(item)
     return deduped
-
-__all__ = [name for name in globals() if not name.startswith("__")]

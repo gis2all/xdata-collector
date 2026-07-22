@@ -25,6 +25,8 @@ python ./services.py restart
 
 打开 `http://127.0.0.1:5177/`。
 
+该入口和 API 都仅供 `127.0.0.1` 本机访问。若 `.env` 设置了可选的 `XDATA_API_TOKEN`，在 `Settings` 页输入同一值；token 只保存在当前标签页会话的 `sessionStorage`，关闭会话后需要重新输入。
+
 ## 单独启动前端
 
 如果你只想单独调试前端开发服务，也可以手动执行：
@@ -88,6 +90,7 @@ python ../run/static_web_server.py --root dist
 ### `Settings`
 
 - 轻量 workspace 管理页
+- 管理当前浏览器会话的可选 API token
 - 只维护 `config/workspace.json`
 - 搜索条件与规则正文不在这里编辑
 

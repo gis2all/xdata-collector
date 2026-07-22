@@ -68,6 +68,8 @@ python services.py start
 - 工作台：`http://127.0.0.1:5177`
 - 健康检查：`http://127.0.0.1:8765/health`
 
+API 鉴权默认关闭。需要限制本机其他进程调用时，可在 `.env` 设置可选的 `XDATA_API_TOKEN`，再到工作台 `Settings` 输入同一值；前端只在当前浏览器会话的 `sessionStorage` 中保存，不写入 workspace 或 URL。
+
 #### Docker 启动
 
 ```
@@ -84,6 +86,8 @@ docker compose up --build
 
 - 工作台：`http://127.0.0.1:5177`
 - API：`http://127.0.0.1:8765`
+
+Compose 的宿主机端口固定绑定 `127.0.0.1`，仅供本机访问，不支持局域网其他设备连接。设置 `XDATA_API_TOKEN` 后，同样在 Web UI 的 `Settings` 中为当前浏览器会话输入 token。
 
 当前 `Docker Compose` 默认挂载以下目录：
 
@@ -107,7 +111,6 @@ Docker 注意事项：
 
 常用命令：
 
-- `python install.py`：准备 `pipx` / `twitter-cli` / `xreach-cli` 并安装前端依赖
 - `python doctor.py`：检查 Python、Node/npm、CLI、`.env`、Docker 和端口状态
 - `python install.py`：准备 `pipx` / `psutil` / `twitter-cli` / `xreach-cli` 并安装前端依赖
 - `python services.py start`：启动 `API`、`Scheduler` 和 `Dev UI`

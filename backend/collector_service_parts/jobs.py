@@ -1,6 +1,20 @@
 from __future__ import annotations
 
-from .common import *  # noqa: F401,F403
+import copy
+import json
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+from backend.collector_rules import (
+    default_rule_set_definition,
+    default_search_spec,
+    normalize_rule_set_definition,
+    normalize_search_spec,
+)
+from backend.collector_store import utc_now_iso
+from backend.workspace_store import normalize_group_name, normalize_tags
+
+from .common import _parse_item_created_at
 
 class JobMixin:
     def _job_keywords_preview(self, search_spec: dict[str, Any]) -> list[str]:
@@ -227,18 +241,19 @@ class JobMixin:
         }
 
     def _schedule_job_next_run(self, job_id: int, interval_minutes: int) -> None:
-        workspace = self._ensure_builtin_rule_set()
-        index = self._find_job_index(workspace.get("jobs", []), job_id)
-        if index < 0:
-            return
-        workspace["jobs"][index]["next_run_at"] = (datetime.now(timezone.utc) + timedelta(minutes=int(interval_minutes))).isoformat()
-        workspace["jobs"][index]["updated_at"] = utc_now_iso()
-        self._save_workspace(workspace)
+        def schedule_in_workspace(workspace: dict[str, Any]) -> None:
+            index = self._find_job_index(workspace.get("jobs", []), job_id)
+            if index < 0:
+                return
+            workspace["jobs"][index]["next_run_at"] = (
+                datetime.now(timezone.utc) + timedelta(minutes=int(interval_minutes))
+            ).isoformat()
+            workspace["jobs"][index]["updated_at"] = utc_now_iso()
+
+        self.workspace_store.mutate_workspace(schedule_in_workspace)
 
     def create_job(self, payload: dict[str, Any]) -> dict[str, Any]:
-        workspace = self._ensure_builtin_rule_set()
         now = utc_now_iso()
-        job_id = int(workspace.get("meta", {}).get("next_job_id", 1) or 1)
         interval = max(1, int(payload["interval_minutes"]))
         enabled = bool(payload.get("enabled", True))
         next_run_at = (datetime.now(timezone.utc) + timedelta(minutes=interval)).isoformat() if enabled else None
@@ -250,41 +265,49 @@ class JobMixin:
                 "thresholds": payload.get("thresholds", {}),
             }
         )
-        rule_set = self._resolve_rule_set(
-            rule_set_id=int(payload.get("rule_set_id") or 0) or None,
-            inline_rule_set=payload.get("rule_set"),
-        )
-        pack_name = self.task_pack_store._resolve_pack_path(f"job-{job_id:03d}-{str(payload.get('name') or job_id)}").stem
-        self.task_pack_store.upsert_pack(
-            pack_name,
-            self._task_pack_payload(
-                name=str(payload["name"]).strip(),
-                description=f"Automatic job #{job_id}",
-                search_spec=search_spec,
-                rule_set=rule_set,
-                updated_at=now,
-                tags=payload.get("tags"),
-            ),
-        )
-        workspace["jobs"] = [
-            *workspace.get("jobs", []),
-            {
-                "id": job_id,
-                "name": str(payload["name"]).strip(),
-                "enabled": 1 if enabled else 0,
-                "interval_minutes": interval,
-                "pack_name": pack_name,
-                "pack_path": self.task_pack_store.relative_pack_path(pack_name),
-                "group_name": normalize_group_name(payload.get("group_name")),
-                "next_run_at": next_run_at,
-                "created_at": now,
-                "updated_at": now,
-                "deleted_at": None,
-                "tags": normalize_tags(payload.get("tags")),
-            },
-        ]
-        workspace.setdefault("meta", {})["next_job_id"] = job_id + 1
-        self._save_workspace(workspace)
+        job_id = 0
+
+        def create_in_workspace(workspace: dict[str, Any]) -> None:
+            nonlocal job_id
+            rule_set = self._resolve_rule_set(
+                rule_set_id=int(payload.get("rule_set_id") or 0) or None,
+                inline_rule_set=payload.get("rule_set"),
+            )
+            job_id = int(workspace.get("meta", {}).get("next_job_id", 1) or 1)
+            pack_name = self.task_pack_store._resolve_pack_path(
+                f"job-{job_id:03d}-{str(payload.get('name') or job_id)}"
+            ).stem
+            self.task_pack_store.upsert_pack(
+                pack_name,
+                self._task_pack_payload(
+                    name=str(payload["name"]).strip(),
+                    description=f"Automatic job #{job_id}",
+                    search_spec=search_spec,
+                    rule_set=rule_set,
+                    updated_at=now,
+                    tags=payload.get("tags"),
+                ),
+            )
+            workspace["jobs"] = [
+                *workspace.get("jobs", []),
+                {
+                    "id": job_id,
+                    "name": str(payload["name"]).strip(),
+                    "enabled": 1 if enabled else 0,
+                    "interval_minutes": interval,
+                    "pack_name": pack_name,
+                    "pack_path": self.task_pack_store.relative_pack_path(pack_name),
+                    "group_name": normalize_group_name(payload.get("group_name")),
+                    "next_run_at": next_run_at,
+                    "created_at": now,
+                    "updated_at": now,
+                    "deleted_at": None,
+                    "tags": normalize_tags(payload.get("tags")),
+                },
+            ]
+            workspace.setdefault("meta", {})["next_job_id"] = job_id + 1
+
+        self.workspace_store.mutate_workspace(create_in_workspace)
         return self.get_job(job_id)
 
     def list_jobs(
@@ -322,118 +345,136 @@ class JobMixin:
         raise ValueError(f"job {job_id} not found")
 
     def update_job(self, job_id: int, payload: dict[str, Any]) -> dict[str, Any]:
-        workspace = self._ensure_builtin_rule_set()
         now = utc_now_iso()
-        index = self._find_job_index(workspace.get("jobs", []), job_id)
-        if index < 0:
-            raise ValueError(f"job {job_id} not found")
-        current = copy.deepcopy(workspace["jobs"][index])
-        if current.get("deleted_at"):
-            raise ValueError(f"job {job_id} is deleted")
-        current_pack = self._load_job_pack(current)
-        current_rule_set = self._resolve_rule_set(inline_rule_set=current_pack.get("rule_set"))
-        name = str(payload.get("name", current["name"])).strip()
-        interval = max(1, int(payload.get("interval_minutes", current["interval_minutes"])))
-        if payload.get("search_spec") is not None:
-            search_spec = normalize_search_spec(payload.get("search_spec"))
-        elif any(key in payload for key in ("keywords", "days", "thresholds")):
-            search_spec = normalize_search_spec(
+        def update_in_workspace(workspace: dict[str, Any]) -> None:
+            index = self._find_job_index(workspace.get("jobs", []), job_id)
+            if index < 0:
+                raise ValueError(f"job {job_id} not found")
+            current = copy.deepcopy(workspace["jobs"][index])
+            if current.get("deleted_at"):
+                raise ValueError(f"job {job_id} is deleted")
+            current_pack = self._load_job_pack(current)
+            current_rule_set = self._resolve_rule_set(inline_rule_set=current_pack.get("rule_set"))
+            name = str(payload.get("name", current["name"])).strip()
+            interval = max(1, int(payload.get("interval_minutes", current["interval_minutes"])))
+            if payload.get("search_spec") is not None:
+                search_spec = normalize_search_spec(payload.get("search_spec"))
+            elif any(key in payload for key in ("keywords", "days", "thresholds")):
+                search_spec = normalize_search_spec(
+                    {
+                        "keywords": payload.get("keywords", self._job_keywords_preview(current_pack.get("search_spec") or {})),
+                        "days": payload.get("days", 1),
+                        "thresholds": payload.get("thresholds", {}),
+                    }
+                )
+            else:
+                search_spec = normalize_search_spec(current_pack.get("search_spec") or default_search_spec())
+            if payload.get("rule_set") is not None or payload.get("rule_set_id") is not None:
+                rule_set = self._resolve_rule_set(
+                    rule_set_id=int(payload.get("rule_set_id") or 0) or None,
+                    inline_rule_set=payload.get("rule_set"),
+                )
+            else:
+                rule_set = current_rule_set
+            enabled = bool(payload.get("enabled", bool(current["enabled"])))
+            next_run_at = (datetime.now(timezone.utc) + timedelta(minutes=interval)).isoformat() if enabled else None
+            self.task_pack_store.upsert_pack(
+                current["pack_name"],
+                self._task_pack_payload(
+                    name=name,
+                    description=str((current_pack.get("meta") or {}).get("description") or f"Automatic job #{job_id}"),
+                    search_spec=search_spec,
+                    rule_set=rule_set,
+                    updated_at=now,
+                    tags=payload.get("tags", current_pack.get("tags")),
+                ),
+            )
+            current.update(
                 {
-                    "keywords": payload.get("keywords", self._job_keywords_preview(current_pack.get("search_spec") or {})),
-                    "days": payload.get("days", 1),
-                    "thresholds": payload.get("thresholds", {}),
+                    "name": name,
+                    "interval_minutes": interval,
+                    "enabled": 1 if enabled else 0,
+                    "group_name": (
+                        normalize_group_name(payload.get("group_name"))
+                        if "group_name" in payload
+                        else normalize_group_name(current.get("group_name"))
+                    ),
+                    "next_run_at": next_run_at,
+                    "updated_at": now,
+                    "tags": normalize_tags(payload.get("tags", current_pack.get("tags"))),
                 }
             )
-        else:
-            search_spec = normalize_search_spec(current_pack.get("search_spec") or default_search_spec())
-        if payload.get("rule_set") is not None or payload.get("rule_set_id") is not None:
-            rule_set = self._resolve_rule_set(
-                rule_set_id=int(payload.get("rule_set_id") or 0) or None,
-                inline_rule_set=payload.get("rule_set"),
-            )
-        else:
-            rule_set = current_rule_set
-        enabled = bool(payload.get("enabled", bool(current["enabled"])))
-        next_run_at = (datetime.now(timezone.utc) + timedelta(minutes=interval)).isoformat() if enabled else None
-        self.task_pack_store.upsert_pack(
-            current["pack_name"],
-            self._task_pack_payload(
-                name=name,
-                description=str((current_pack.get("meta") or {}).get("description") or f"Automatic job #{job_id}"),
-                search_spec=search_spec,
-                rule_set=rule_set,
-                updated_at=now,
-                tags=payload.get("tags", current_pack.get("tags")),
-            ),
-        )
-        current.update(
-            {
-                "name": name,
-                "interval_minutes": interval,
-                "enabled": 1 if enabled else 0,
-                "group_name": (
-                    normalize_group_name(payload.get("group_name"))
-                    if "group_name" in payload
-                    else normalize_group_name(current.get("group_name"))
-                ),
-                "next_run_at": next_run_at,
-                "updated_at": now,
-                "tags": normalize_tags(payload.get("tags", current_pack.get("tags"))),
-            }
-        )
-        workspace["jobs"][index] = current
-        self._save_workspace(workspace)
+            workspace["jobs"][index] = current
+
+        self.workspace_store.mutate_workspace(update_in_workspace)
         return self.get_job(job_id)
 
     def delete_job(self, job_id: int) -> dict[str, Any]:
-        workspace = self._ensure_builtin_rule_set()
         now = utc_now_iso()
-        index = self._find_job_index(workspace.get("jobs", []), job_id)
-        if index < 0:
-            raise ValueError(f"job {job_id} not found")
-        workspace["jobs"][index]["enabled"] = 0
-        workspace["jobs"][index]["next_run_at"] = None
-        workspace["jobs"][index]["deleted_at"] = now
-        workspace["jobs"][index]["updated_at"] = now
-        self._save_workspace(workspace)
+        def delete_in_workspace(workspace: dict[str, Any]) -> None:
+            index = self._find_job_index(workspace.get("jobs", []), job_id)
+            if index < 0:
+                raise ValueError(f"job {job_id} not found")
+            workspace["jobs"][index]["enabled"] = 0
+            workspace["jobs"][index]["next_run_at"] = None
+            workspace["jobs"][index]["deleted_at"] = now
+            workspace["jobs"][index]["updated_at"] = now
+
+        self.workspace_store.mutate_workspace(delete_in_workspace)
         return self.get_job(job_id)
 
     def restore_job(self, job_id: int) -> dict[str, Any]:
-        workspace = self._ensure_builtin_rule_set()
         now = utc_now_iso()
-        index = self._find_job_index(workspace.get("jobs", []), job_id)
-        if index < 0:
-            raise ValueError(f"job {job_id} not found")
-        workspace["jobs"][index]["deleted_at"] = None
-        workspace["jobs"][index]["enabled"] = 0
-        workspace["jobs"][index]["next_run_at"] = None
-        workspace["jobs"][index]["updated_at"] = now
-        self._save_workspace(workspace)
+        def restore_in_workspace(workspace: dict[str, Any]) -> None:
+            index = self._find_job_index(workspace.get("jobs", []), job_id)
+            if index < 0:
+                raise ValueError(f"job {job_id} not found")
+            workspace["jobs"][index]["deleted_at"] = None
+            workspace["jobs"][index]["enabled"] = 0
+            workspace["jobs"][index]["next_run_at"] = None
+            workspace["jobs"][index]["updated_at"] = now
+
+        self.workspace_store.mutate_workspace(restore_in_workspace)
         return self.get_job(job_id)
 
     def purge_job(self, job_id: int) -> dict[str, Any]:
-        workspace = self._ensure_builtin_rule_set()
-        row = self.get_job(job_id)
-        workspace["jobs"] = [item for item in workspace.get("jobs", []) if int(item.get("id") or 0) != int(job_id)]
-        self._save_workspace(workspace)
+        row: dict[str, Any] | None = None
+
+        def purge_in_workspace(workspace: dict[str, Any]) -> None:
+            nonlocal row
+            index = self._find_job_index(workspace.get("jobs", []), job_id)
+            if index < 0:
+                raise ValueError(f"job {job_id} not found")
+            current = copy.deepcopy(workspace["jobs"][index])
+            row = self._serialize_job(current, last_run=self._last_runs_by_job().get(int(job_id)))
+            workspace["jobs"] = [
+                item for item in workspace.get("jobs", []) if int(item.get("id") or 0) != int(job_id)
+            ]
+
+        self.workspace_store.mutate_workspace(purge_in_workspace)
         self.runtime_store.delete_runs_for_job(int(job_id))
+        if row is None:
+            raise RuntimeError(f"job {job_id} purge did not produce a response")
         return row
 
     def toggle_job(self, job_id: int, enabled: bool) -> dict[str, Any]:
-        workspace = self._ensure_builtin_rule_set()
         now = utc_now_iso()
-        index = self._find_job_index(workspace.get("jobs", []), job_id)
-        if index < 0:
-            raise ValueError(f"job {job_id} not found")
-        current = workspace["jobs"][index]
-        if current.get("deleted_at"):
-            raise ValueError(f"job {job_id} is deleted")
-        interval = int(current["interval_minutes"])
-        current["enabled"] = 1 if enabled else 0
-        current["next_run_at"] = (datetime.now(timezone.utc) + timedelta(minutes=interval)).isoformat() if enabled else None
-        current["updated_at"] = now
-        workspace["jobs"][index] = current
-        self._save_workspace(workspace)
+        def toggle_in_workspace(workspace: dict[str, Any]) -> None:
+            index = self._find_job_index(workspace.get("jobs", []), job_id)
+            if index < 0:
+                raise ValueError(f"job {job_id} not found")
+            current = workspace["jobs"][index]
+            if current.get("deleted_at"):
+                raise ValueError(f"job {job_id} is deleted")
+            interval = int(current["interval_minutes"])
+            current["enabled"] = 1 if enabled else 0
+            current["next_run_at"] = (
+                datetime.now(timezone.utc) + timedelta(minutes=interval)
+            ).isoformat() if enabled else None
+            current["updated_at"] = now
+            workspace["jobs"][index] = current
+
+        self.workspace_store.mutate_workspace(toggle_in_workspace)
         return self.get_job(job_id)
 
     def tick(self) -> dict[str, Any]:

@@ -1,7 +1,29 @@
 from __future__ import annotations
 
-from .common import *  # noqa: F401,F403
+import copy
+import json
+import os
+import threading
+import time
+from datetime import datetime, timezone
+from typing import Any
 
+from backend.collector_rules import (
+    build_execution_query_plan_from_search_spec,
+    build_query_from_search_spec,
+    normalize_search_spec,
+    passes_search_filters,
+    serialize_search_result,
+)
+from backend.collector_store import connect
+from backend.models import RunCancelled, SearchResult
+from backend.source_identity import (
+    build_source_dedupe_key_with_fallback,
+    canonicalize_source_url,
+)
+from backend.workspace_store import normalize_tags
+
+from .common import RUNTIME_LOG_FILES, _dedupe_search_results, _item_metric
 
 
 def _service_module():

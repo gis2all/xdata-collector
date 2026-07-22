@@ -431,6 +431,222 @@ class DesktopServiceTests(unittest.TestCase):
         toggled = self.service.toggle_job(int(job["id"]), False)
         self.assertEqual(toggled["enabled"], 0)
 
+    def test_concurrent_job_creation_preserves_both_jobs_and_unique_ids(self) -> None:
+        default_rule_set_id = int(self.service.list_rule_sets()["items"][0]["id"])
+        original_get_workspace = self.service.workspace_store.get_workspace
+        initial_reads = threading.Barrier(2)
+        read_count = 0
+        read_count_lock = threading.Lock()
+        errors: list[BaseException] = []
+
+        def synchronized_get_workspace():
+            nonlocal read_count
+            workspace = original_get_workspace()
+            with read_count_lock:
+                should_wait = read_count < 2
+                read_count += 1
+            if should_wait:
+                initial_reads.wait(timeout=5)
+            return workspace
+
+        def create(name: str) -> None:
+            try:
+                self.service.create_job(
+                    {
+                        "name": name,
+                        "interval_minutes": 30,
+                        "enabled": False,
+                        "rule_set_id": default_rule_set_id,
+                        "search_spec": {"all_keywords": [name], "language_mode": "en"},
+                    }
+                )
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        with patch.object(self.service.workspace_store, "get_workspace", side_effect=synchronized_get_workspace):
+            first = threading.Thread(target=create, args=("concurrent-alpha",))
+            second = threading.Thread(target=create, args=("concurrent-beta",))
+            first.start()
+            second.start()
+            first.join(timeout=5)
+            second.join(timeout=5)
+
+        self.assertFalse(first.is_alive())
+        self.assertFalse(second.is_alive())
+        self.assertEqual(errors, [])
+        jobs = self.service.list_jobs(status="all")["items"]
+        self.assertEqual({item["name"] for item in jobs}, {"concurrent-alpha", "concurrent-beta"})
+        self.assertEqual(len({int(item["id"]) for item in jobs}), 2)
+
+    def test_concurrent_job_update_and_schedule_preserve_both_changes(self) -> None:
+        update_job = self._create_job("concurrent-update", enabled=False)
+        scheduled_job = self._create_job("concurrent-schedule", enabled=False)
+        update_job_id = int(update_job["id"])
+        scheduled_job_id = int(scheduled_job["id"])
+        first_mutation_entered = threading.Event()
+        release_first_mutation = threading.Event()
+        second_mutation_entered = threading.Event()
+        mutation_count = 0
+        mutation_count_lock = threading.Lock()
+        errors: list[BaseException] = []
+        original_mutate_workspace = self.service.workspace_store.mutate_workspace
+
+        def coordinated_mutate(callback):
+            def coordinated_callback(workspace: dict) -> None:
+                nonlocal mutation_count
+                with mutation_count_lock:
+                    mutation_count += 1
+                    current_count = mutation_count
+                if current_count == 1:
+                    first_mutation_entered.set()
+                    release_first_mutation.wait(timeout=5)
+                else:
+                    second_mutation_entered.set()
+                callback(workspace)
+
+            return original_mutate_workspace(coordinated_callback)
+
+        def update() -> None:
+            try:
+                self.service.update_job(update_job_id, {"name": "renamed-job"})
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        def schedule() -> None:
+            try:
+                self.service._schedule_job_next_run(scheduled_job_id, 45)
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        with patch.object(self.service.workspace_store, "mutate_workspace", side_effect=coordinated_mutate):
+            first = threading.Thread(target=update)
+            second = threading.Thread(target=schedule)
+            first.start()
+            self.assertTrue(first_mutation_entered.wait(timeout=5))
+            second.start()
+            self.assertFalse(second_mutation_entered.wait(timeout=0.1))
+            release_first_mutation.set()
+            first.join(timeout=5)
+            second.join(timeout=5)
+
+        self.assertFalse(first.is_alive())
+        self.assertFalse(second.is_alive())
+        self.assertEqual(errors, [])
+        updated = self.service.get_job(update_job_id)
+        scheduled = self.service.get_job(scheduled_job_id)
+        self.assertEqual(updated["name"], "renamed-job")
+        self.assertIsNotNone(scheduled["next_run_at"])
+
+    def test_rule_set_cannot_be_deleted_between_job_resolution_and_commit(self) -> None:
+        rule_set = self.service.create_rule_set({"name": "Concurrent Rule"})
+        rule_set_id = int(rule_set["id"])
+        creator_waiting = threading.Event()
+        allow_creator = threading.Event()
+        creator_errors: list[BaseException] = []
+        creator_thread_id: int | None = None
+        original_mutate_workspace = self.service.workspace_store.mutate_workspace
+
+        def delayed_creator_mutation(callback):
+            if threading.get_ident() == creator_thread_id:
+                creator_waiting.set()
+                allow_creator.wait(timeout=5)
+            return original_mutate_workspace(callback)
+
+        def create() -> None:
+            nonlocal creator_thread_id
+            creator_thread_id = threading.get_ident()
+            try:
+                self.service.create_job(
+                    {
+                        "name": "concurrent-rule-job",
+                        "interval_minutes": 30,
+                        "enabled": False,
+                        "rule_set_id": rule_set_id,
+                        "search_spec": {"all_keywords": ["concurrent"], "language_mode": "en"},
+                    }
+                )
+            except BaseException as exc:  # noqa: BLE001
+                creator_errors.append(exc)
+
+        with patch.object(self.service.workspace_store, "mutate_workspace", side_effect=delayed_creator_mutation):
+            creator = threading.Thread(target=create)
+            creator.start()
+            self.assertTrue(creator_waiting.wait(timeout=5))
+            self.service.delete_rule_set(rule_set_id)
+            allow_creator.set()
+            creator.join(timeout=5)
+
+        self.assertFalse(creator.is_alive())
+        self.assertEqual(len(creator_errors), 1)
+        self.assertRegex(str(creator_errors[0]), rf"rule_set {rule_set_id} not found")
+        self.assertNotIn(rule_set_id, {int(item["id"]) for item in self.service.list_rule_sets()["items"]})
+        self.assertNotIn(
+            rule_set_id,
+            {int(item.get("rule_set_id") or 0) for item in self.service.list_jobs(status="all")["items"]},
+        )
+
+    def test_create_job_rolls_back_task_pack_when_workspace_commit_fails(self) -> None:
+        from backend import workspace_store as workspace_store_module
+
+        default_rule_set_id = int(self.service.list_rule_sets()["items"][0]["id"])
+        original_atomic_write = workspace_store_module._atomic_write_text
+
+        def fail_workspace_write(path: Path, content: str) -> None:
+            if Path(path).name == "workspace.json":
+                raise RuntimeError("workspace write failed")
+            original_atomic_write(path, content)
+
+        with patch("backend.workspace_store._atomic_write_text", side_effect=fail_workspace_write):
+            with self.assertRaisesRegex(RuntimeError, "workspace write failed"):
+                self.service.create_job(
+                    {
+                        "name": "partial-job",
+                        "interval_minutes": 30,
+                        "enabled": False,
+                        "rule_set_id": default_rule_set_id,
+                        "search_spec": {"all_keywords": ["partial"], "language_mode": "en"},
+                    }
+                )
+
+        self.assertEqual(self.service.list_jobs(status="all")["items"], [])
+        pack_names = {path.name for path in (self.workspace_path.parent / "packs").glob("*.json")}
+        self.assertNotIn("job-001-partial-job.json", pack_names)
+
+    def test_update_job_restores_task_pack_when_workspace_commit_fails(self) -> None:
+        from backend import workspace_store as workspace_store_module
+
+        job = self._create_job("rollback-update", enabled=False)
+        pack_path = self.workspace_path.parent / "packs" / f"{job['pack_name']}.json"
+        original_pack = json.loads(pack_path.read_text(encoding="utf-8"))
+        original_atomic_write = workspace_store_module._atomic_write_text
+
+        def fail_workspace_write(path: Path, content: str) -> None:
+            if Path(path).name == "workspace.json":
+                raise RuntimeError("workspace write failed")
+            original_atomic_write(path, content)
+
+        with patch("backend.workspace_store._atomic_write_text", side_effect=fail_workspace_write):
+            with self.assertRaisesRegex(RuntimeError, "workspace write failed"):
+                self.service.update_job(int(job["id"]), {"name": "rollback-update-renamed"})
+
+        self.assertEqual(self.service.get_job(int(job["id"]))["name"], "rollback-update")
+        restored_pack = json.loads(pack_path.read_text(encoding="utf-8"))
+        self.assertEqual(restored_pack, original_pack)
+
+    def test_collector_service_modules_use_explicit_common_imports(self) -> None:
+        modules = [
+            Path("backend") / "collector_service.py",
+            *sorted((Path("backend") / "collector_service_parts").glob("*.py")),
+        ]
+
+        for module_path in modules:
+            if module_path.name == "common.py":
+                continue
+            with self.subTest(module=str(module_path)):
+                source = module_path.read_text(encoding="utf-8")
+                self.assertNotIn("from .common import *", source)
+                self.assertNotIn("from .collector_service_parts.common import *", source)
+
     def test_tick_runs_due_jobs_in_id_order_skips_running_jobs_and_counts_failures(self) -> None:
         job_one = self._create_job("tick-one")
         job_two = self._create_job("tick-two")

@@ -142,7 +142,9 @@ mixin 职责：
 - 新业务逻辑优先放进对应 mixin，不要堆回 `collector_service.py`。
 - 共享算法放 `common.py` 或更底层 helper。
 - workspace / runtime 文件状态通过 `backend/workspace_store.py` 管理。
+- workspace 与 task pack 的检查和写入共享同一个可重入跨进程配置锁；涉及二者的复合操作必须放在同一事务中，不能先读后单独覆盖。
 - 数据库 schema 和连接逻辑在 `backend/collector_store.py`。
+- mixin 只允许显式导入依赖；不要恢复 `from .common import *`。`backend.collector_service` 继续显式重导出测试和集成使用的 patch 名称。
 
 ## 6. 搜索与运行语义
 
@@ -194,6 +196,7 @@ CLI：
 - 统一 JSON 错误格式
 - 本地 origin CORS 允许
 - 可选 token 鉴权：`XDATA_API_TOKEN`
+- Web UI token 只存当前浏览器会话的 `sessionStorage`，以 Bearer header 发送，不进入 workspace、URL、日志或构建变量
 - 10MB body 大小限制
 
 API 文档看 `docs/api/README.md` 和 `docs/api/openapi.json`。改 API shape 前先改 `web-ui/src/api.ts`，再改调用方和测试。

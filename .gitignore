@@ -27,9 +27,12 @@ runtime/tmp/tests/
 
 # Local dynamic config
 config/workspace.json
+config/workspace.json.lock
 config/packs/*.json
 !config/packs/default-rule-set.json
-docs/
+docs/*
+!docs/api/
+!docs/api/**
 
 # Local artifacts: keep diagrams, ignore the rest
 artifacts/*
@@ -43,3 +46,5 @@ data/*.db
 # System noise
 .DS_Store
 Thumbs.db
+
+web-ui/test-results/
