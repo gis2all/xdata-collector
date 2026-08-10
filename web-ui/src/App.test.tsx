@@ -132,6 +132,11 @@ describe("App", () => {
     expect(screen.getByText("X \u6570\u636e\u91c7\u96c6\u5668")).toBeInTheDocument();
     expect(screen.queryByText("\u5f53\u524d\u9875")).not.toBeInTheDocument();
     expect(screen.queryByText("\u8fd0\u884c\u6458\u8981")).not.toBeInTheDocument();
+    expect(screen.getByTestId("theme-toggle")).toHaveTextContent("浅色模式");
+
+    fireEvent.click(screen.getByTestId("theme-toggle"));
+
+    expect(screen.getByTestId("theme-toggle")).toHaveTextContent("深色模式");
   });
 
   it("applies shell width classes to panels", () => {

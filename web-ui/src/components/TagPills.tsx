@@ -1,18 +1,18 @@
 import type { CSSProperties } from "react";
 
 const TAG_PALETTE = [
-  { bg: "#dbeafe", border: "#60a5fa", fg: "#1e3a8a" },
-  { bg: "#dcfce7", border: "#4ade80", fg: "#14532d" },
-  { bg: "#ffedd5", border: "#fb923c", fg: "#7c2d12" },
-  { bg: "#fce7f3", border: "#f472b6", fg: "#831843" },
-  { bg: "#ede9fe", border: "#8b5cf6", fg: "#4c1d95" },
-  { bg: "#ccfbf1", border: "#2dd4bf", fg: "#134e4a" },
-  { bg: "#fee2e2", border: "#f87171", fg: "#7f1d1d" },
-  { bg: "#e0e7ff", border: "#818cf8", fg: "#312e81" },
-  { bg: "#fef9c3", border: "#eab308", fg: "#713f12" },
-  { bg: "#f0fdf4", border: "#22c55e", fg: "#166534" },
-  { bg: "#cffafe", border: "#06b6d4", fg: "#164e63" },
-  { bg: "#fae8ff", border: "#d946ef", fg: "#701a75" },
+  { bg: "var(--tag-0-bg)", border: "var(--tag-0-border)", fg: "var(--tag-0-fg)" },
+  { bg: "var(--tag-1-bg)", border: "var(--tag-1-border)", fg: "var(--tag-1-fg)" },
+  { bg: "var(--tag-2-bg)", border: "var(--tag-2-border)", fg: "var(--tag-2-fg)" },
+  { bg: "var(--tag-3-bg)", border: "var(--tag-3-border)", fg: "var(--tag-3-fg)" },
+  { bg: "var(--tag-4-bg)", border: "var(--tag-4-border)", fg: "var(--tag-4-fg)" },
+  { bg: "var(--tag-5-bg)", border: "var(--tag-5-border)", fg: "var(--tag-5-fg)" },
+  { bg: "var(--tag-6-bg)", border: "var(--tag-6-border)", fg: "var(--tag-6-fg)" },
+  { bg: "var(--tag-7-bg)", border: "var(--tag-7-border)", fg: "var(--tag-7-fg)" },
+  { bg: "var(--tag-8-bg)", border: "var(--tag-8-border)", fg: "var(--tag-8-fg)" },
+  { bg: "var(--tag-9-bg)", border: "var(--tag-9-border)", fg: "var(--tag-9-fg)" },
+  { bg: "var(--tag-10-bg)", border: "var(--tag-10-border)", fg: "var(--tag-10-fg)" },
+  { bg: "var(--tag-11-bg)", border: "var(--tag-11-border)", fg: "var(--tag-11-fg)" },
 ];
 
 function hashTag(value: string) {
