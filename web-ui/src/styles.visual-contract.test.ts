@@ -151,12 +151,12 @@ describe("visual contract", () => {
 
   it("separates interactive secondary actions from passive status pills", () => {
     expect(exactBlockFor(".workbench-secondary-action")).toContain("min-height: 40px;");
-    expect(exactBlockFor(".workbench-secondary-action")).toContain("font-weight: 700;");
-    expect(exactBlockFor(".workbench-secondary-action")).toContain("background: #edf4ff;");
+    expect(exactBlockFor(".workbench-secondary-action")).toContain("font-weight: 600;");
+    expect(exactBlockFor(".workbench-secondary-action")).toContain("background: var(--workbench-surface-soft);");
     expect(exactBlockFor(".workbench-pill")).toContain("min-height: 28px;");
     expect(exactBlockFor(".workbench-pill")).toContain("font-weight: 600;");
-    expect(exactBlockFor(".workbench-pill")).toContain("background: #f8fafc;");
-    expect(exactBlockFor(".workbench-pill")).not.toContain("background: #edf4ff;");
+    expect(exactBlockFor(".workbench-pill")).toContain("background: var(--workbench-surface-muted);");
+    expect(exactBlockFor(".workbench-pill")).not.toContain("background: var(--workbench-surface-soft);");
   });
 
   it("does not mix action semantics on the same element", () => {
@@ -173,6 +173,7 @@ describe("visual contract", () => {
       ".table th, .table td",
       ".results-table th",
       ".flat-row:not(:last-child)",
+      ".workbench-page-header, .dashboard-page-header, .manual-page-header, .jobs-page-header, .results-page-header, .logs-page-header, .settings-page-header",
     ]);
   });
 
@@ -192,7 +193,7 @@ describe("visual contract", () => {
   });
 
   it("keeps the Jobs empty workspace shell flat and sticky", () => {
-    expect(blockFor(".jobs-empty-shell")).toContain("background: #ffffff;");
+    expect(blockFor(".jobs-empty-shell")).toContain("background: var(--workbench-surface);");
     expect(blockFor(".jobs-empty-shell")).toContain("border-radius: 0;");
     expect(blockFor(".jobs-empty-shell")).toContain("box-shadow: none;");
     expect(blockFor(".jobs-empty-workspace")).toContain("background: transparent;");
@@ -211,7 +212,7 @@ describe("visual contract", () => {
 
   it("keeps jobs table column dividers visible by default like the results table", () => {
     const jobsDivider = blockFor(".jobs-column-resizer::before");
-    expect(jobsDivider).toContain("background: #cbd5e1;");
+    expect(jobsDivider).toContain("background: var(--workbench-border-strong);");
     expect(jobsDivider).toContain("top: 3px;");
     expect(jobsDivider).toContain("bottom: 3px;");
     expect(jobsDivider).toContain("width: 1px;");
