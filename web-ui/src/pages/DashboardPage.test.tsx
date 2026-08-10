@@ -70,11 +70,13 @@ describe("DashboardPage", () => {
     render(<DashboardPage />);
 
     expect(screen.getByTestId("dashboard-page-header")).toBeInTheDocument();
-    expect(screen.getByText("页面刷新不会主动探测，点击重新加载才会更新当前状态。")).toBeInTheDocument();
+    expect(screen.queryByText("页面刷新不会主动探测，点击重新加载才会更新当前状态。")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重新加载" })).toHaveClass("workbench-primary-action");
     expect(screen.getByTestId("dashboard-summary")).toHaveClass("dashboard-width-lock");
     expect(screen.getByTestId("dashboard-panels")).toHaveClass("dashboard-width-lock");
-    expect(within(screen.getByTestId("dashboard-summary")).getByText("最近状态")).toBeInTheDocument();
+    const summary = within(screen.getByTestId("dashboard-summary"));
+    expect(summary.getByText("最近状态")).toHaveClass("workbench-section-title");
+    expect(summary.queryByText("当前状态")).not.toBeInTheDocument();
     expect(within(screen.getByTestId("dashboard-db-info")).getByTestId("dashboard-db-detail-list")).toHaveClass("flat-row-list");
     expect(within(screen.getByTestId("dashboard-x-info")).getByTestId("dashboard-x-detail-list")).toHaveClass("flat-row-list");
     expect(within(screen.getByTestId("dashboard-x-info")).getByText("0.8.6")).toBeInTheDocument();

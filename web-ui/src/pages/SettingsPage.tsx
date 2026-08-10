@@ -58,7 +58,7 @@ export function SettingsPage() {
     try {
       const payload = await getWorkspace();
       setEditorText(prettyWorkspace(payload));
-      setMessage("workspace.json \u5df2\u52a0\u8f7d");
+      setMessage("配置文件已加载");
     } catch (err) {
       setError(err instanceof Error ? err.message : "\u52a0\u8f7d workspace \u5931\u8d25");
     } finally {
@@ -82,7 +82,7 @@ export function SettingsPage() {
       const parsed = parseWorkspaceText(editorText);
       const payload = await updateWorkspace(parsed);
       setEditorText(prettyWorkspace(payload));
-      setMessage("workspace.json \u5df2\u4fdd\u5b58");
+      setMessage("配置文件已保存");
     } catch (err) {
       setError(err instanceof Error ? err.message : "\u4fdd\u5b58 workspace \u5931\u8d25");
     } finally {
@@ -154,7 +154,6 @@ export function SettingsPage() {
       <section className="card settings-page-header workbench-page-header" data-testid="settings-page-header">
         <div className="settings-page-header-copy workbench-page-header-copy">
           <h3>{"\u8bbe\u7f6e"}</h3>
-          <p className="kv">{"\u8fd9\u91cc\u53ea\u7ef4\u62a4 config/workspace.json\uff0c\u4e3b\u8981\u5305\u542b\u73af\u5883\u53c2\u6570\u3001\u8fd0\u884c\u8def\u5f84\u548c\u81ea\u52a8\u4efb\u52a1\u5217\u8868\u3002"}</p>
         </div>
         <div className="settings-page-header-actions workbench-page-header-actions">
           <button
@@ -164,7 +163,7 @@ export function SettingsPage() {
             onClick={handleSave}
             disabled={loading || saving}
           >
-            {saving ? "\u4fdd\u5b58\u4e2d..." : "\u4fdd\u5b58 workspace.json"}
+            {saving ? "\u4fdd\u5b58\u4e2d..." : "保存配置"}
           </button>
         </div>
       </section>
@@ -234,7 +233,7 @@ export function SettingsPage() {
 
         <div className="flat-section settings-editor-surface" data-testid="settings-editor-surface">
           <label className="field">
-            <span>workspace.json</span>
+            <span>配置文件</span>
             <textarea
               aria-label="workspace-json"
               value={editorText}

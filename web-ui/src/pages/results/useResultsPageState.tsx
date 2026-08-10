@@ -43,7 +43,6 @@ const RESULTS_RESIZER_WIDTH = 20;
 
 const TEXT = {
   title: "结果查询",
-  subtitle: "筛选、查看、批量处理结果。",
   curatedTab: "筛选结果",
   rawTab: "原始结果",
   keywordLabel: "关键词",

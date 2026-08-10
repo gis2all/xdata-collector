@@ -4,21 +4,20 @@ import { buildRunProgress, executionStatusLabel, executionStatusTone } from "../
 import { formatUtcPlus8Time } from "../time";
 
 const SERVICE_GROUPS = [
-  { key: "api", label: "API" },
-  { key: "scheduler", label: "Scheduler" },
-  { key: "web-ui", label: "Web UI" },
+  { key: "api", label: "接口服务" },
+  { key: "scheduler", label: "调度服务" },
+  { key: "web-ui", label: "网页界面" },
 ] as const;
 
 const UI_TEXT = {
   title: "运行日志",
-  subtitle: "服务日志与采集记录。",
   refresh: "刷新",
   refreshing: "刷新中...",
   loading: "正在加载日志...",
   loadError: "日志加载失败",
   runtimeSnapshot: "服务快照",
   runtimeTitle: "服务进程日志",
-  runtimeHint: "API、Scheduler、Web UI 当前日志。",
+  runtimeHint: "接口服务、调度服务、网页界面当前日志。",
   runtimeNoSnapshot: "暂无快照",
   runsWorkbench: "运行记录",
   runsTitle: "采集运行日志",
@@ -195,7 +194,6 @@ export function LogsPage() {
       <section className="card logs-page-header workbench-page-header" data-testid="logs-page-header">
         <div className="logs-header-copy workbench-page-header-copy">
           <h3>{UI_TEXT.title}</h3>
-          <p className="kv">{UI_TEXT.subtitle}</p>
         </div>
         <div className="logs-header-actions workbench-page-header-actions">
           <button type="button" className="workbench-primary-action" onClick={() => load()}>

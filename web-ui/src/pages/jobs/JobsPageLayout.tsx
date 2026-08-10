@@ -105,7 +105,6 @@ export function JobsPageLayout({ state }: JobsPageLayoutProps) {
       <section className="card jobs-page-header workbench-page-header">
         <div className="workbench-page-header-copy">
           <h3>{"自动任务"}</h3>
-          <p className="kv">{"自动任务负责调度，任务正文来自当前绑定任务包。"}</p>
         </div>
         <div className="jobs-page-header-actions workbench-page-header-actions">
           <button type="button" className="workbench-primary-action" data-testid="create-job-button" onClick={openCreate}>{"新建任务"}</button>

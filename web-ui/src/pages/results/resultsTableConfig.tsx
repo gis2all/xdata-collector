@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import type { CuratedItemRecord, ItemSortField, ItemTable, RawItemRecord, ResultItemRecord, SortDirection } from "../../api";
 import { TagPills } from "../../components/TagPills";
+import { ArrowDown, ArrowUp } from "lucide-react";
 import { formatUtcPlus8Time } from "../../time";
 
 const RESULTS_COLUMN_WIDTHS_KEY = "results.columnWidths.v1";
@@ -148,10 +149,10 @@ const CURATED_COLUMN_DEFINITIONS: ColumnDefinition[] = [
     width: 220,
     render: (item) => formatUtcPlus8Time((item as CuratedItemRecord).created_at_x),
   },
-  { key: "views", label: "views", defaultVisible: true, width: 90, render: (item) => (item as CuratedItemRecord).views },
-  { key: "likes", label: "likes", defaultVisible: true, width: 90, render: (item) => (item as CuratedItemRecord).likes },
-  { key: "replies", label: "replies", defaultVisible: true, width: 90, render: (item) => (item as CuratedItemRecord).replies },
-  { key: "retweets", label: "retweets", defaultVisible: true, width: 90, render: (item) => (item as CuratedItemRecord).retweets },
+  { key: "views", label: "views", defaultVisible: true, width: 110, render: (item) => (item as CuratedItemRecord).views },
+  { key: "likes", label: "likes", defaultVisible: true, width: 110, render: (item) => (item as CuratedItemRecord).likes },
+  { key: "replies", label: "replies", defaultVisible: true, width: 110, render: (item) => (item as CuratedItemRecord).replies },
+  { key: "retweets", label: "retweets", defaultVisible: true, width: 110, render: (item) => (item as CuratedItemRecord).retweets },
   {
     key: "fetched_at",
     label: "fetched_at",
@@ -249,10 +250,10 @@ const RAW_COLUMN_DEFINITIONS: ColumnDefinition[] = [
     width: 220,
     render: (item) => formatUtcPlus8Time((item as RawItemRecord).created_at_x),
   },
-  { key: "views", label: "views", defaultVisible: true, width: 90, render: (item) => (item as RawItemRecord).views },
-  { key: "likes", label: "likes", defaultVisible: true, width: 90, render: (item) => (item as RawItemRecord).likes },
-  { key: "replies", label: "replies", defaultVisible: true, width: 90, render: (item) => (item as RawItemRecord).replies },
-  { key: "retweets", label: "retweets", defaultVisible: true, width: 90, render: (item) => (item as RawItemRecord).retweets },
+  { key: "views", label: "views", defaultVisible: true, width: 110, render: (item) => (item as RawItemRecord).views },
+  { key: "likes", label: "likes", defaultVisible: true, width: 110, render: (item) => (item as RawItemRecord).likes },
+  { key: "replies", label: "replies", defaultVisible: true, width: 110, render: (item) => (item as RawItemRecord).replies },
+  { key: "retweets", label: "retweets", defaultVisible: true, width: 110, render: (item) => (item as RawItemRecord).retweets },
   {
     key: "query_name",
     label: "query_name",
@@ -370,7 +371,7 @@ export function renderSortButtons(
         aria-label={`${field} asc`}
         onClick={() => onSort(field, "asc")}
       >
-        {"\u2191"}
+        <ArrowUp size={12} strokeWidth={2} aria-hidden="true" />
       </button>
       <button
         type="button"
@@ -378,7 +379,7 @@ export function renderSortButtons(
         aria-label={`${field} desc`}
         onClick={() => onSort(field, "desc")}
       >
-        {"\u2193"}
+        <ArrowDown size={12} strokeWidth={2} aria-hidden="true" />
       </button>
     </span>
   );

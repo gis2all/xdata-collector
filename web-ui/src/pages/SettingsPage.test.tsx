@@ -35,7 +35,7 @@ const TEXT = {
   summaryTitle: "当前配置",
   actionsTitle: "工作区操作",
   editorTitle: "配置 JSON",
-  save: "保存 workspace.json",
+  save: "保存配置",
 } as const;
 
 describe("SettingsPage", () => {
