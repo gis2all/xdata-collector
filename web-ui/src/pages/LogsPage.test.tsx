@@ -152,7 +152,7 @@ describe("LogsPage", () => {
     expect(screen.queryByTestId("logs-run-rail")).not.toBeInTheDocument();
     expect(screen.getByTestId("logs-service-summary-table")).toBeInTheDocument();
     const apiRow = screen.getByTestId("logs-service-summary-api");
-    expect(within(apiRow).getByText("API")).toBeInTheDocument();
+    expect(within(apiRow).getByText("接口服务")).toBeInTheDocument();
     expect(within(apiRow).getByText("尚未产生日志")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "API" })?.closest(".logs-service-group") ?? null).toBeNull();
     expect(screen.queryAllByText(TEXT.noLogContent)).toHaveLength(0);

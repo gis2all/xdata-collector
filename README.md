@@ -126,6 +126,7 @@ Docker 注意事项：
 
 ## 更多文档
 
+- [`DESIGN.md`](DESIGN.md)：UI 设计规范（字体、颜色、间距、控件与品牌视觉）
 - [`CLAUDE.md`](CLAUDE.md)：项目真相、架构、搜索链路、页面行为、维护手册
 - [`run/README.md`](run/README.md)：运行入口、端口和本机服务边界
 - [`web-ui/README.md`](web-ui/README.md)：前端启动、测试和页面结构

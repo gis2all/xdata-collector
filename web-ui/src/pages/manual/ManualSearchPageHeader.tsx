@@ -11,7 +11,6 @@ export function ManualSearchPageHeader({ state }: ManualSearchPageHeaderProps) {
       <header className="card collector-hero manual-page-header workbench-page-header" data-testid="manual-page-header">
         <div className="manual-page-header-copy workbench-page-header-copy">
           <h3>手动执行任务</h3>
-          <p className="kv">当前页面编辑的是任务草稿，可直接执行，不需要先保存为任务包。</p>
         </div>
         <div className="manual-page-header-actions workbench-page-header-actions">
           <button

@@ -136,7 +136,6 @@ export function DashboardPage() {
       <section className="card dashboard-page-header workbench-page-header" data-testid="dashboard-page-header">
         <div className="dashboard-page-header-copy workbench-page-header-copy">
           <h3>{"运行总览"}</h3>
-          <p className="kv">{"页面刷新不会主动探测，点击重新加载才会更新当前状态。"}</p>
         </div>
         <div className="dashboard-page-header-actions workbench-page-header-actions">
           <button type="button" className="workbench-primary-action" onClick={loadHealth} disabled={loading}>
@@ -158,8 +157,7 @@ export function DashboardPage() {
       <section className="card dashboard-summary dashboard-width-lock workbench-layer flat-meta-strip" data-testid="dashboard-summary">
         <div className="dashboard-summary-hero dashboard-summary-compact">
           <div className="dashboard-summary-copy">
-            <div className="dashboard-summary-eyebrow">{"当前状态"}</div>
-            <h4 className="dashboard-summary-title">{summaryTitle}</h4>
+            <h4 className="workbench-section-title dashboard-summary-title">{summaryTitle}</h4>
           </div>
           <div className="dashboard-summary-pills workbench-pill-row">
             <span className={`dashboard-summary-pill workbench-pill ${dbStatusTone}`}>{`本地数据库：${dbStatusLabel}`}</span>

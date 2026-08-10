@@ -227,6 +227,15 @@ API 文档看 `docs/api/README.md` 和 `docs/api/openapi.json`。改 API shape �
 - Results：raw / curated 切换、筛选、排序、分页、列宽记忆、详情栏。
 - Settings：只维护 `config/workspace.json`；搜索条件和规则正文不在这里编辑。
 
+### 前端 UI 约束
+
+- `DESIGN.md` 是 UI 视觉规范的唯一来源；改 UI 前先读它，不按单页临时判断。
+- 全站只使用一种字体族：西文 `Inter`、中文 `Noto Sans SC`，回退系统无衬线字体；不引入 monospace 混排。
+- 界面文案统一中文：不新增英文页面标题、英文 eyebrow 或重复描述性说明。
+- 控件焦点态必须使用贴合边缘的绿色 2px outline（`outline-offset: 0`）。
+- 品牌色是荧光绿 `#d9ff3f`；浏览器 favicon 是绿色 X（`web-ui/public/favicon.svg`）。
+- 新增或修改前端页面后检查：中文文案、字号 / 字重 / 颜色层级、间距和控件边界、favicon 和品牌名称。
+
 前端 API 类型源头是 `web-ui/src/api.ts`。`web-ui/src/collector.ts` 保留 UI 默认值、normalize、preview 和 rule builder helper。
 
 ## 10. 改动前先读哪里

@@ -40,6 +40,7 @@ artifacts/*
 !artifacts/diagrams/
 !artifacts/diagrams/**
 /.learnings/
+.playwright-cli/
 
 # Local data and test databases
 data/*.db

@@ -8,7 +8,7 @@ export function ResultsPageContent() {
 
   return (
     <div className="results-page" data-testid="results-page">
-      <ResultsPageHeader title={state.TEXT.title} subtitle={state.TEXT.subtitle} />
+      <ResultsPageHeader title={state.TEXT.title} />
       <ResultsControlLayer state={state} />
       <ResultsWorkspace state={state} />
     </div>

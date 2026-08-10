@@ -196,11 +196,9 @@ describe("ResultsPage", () => {
     expect(detailRawTag).toHaveClass("tag-pill");
     expect(detailRawTag.closest(".tag-pills")).toHaveTextContent("rawdefi");
     expect(screen.getByTestId("results-detail-rail")).not.toHaveTextContent("raw, defi");
-    expect(detailRawTag).toHaveStyle({
-      background: tableRawTag.style.background,
-      borderColor: tableRawTag.style.borderColor,
-      color: tableRawTag.style.color,
-    });
+    expect(detailRawTag.style.background).toBe(tableRawTag.style.background);
+    expect(detailRawTag.style.borderColor).toBe(tableRawTag.style.borderColor);
+    expect(detailRawTag.style.color).toBe(tableRawTag.style.color);
   });
 
   it("renders refresh loading state as a dedicated block before the table instead of inside the table flow", async () => {
@@ -587,8 +585,8 @@ it("renders default business columns and utc+8 timestamps", async () => {
     expect(scoreAscButton.parentElement).toHaveClass("results-sort-controls-inline");
     expect(screen.queryByText("ASC")).not.toBeInTheDocument();
     expect(screen.queryByText("DESC")).not.toBeInTheDocument();
-    expect(scoreAscButton).toHaveTextContent("↑");
-    expect(scoreDescButton).toHaveTextContent("↓");
+    expect(scoreAscButton.querySelector("svg")).not.toBeNull();
+    expect(scoreDescButton.querySelector("svg")).not.toBeNull();
     expect(within(screen.getByTestId("results-table-pane")).getByText("Raw text 1").closest(".results-cell-content")).toHaveClass("results-cell-content-text");
     expect(screen.queryByRole("button", { name: "tweet_id asc" })).not.toBeInTheDocument();
     expect(within(screen.getByTestId("results-table-pane")).getByText("2026-04-13 08:49:06 UTC+8")).toBeInTheDocument();

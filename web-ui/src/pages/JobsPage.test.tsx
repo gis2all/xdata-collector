@@ -629,7 +629,7 @@ describe("JobsPage", () => {
     });
 
     expect(screen.getByRole("heading", { name: "自动任务" })).toBeInTheDocument();
-    expect(screen.getByText("自动任务负责调度，任务正文来自当前绑定任务包。")).toBeInTheDocument();
+    expect(screen.queryByText("自动任务负责调度，任务正文来自当前绑定任务包。")).not.toBeInTheDocument();
     expect(screen.getByTestId("create-job-button")).toBeInTheDocument();
     expect(screen.queryByTestId("jobs-list-tools-summary")).not.toBeInTheDocument();
     expect(screen.queryByText("筛选与批量管理")).not.toBeInTheDocument();

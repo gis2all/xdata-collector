@@ -5,32 +5,54 @@ import { JobsPage } from "./pages/JobsPage";
 import { ResultsPage } from "./pages/ResultsPage";
 import { LogsPage } from "./pages/LogsPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { CalendarClock, FileText, LayoutDashboard, Search, Settings, Table } from "lucide-react";
 
 const ACTIVE_PAGE_STORAGE_KEY = "app.activePage.v1";
+const THEME_STORAGE_KEY = "app.theme.v1";
+
+type Theme = "dark" | "light";
+
+function readStoredTheme(): Theme {
+  if (typeof window === "undefined") {
+    return "dark";
+  }
+  try {
+    const raw = window.localStorage.getItem(THEME_STORAGE_KEY);
+    return raw === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
 
 const NAVS = [
   {
     id: "dashboard",
+    icon: LayoutDashboard,
     label: "运行总览",
     shellWidth: "wide",
     component: <DashboardPage />,
   },
   {
     id: "manual",
+    icon: Search,
     label: "手动搜索",
     shellWidth: "wide",
     component: <ManualSearchPage />,
   },
-  { id: "jobs", label: "自动任务", shellWidth: "wide", component: <JobsPage /> },
+  { id: "jobs",
+    icon: CalendarClock, label: "自动任务", shellWidth: "wide", component: <JobsPage /> },
   {
     id: "results",
+    icon: Table,
     label: "结果浏览",
     shellWidth: "wide",
     component: <ResultsPage />,
   },
-  { id: "logs", label: "运行日志", shellWidth: "wide", component: <LogsPage /> },
+  { id: "logs",
+    icon: FileText, label: "运行日志", shellWidth: "wide", component: <LogsPage /> },
   {
     id: "settings",
+    icon: Settings,
     label: "设置",
     shellWidth: "wide",
     component: <SettingsPage />,
@@ -101,6 +123,20 @@ function writeHashActivePage(value: NavId) {
 
 export function App() {
   const [active, setActive] = useState<NavId>(() => readInitialActivePage());
+  const [theme, setTheme] = useState<Theme>(() => readStoredTheme());
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // Ignore storage write failures.
+    }
+  }, [theme]);
+
+  function toggleTheme() {
+    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+  }
 
   useEffect(() => {
     function syncFromHash() {
@@ -147,10 +183,20 @@ export function App() {
                 activatePage(item.id);
               }}
             >
-              {item.label}
+              <item.icon size={15} strokeWidth={1.5} aria-hidden="true" />
+              <span>{item.label}</span>
             </button>
           ))}
         </nav>
+
+        <button
+          type="button"
+          className="theme-toggle"
+          data-testid="theme-toggle"
+          onClick={toggleTheme}
+        >
+          {theme === "dark" ? "浅色模式" : "深色模式"}
+        </button>
       </aside>
       <main className="app-canvas">
         {NAVS.map((item) => (
