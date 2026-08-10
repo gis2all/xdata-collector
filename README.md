@@ -107,6 +107,18 @@ Docker 注意事项：
 - 未设置 `DOCKER_PROXY_URL` 时，不注入代理环境变量
 - 需要代理时，先将 `DOCKER_PROXY_URL` 设为可用代理地址，再运行 `docker compose up --build`
 
+## Web UI 工作台
+
+工作台统一命名为 `X 数据采集器`，默认使用绿色品牌视觉和中文界面。页面入口：
+
+- `运行总览`：查看本地数据库与 X 会话的健康状态
+- `手动搜索`：编辑并执行任务包草稿
+- `自动任务`：管理定时调度任务
+- `结果浏览`：浏览原始与规则命中结果
+- `运行日志`：查看运行记录与服务日志
+- `设置`：管理 `config/workspace.json` 与当前浏览器会话的 API token
+
+界面细节（字体、字号、颜色、间距、控件焦点态和品牌图标）以 [`DESIGN.md`](DESIGN.md) 为准。
 ## 常用入口
 
 常用命令：
@@ -126,6 +138,7 @@ Docker 注意事项：
 
 ## 更多文档
 
+- [`DESIGN.md`](DESIGN.md)：UI 设计规范（字体、颜色、间距、控件与品牌视觉）
 - [`CLAUDE.md`](CLAUDE.md)：项目真相、架构、搜索链路、页面行为、维护手册
 - [`run/README.md`](run/README.md)：运行入口、端口和本机服务边界
 - [`web-ui/README.md`](web-ui/README.md)：前端启动、测试和页面结构
