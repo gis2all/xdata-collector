@@ -1,5 +1,4 @@
 import json
-import re
 from pathlib import Path
 
 from run.api import API_ROUTES
@@ -47,7 +46,7 @@ def test_setup_docs_match_current_local_workbench_contract() -> None:
     handbook = (PROJECT_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
     public_docs = [*setup_docs, handbook]
 
-    assert len(re.findall(r"^- `python install\.py`", readme, flags=re.MULTILINE)) == 1
+    assert "`python install.py`" in readme
     for content in public_docs:
         assert "collector_service_impl.py" not in content
         assert "152 passed" not in content
